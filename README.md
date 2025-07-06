@@ -104,6 +104,7 @@ Linux/macOS:
 The GUI and CLI will print the correct activation command for you.
 
 **📁 Project Structure**
+
 py-env-studio/
 ├── __init__.py
 ├── core/
@@ -114,7 +115,8 @@ py-env-studio/
 │   ├── __init__.py
 │   └── main_window.py
 └── static/
-    └── icons/
+│       └── icons
+│
 ├── main.py
 ├── config.ini
 ├── requirements.txt
