@@ -101,3 +101,18 @@ py-env-studio/
 ├── requirements.txt
 ├── README.md
 └── pyproject.toml
+
+
+## 🚀 Roadmap
+Environment renaming support
+
+Global package search
+
+One-click upgrade of all packages
+
+Package version locking
+
+Docker version
+
+## 🤝 Contributing
+We welcome contributions! Feel free to fork, raise issues, or submit pull requests.
