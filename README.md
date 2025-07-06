@@ -105,23 +105,22 @@ The GUI and CLI will print the correct activation command for you.
 
 **📁 Project Structure**
 
-py-env-studio/
-├── __init__.py
-├── core/
-│   ├── __init__.py
-│   ├── env_manager.py
-│   └── pip_tools.py
-├── ui/
-│   ├── __init__.py
-│   └── main_window.py
-└── static/
-│       └── icons
-│
-├── main.py
-├── config.ini
-├── requirements.txt
-├── README.md
-└── pyproject.toml
+    py-env-studio/
+    ├── __init__.py
+    ├── core/
+    │   ├── __init__.py
+    │   ├── env_manager.py
+    │   └── pip_tools.py
+    ├── ui/
+    │   ├── __init__.py
+    │   └── main_window.py
+    └── static/
+        └── icons/
+    ├── main.py
+    ├── config.ini
+    ├── requirements.txt
+    ├── README.md
+    └── pyproject.toml
 
 **🚀 Roadmap**
 🔄 Environment renaming support
