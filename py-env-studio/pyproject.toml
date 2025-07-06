@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "py-env-studio"
+version = "1.0.0"
+description = "A cross-platform GUI and CLI tool for managing Python virtual environments and packages. Features include environment creation, activation, package installation, requirements management, updates, deletion, and export."
+requires-python = ">=3.7"
+authors = [
+    { name = "Py Env Studio Team", email = "contact.shaikh.wasim@gmail.com" }
+]
+readme = "README.md"
+license = { text = "MIT" }
+keywords = ["python", "virtualenv", "environment-manager", "package-manager", "gui", "cli"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: MIT License"
+]
+dependencies = [
+    "customtkinter>=5.2.2",
+    "pip",
+    "setuptools",
+    "wheel"
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "black", "isort"]
+gui = ["Pillow"]
+
+[project.scripts]
+py-env-studio = "main:main"
