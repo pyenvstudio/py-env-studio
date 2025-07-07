@@ -20,10 +20,16 @@
 
 ## 🖥️ Launch the GUI (Recommended)
 
-
-    py-env-studio --gui
+<p align="center">
+  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/1.environment-screen.PNG?raw=true" alt="Py Env Studio Screen-1">
+</p>
+<p align="center">
+  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/2.0.package-screen?raw=true" alt="Py Env Studio Screen-2">
+</p>
+    py main.py
 
 The GUI lets you:
+
 
 ➕ Create or delete environments
 
@@ -35,10 +41,6 @@ The GUI lets you:
 
 ⚙️ Command-Line Interface (Optional)
 For scripting or quick tasks, the CLI supports:
-
-bash
-Copy
-Edit
 # Create environment
 
     py-env-studio --create myenv
