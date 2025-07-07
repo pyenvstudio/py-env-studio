@@ -1,4 +1,6 @@
-
+<p align="center">
+  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/py-env-studio/static/icons/logo.png?raw=true" alt="Py Env Studio Logo" width="150">
+</p>
 # 🐍🏠 Py Env Studio
 
 **Py Env Studio** is a cross-platform **Graphical Environment & Package Manager for Python** that makes managing virtual environments and packages effortless—without using the command line.
