@@ -32,14 +32,17 @@ The GUI lets you:
 
 ➕ Create or delete environments
 
+⚡ Single click environment activation
+
+💫 View and manage all environments visually
+
 📦 Install or uninstall packages
 
-📄 Export or import requirements
+🚚📄 Export or import requirements
 
-⚡ View and manage all environments visually
-
-⚙️ Command-Line Interface (Optional)
+👩🏻‍💻 Command-Line Interface (Optional)
 For scripting or quick tasks, the CLI supports:
+
 # Create environment
     py-env-studio --create myenv
 
@@ -118,6 +121,8 @@ The GUI and CLI will print the correct activation command for you.
     └── pyproject.toml
 
 **🚀 Roadmap**
+🏙️ Multiple Python based Environements 
+
 🔄 Environment renaming support
 
 🔍 Global package search
