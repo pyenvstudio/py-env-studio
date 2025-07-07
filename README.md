@@ -21,10 +21,10 @@
 ## 🖥️ Launch the GUI (Recommended)
 
 <p align="center">
-  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/1.environment-screen.PNG?raw=true" alt="Py Env Studio Screen-1">
+  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/1.environment-screen.PNG?raw=true" alt="Py Env Studio Screen-1" width="500">
 </p>
 <p align="center">
-  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/2.0.package-screen?raw=true" alt="Py Env Studio Screen-2">
+  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/2.0.package-screen.PNG?raw=true" alt="Py Env Studio Screen-2" width="500">
 </p>
     py main.py
 
