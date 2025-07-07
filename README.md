@@ -41,35 +41,27 @@ The GUI lets you:
 ⚙️ Command-Line Interface (Optional)
 For scripting or quick tasks, the CLI supports:
 # Create environment
-
     py-env-studio --create myenv
 
 # Create environment and upgrade pip
-
     py-env-studio --create myenv --upgrade-pip
 
 # Delete environment
-
     py-env-studio --delete myenv
 
 # List all environments
-
     py-env-studio --list
 
 # Activate environment (prints activation command)
-
     py-env-studio --activate myenv
 
 # Install package
-
     py-env-studio --install myenv,numpy
 
 # Uninstall package
-
     py-env-studio --uninstall myenv,numpy
 
 # Export requirements to file
-
     py-env-studio --export myenv,requirements.txt
 
 # Import requirements from file
