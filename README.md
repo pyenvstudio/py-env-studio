@@ -121,6 +121,7 @@ The GUI and CLI will print the correct activation command for you.
     └── pyproject.toml
 
 **🚀 Roadmap**
+
 🏙️ Multiple Python based Environements 
 
 🔄 Environment renaming support
