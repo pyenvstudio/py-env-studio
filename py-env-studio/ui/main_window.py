@@ -3,7 +3,7 @@ from tkinter import messagebox, filedialog
 import customtkinter as ctk
 import os
 from PIL import Image, ImageTk
-from core.env_manager import create_env, list_envs, delete_env, get_env_python, activate_env
+from core.env_manager import create_env, list_envs, delete_env, get_env_python, activate_env, get_env_data, search_envs
 from core.pip_tools import list_packages, install_package, uninstall_package, update_package, export_requirements, import_requirements
 import logging
 from configparser import ConfigParser
@@ -13,7 +13,8 @@ config = ConfigParser()
 config.read('config.ini')
 
 VENV_DIR = os.path.expanduser(config.get('settings', 'venv_dir', fallback='~/.venvs'))
-
+# Get the current script's directory
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 class PyEnvStudio(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -22,7 +23,7 @@ class PyEnvStudio(ctk.CTk):
         ctk.set_default_color_theme("blue")  # Enterprise blue theme
         self.title('PyEnvStudio')
         try:
-            icon_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../static/icons/logo.png"))
+            icon_path =  os.path.join(BASE_DIR, "static", "icons","logo.png")
             self.wm_iconbitmap(r"{icon_path}")
         except Exception as e:
             logging.warning(f"Could not set window icon: {e}")
@@ -38,20 +39,21 @@ class PyEnvStudio(ctk.CTk):
         # Load icons
         try:
             self.icons = {
-                "logo": ctk.CTkImage(Image.open("static/icons/logo.png")),
+                # full path to the logo image
+                "logo": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","logo.png"))),
                  
                 # https://icon-sets.iconify.design/solar/?icon-filter=home-
-                "create-env": ctk.CTkImage(Image.open("static/icons/create-env.png")),
-                "delete-env": ctk.CTkImage(Image.open("static/icons/delete-env.png")),
-                "selected-env": ctk.CTkImage(Image.open("static/icons/selected-env.png")),
-                "activate-env": ctk.CTkImage(Image.open("static/icons/activate-env.png")),
-                "install": ctk.CTkImage(Image.open("static/icons/install.png")),
-                "uninstall": ctk.CTkImage(Image.open("static/icons/uninstall.png")),
-                "requirements": ctk.CTkImage(Image.open("static/icons/requirements.png")),
-                "export": ctk.CTkImage(Image.open("static/icons/export.png")),
-                "packages": ctk.CTkImage(Image.open("static/icons/packages.png")),
-                "update": ctk.CTkImage(Image.open("static/icons/update.png")),
-                "about": ctk.CTkImage(Image.open("static/icons/about.png")),
+                "create-env": ctk.CTkImage(Image.open( os.path.join(BASE_DIR, "static", "icons","create-env.png"))),
+                "delete-env": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","delete-env.png"))),
+                "selected-env": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","selected-env.png"))),
+                "activate-env": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","activate-env.png"))),
+                "install": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","install.png"))),
+                "uninstall": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","uninstall.png"))),
+                "requirements": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","requirements.png"))),
+                "export": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","export.png"))),
+                "packages": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","packages.png"))),
+                "update": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","update.png"))),
+                "about": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","about.png"))),
             }
         except FileNotFoundError:
             self.icons = {}
@@ -64,7 +66,7 @@ class PyEnvStudio(ctk.CTk):
 
         
         # Logo and appearance settings (256x256 logo below the app name)
-        logo_path = r"static/icons/logo.png"
+        logo_path = os.path.join(BASE_DIR, "static", "icons","logo.png")
         self.sidebar_logo_img = ctk.CTkImage(Image.open(logo_path), size=(256, 256))
         self.logo_label = ctk.CTkLabel(self.sidebar_frame, text="PyEnvStudio",text_color="#00797A",fg_color="#CDD3D3", font=ctk.CTkFont(size=30, weight="bold"))
         self.logo_label.grid(row=1, column=0, padx=20, pady=(10, 10))
@@ -104,26 +106,43 @@ class PyEnvStudio(ctk.CTk):
         self.tabview.tab("Environments").grid_columnconfigure(0, weight=1)
         self.tabview.tab("Packages").grid_columnconfigure(0, weight=1)
 
+
         # Environments Tab
         env_tab = self.tabview.tab("Environments")
-        # Environment Name as editable select (ComboBox)
-        self.label_env_name = ctk.CTkLabel(env_tab, text="Environment Name:")
-        self.label_env_name.grid(row=0, column=0, padx=20, pady=(20, 5), sticky="w")
-        try:
-            from customtkinter import CTkComboBox
-        except ImportError:
-            raise ImportError("customtkinter.CTkComboBox is required for editable select. Please update customtkinter.")
-        env_list = list_envs()
-        self.entry_env_name = CTkComboBox(env_tab, values=env_list, width=200)
-        self.entry_env_name.set("Create new environment")
-        self.entry_env_name.grid(row=0, column=1, padx=20, pady=(20, 5), sticky="ew")
+
+        # SEARCH FIELD for environments (to be placed below Available Environments label, above the table)
+        self.env_search_var = tkinter.StringVar()
+        self.env_search_var.trace_add('write', lambda *args: self.refresh_env_list())
+
+        # Environment Name as input field for new environment only
+        self.label_env_name = ctk.CTkLabel(env_tab, text="New Environment Name:")
+        self.label_env_name.grid(row=1, column=0, padx=20, pady=(5, 5), sticky="w")
+        self.entry_env_name = ctk.CTkEntry(env_tab, placeholder_text="Enter new environment name", width=200)
+        self.entry_env_name.grid(row=1, column=1, padx=20, pady=(5, 5), sticky="ew")
         self.entry_env_name.bind("<KeyRelease>", self.on_env_name_change)
-        self.entry_env_name.bind("<<ComboboxSelected>>", self.on_env_name_change)
 
         self.label_python_path = ctk.CTkLabel(env_tab, text="Python Path (optional):")
-        self.label_python_path.grid(row=1, column=0, padx=20, pady=5, sticky="w")
+        self.label_python_path.grid(row=2, column=0, padx=20, pady=5, sticky="w")
         self.entry_python_path = ctk.CTkEntry(env_tab, placeholder_text="Enter Python interpreter path")
-        self.entry_python_path.grid(row=1, column=1, padx=20, pady=5, sticky="ew")
+        self.entry_python_path.grid(row=2, column=1, padx=(20, 0), pady=5, sticky="ew")
+
+        def browse_python_path_callback():
+            selected = filedialog.askopenfilename(
+                title="Select Python Interpreter",
+                filetypes=[("Python Executable", "python.exe"), ("All Files", "*")]
+            )
+            if selected:
+                self.entry_python_path.delete(0, tkinter.END)
+                self.entry_python_path.insert(0, selected)
+
+        self.browse_python_btn = ctk.CTkButton(
+            env_tab,
+            text="...📂",
+            width=28,
+            height=28,
+            command=browse_python_path_callback
+        )
+        self.browse_python_btn.grid(row=1, column=2, padx=(2, 20), pady=5)
 
         # Radio buttons for Python version : ##for future use##
         # self.python_version_frame = ctk.CTkFrame(env_tab)
@@ -145,15 +164,97 @@ class PyEnvStudio(ctk.CTk):
                                            image=self.icons.get("create-env"))
         self.btn_create_env.grid(row=5, column=0, padx=20, pady=5, sticky="ew")
 
-        self.btn_delete_env = ctk.CTkButton(env_tab, text="Delete Environment", command=self.delete_env,
-                                           image=self.icons.get("delete-env"))
-        self.btn_delete_env.grid(row=5, column=1, padx=20, pady=5, sticky="ew")
+        # Remove Delete Environment button from its old position
+
+        # Picker panel (control panel) at the top, not inside scrollable
+        self.env_picker_panel = ctk.CTkFrame(env_tab, fg_color="#F8FAFB", corner_radius=10, border_width=1, border_color="#D0D7DE")
+        self.env_picker_panel.grid(row=7, column=0, columnspan=2, sticky="ew", padx=20, pady=(10, 0))
+        self.env_picker_panel.grid_columnconfigure(0, weight=2)
+        self.env_picker_panel.grid_columnconfigure(1, weight=1)
+        self.env_picker_panel.grid_columnconfigure(2, weight=0)
+        self.env_picker_panel.grid_columnconfigure(3, weight=1)
+        self.env_picker_panel.grid_columnconfigure(4, weight=1)
+
+        # Variables for controls
+        self.selected_env_var = tkinter.StringVar()
+        self.dir_var = tkinter.StringVar()
+        self.open_with_var = tkinter.StringVar(value="CMD")
+
+
+        # OPEN AT label
+        self.open_at_label = ctk.CTkLabel(
+            self.env_picker_panel,
+            text="OPEN AT:",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            anchor="e"
+        )
+        self.open_at_label.grid(row=0, column=1, padx=(5, 0), pady=8, sticky="e")
+
+        # Directory entry and browse button (minimal, modern)
+        self.dir_entry = ctk.CTkEntry(
+            self.env_picker_panel,
+            width=180,
+            textvariable=self.dir_var,
+            placeholder_text="Directory (optional)"
+        )
+        self.dir_entry.grid(row=0, column=2, padx=(2, 0), pady=8)
+        def browse_dir_callback():
+            selected = filedialog.askdirectory()
+            if selected:
+                self.dir_var.set(selected)
+        self.browse_btn = ctk.CTkButton(
+            self.env_picker_panel,
+            text="...📂",
+            width=28,
+            height=28,
+            command=browse_dir_callback
+        )
+        self.browse_btn.grid(row=0, column=3, padx=(2, 0), pady=8)
+
+        # OPEN WITH label
+        self.open_with_label = ctk.CTkLabel(
+            self.env_picker_panel,
+            text="OPEN WITH:",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            anchor="e"
+        )
+        self.open_with_label.grid(row=0, column=4, padx=(5, 0), pady=8, sticky="e")
+
+        # OPEN WITH dropdown (minimal, modern)
+        self.open_with_dropdown = ctk.CTkOptionMenu(
+            self.env_picker_panel,
+            values=["CMD", "VS-Code", "PyCharm(Beta)"],
+            variable=self.open_with_var,
+            width=90
+        )
+        self.open_with_dropdown.grid(row=0, column=5, padx=(2, 0), pady=8)
+
+        # Activate Button
+        def activate_with_dir():
+            env = self.selected_env_var.get()
+            directory = self.dir_var.get().strip() or None
+            open_with = self.open_with_var.get() or None
+            print(f"Activating {env} in directory: {directory} with IDE: {open_with}")
+            activate_env(env, directory, open_with)
+        self.activate_button = ctk.CTkButton(
+            self.env_picker_panel,
+            text="Activate",
+            width=80,
+            height=28,
+            command=activate_with_dir,
+            image=self.icons.get("activate-env")
+        )
+        self.activate_button.grid(row=0, column=6, padx=(5, 10), pady=8)
 
         # Environment list (scrollable)
         self.env_scrollable_frame = ctk.CTkScrollableFrame(env_tab, label_text="Available Environments")
-        self.env_scrollable_frame.grid(row=7, column=0, columnspan=2, padx=20, pady=10, sticky="nsew")
+        self.env_scrollable_frame.grid(row=8, column=0, columnspan=2, padx=20, pady=10, sticky="nsew")
         self.env_scrollable_frame.grid_columnconfigure(0, weight=1)
-        
+        # Add SEARCH field below the label, above the table
+        self.label_env_search = ctk.CTkLabel(self.env_scrollable_frame, text="SEARCH:")
+        self.label_env_search.grid(row=0, column=0, padx=(10, 5), pady=(5, 5), sticky="w")
+        self.entry_env_search = ctk.CTkEntry(self.env_scrollable_frame, textvariable=self.env_search_var, placeholder_text="Search environments...", width=200)
+        self.entry_env_search.grid(row=0, column=1, padx=(0, 10), pady=(5, 5), sticky="ew")
         self.env_labels = []
         self.refresh_env_list()
 
@@ -207,61 +308,166 @@ class PyEnvStudio(ctk.CTk):
         self.entry_env_name.bind("<KeyRelease>", self.on_env_name_change)
 
         # Set window icon
-        icon_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../static/icons/logo.png"))
+        icon_path = os.path.join(BASE_DIR, "static", "icons","logo.png")
         icon_img = tkinter.PhotoImage(file=icon_path)
         self.iconphoto(True, icon_img)
 
+
+
+
+
     def refresh_env_list(self):
-        """Refresh the list of environments in the scrollable frame and update ComboBox."""
+        """Refresh the list of environments in the scrollable frame and update ComboBox. Now uses ttk.Treeview for table alignment. Picker panel is at the top."""
+        import tkinter.ttk as ttk
 
-        # Clear previous labels and buttons
-        for label in self.env_labels:
-            label.destroy()
-        self.env_labels = []
+        # Remove previous widgets in env_scrollable_frame except the search widgets (row 0)
+        for widget in self.env_scrollable_frame.winfo_children():
+            info = widget.grid_info()
+            if info.get('row', None) != 0:
+                widget.destroy()
 
-        envs = list_envs()
+        # Use search if search field is present
+        query = self.env_search_var.get() if hasattr(self, 'env_search_var') else ''
+        envs = search_envs(query)
 
-        for i, env in enumerate(envs):
-            # Frame for each environment row
-            env_row_frame = ctk.CTkFrame(self.env_scrollable_frame,  corner_radius=5)
-            env_row_frame.grid(row=i, column=0, columnspan=2, padx=10, pady=4, sticky="ew")
-            env_row_frame.columnconfigure(0, weight=1)  # Let env name grow
+        # Create Treeview for environments (ENVIRONMENT, RECENT USED LOCATION, SIZE, ACTION columns)
+        columns = ("ENVIRONMENT", "RECENT USED LOCATION", "SIZE", "ACTION")
+        self.env_tree = ttk.Treeview(
+            self.env_scrollable_frame,
+            columns=columns,
+            show="headings",
+            height=12,
+            selectmode="browse"
+        )
+        self.env_tree.heading("ENVIRONMENT", text="ENVIRONMENT")
+        self.env_tree.heading("RECENT USED LOCATION", text="RECENT USED LOCATION")
+        self.env_tree.heading("SIZE", text="SIZE")
+        self.env_tree.heading("ACTION", text="ACTION")
+        self.env_tree.column("ENVIRONMENT", width=220, anchor="w", minwidth=120, stretch=True)
+        self.env_tree.column("RECENT USED LOCATION", width=160, anchor="center", minwidth=80, stretch=True)
+        self.env_tree.column("SIZE", width=100, anchor="center", minwidth=60, stretch=True)
+        self.env_tree.column("ACTION", width=80, anchor="center", minwidth=60, stretch=False)
+        self.env_tree.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=10, pady=(0, 8))
 
-            # Full clickable environment name as button
-            env_button = ctk.CTkButton(
-                env_row_frame,
-                text=env,
-                width=500,
-                height=28,
-                hover_color="#4A9EE0",
-                text_color="white",
-                fg_color="#3B8ED0",
-                border_width=0,
-                anchor="w",
-                command=lambda env=env: self.entry_env_name.set(env)
-            )
-            env_button.grid(row=0, column=0, sticky="ew", padx=(10, 0), pady=4)  # Left padding only
+        # Insert environments into the table (recent usage and size from get_env_data)
+        for env in envs:
+            env_info = get_env_data(env)
+            recent = env_info.get("recent_location", "-")
+            size = env_info.get("size", "-")
+            self.env_tree.insert("", "end", values=(env, recent, size, "🗑"))
 
-            # Spacer Label (acts as gap)
-            spacer = ctk.CTkLabel(env_row_frame, text="", width=10, fg_color="transparent")
-            spacer.grid(row=0, column=1)
+        # Add delete button click event (only on delete icon column)
+        def on_tree_click(event):
+            region = self.env_tree.identify("region", event.x, event.y)
+            if region == "cell":
+                col = self.env_tree.identify_column(event.x)
+                row = self.env_tree.identify_row(event.y)
+                # ACTION column is the 4th column (index starts at 1, so "#4")
+                if col == "#4" and row:
+                    env = self.env_tree.item(row)['values'][0]
+                    if messagebox.askyesno("Confirm", f"Delete environment '{env}'?"):
+                        try:
+                            delete_env(env)
+                            self.refresh_env_list()
+                            messagebox.showinfo("Success", f"Environment '{env}' deleted successfully.")
+                        except Exception as e:
+                            messagebox.showerror("Error", f"Failed to delete environment: {e}")
+        self.env_tree.bind("<Button-1>", on_tree_click)
 
-            # Activate Button
-            activate_button = ctk.CTkButton(
-                env_row_frame,
-                text="Activate",
-                width=80,
-                height=28,
-                command=lambda env=env: activate_env(env),
-                image=self.icons.get("activate-env")
-            )
-            activate_button.grid(row=0, column=2, padx=(5, 10), pady=4)  # Right padding
-            self.env_labels.append(activate_button)
+        # Make row height bigger (ttk.Treeview style)
+        style = ttk.Style()
+        style.configure("Treeview", rowheight=50, font=("Segoe UI", 15))
+        style.map("Treeview", background=[('selected', "#61D759")])
+
+        # When a row is selected, update the picker panel, ComboBox, and highlight row
+        def on_tree_select(event):
+            selected = self.env_tree.selection()
+            # Remove highlight from all rows
+            for iid in self.env_tree.get_children():
+                self.env_tree.item(iid, tags=())
+            if selected:
+                env = self.env_tree.item(selected[0])['values'][0]
+                self.selected_env_var.set(env)
+                self.dir_var.set("")
+                self.open_with_var.set("CMD")
+                # Highlight selected row
+                self.env_tree.item(selected[0], tags=("selected",))
+                self.activate_button.configure(state="normal")
+                # Only update ComboBox display, not the selected env logic
+                if hasattr(self, 'entry_env_name') and hasattr(self.entry_env_name, 'set'):
+                    self.entry_env_name.set(env)
+            else:
+                self.selected_env_var.set("")
+                self.dir_var.set("")
+                self.open_with_var.set("CMD")
+                self.activate_button.configure(state="disabled")
+                
+                
 
 
-        # Update ComboBox values
-        if hasattr(self, 'entry_env_name') and hasattr(self.entry_env_name, 'configure'):
-            self.entry_env_name.configure(values=envs)
+        self.env_tree.bind("<<TreeviewSelect>>", on_tree_select)
+
+        # Select the first row by default if available
+        children = self.env_tree.get_children()
+        if children:
+            self.env_tree.selection_set(children[0])
+            env = self.env_tree.item(children[0])['values'][0]
+            self.selected_env_var.set(env)
+            self.dir_var.set("")
+            self.open_with_var.set("CMD")
+            self.activate_button.configure(state="normal")
+            # Sync ComboBox (Create Env Input select)
+            if hasattr(self, 'entry_env_name') and hasattr(self.entry_env_name, 'set'):
+                self.entry_env_name.set(env)
+        else:
+            self.activate_button.configure(state="disabled")
+
+        # No ComboBox: do not update values for entry field
+
+
+        # When a row is selected, update the control panel, ComboBox, and highlight row
+        def on_tree_select(event):
+            selected = self.env_tree.selection()
+            # Remove highlight from all rows
+            for iid in self.env_tree.get_children():
+                self.env_tree.item(iid, tags=())
+            if selected:
+                env = self.env_tree.item(selected[0])['values'][0]
+                self.selected_env_var.set(env)
+                self.dir_var.set("")
+                self.open_with_var.set("CMD")
+                # Highlight selected row
+                self.env_tree.item(selected[0], tags=("selected",))
+                self.activate_button.configure(state="normal")
+                # Sync ComboBox (Create Env Input select)
+                if hasattr(self, 'entry_env_name') and hasattr(self.entry_env_name, 'set'):
+                    self.entry_env_name.set(env)
+            else:
+                self.selected_env_var.set("")
+                self.dir_var.set("")
+                self.open_with_var.set("CMD")
+                self.activate_button.configure(state="disabled")
+        self.env_tree.bind("<<TreeviewSelect>>", on_tree_select)
+
+        # Style for selected row highlight
+        style = ttk.Style()
+        style.map("Treeview", background=[('selected', '#B7E0F7')])
+
+        # Select the first row by default if available
+        children = self.env_tree.get_children()
+        if children:
+            self.env_tree.selection_set(children[0])
+            env = self.env_tree.item(children[0])['values'][0]
+            self.selected_env_var.set(env)
+            self.dir_var.set("")
+            self.open_with_var.set("CMD")
+            self.activate_button.configure(state="normal")
+            # Sync ComboBox (Create Env Input select)
+            if hasattr(self, 'entry_env_name') and hasattr(self.entry_env_name, 'set'):
+                self.entry_env_name.set(env)
+        else:
+            self.activate_button.configure(state="disabled")
+
 
 
     def change_appearance_mode_event(self, new_appearance_mode: str):
@@ -275,11 +481,14 @@ class PyEnvStudio(ctk.CTk):
         """Create a new virtual environment."""
         env_name = self.entry_env_name.get().strip()
         python_path = self.entry_python_path.get().strip() or None
-        if not env_name or env_name == "Create new environment":
-            messagebox.showerror("Error", "Please select a valid environment name.")
+        if not env_name:
+            messagebox.showerror("Error", "Please enter a new environment name.")
+            return
+        # Ensure the env does not already exist
+        if os.path.exists(os.path.join(VENV_DIR, env_name)):
+            messagebox.showerror("Error", f"Environment '{env_name}' already exists.")
             return
         try:
-            
             self.btn_create_env.configure(state="disabled")
             self.update()
             if self.checkbox_upgrade_pip.get():
@@ -287,13 +496,12 @@ class PyEnvStudio(ctk.CTk):
             else:
                 create_env(env_name, python_path=None)
             self.refresh_env_list()
-            # self.entry_env_name.delete(0, tkinter.END)
+            self.entry_env_name.delete(0, tkinter.END)
             self.entry_python_path.delete(0, tkinter.END)
             messagebox.showinfo("Success", f"Environment '{env_name}' created successfully.")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to create environment: {e}")
         finally:
-            
             self.btn_create_env.configure(state="normal")
 
     def delete_env(self):
@@ -317,7 +525,7 @@ class PyEnvStudio(ctk.CTk):
 
     def install_package(self):
         """Install a package in the selected environment."""
-        env_name = self.entry_env_name.get().strip()
+        env_name = self.selected_env_var.get().strip()
         package_name = self.entry_package_name.get().strip()
         if not env_name or not package_name:
             messagebox.showerror("Error", "Please enter a valid environment and package name.")
@@ -338,7 +546,7 @@ class PyEnvStudio(ctk.CTk):
 
     def delete_package(self):
         """Uninstall a package from the selected environment."""
-        env_name = self.entry_env_name.get().strip()
+        env_name = self.selected_env_var.get().strip()
         package_name = self.entry_package_name.get().strip()
         if not env_name or not package_name:
             messagebox.showerror("Error", "Please enter a valid environment and package name.")
@@ -358,7 +566,7 @@ class PyEnvStudio(ctk.CTk):
 
     def install_requirements(self):
         """Install packages from a requirements.txt file."""
-        env_name = self.entry_env_name.get().strip()
+        env_name = self.selected_env_var.get().strip()
         if not env_name or not os.path.exists(os.path.join(VENV_DIR, env_name)):
             messagebox.showerror("Error", "Please select a valid environment name.")
             return
@@ -376,7 +584,7 @@ class PyEnvStudio(ctk.CTk):
 
     def export_packages(self):
         """Export installed packages to a requirements.txt file."""
-        env_name = self.entry_env_name.get().strip()
+        env_name = self.selected_env_var.get().strip()
         if not env_name or not os.path.exists(os.path.join(VENV_DIR, env_name)):
             messagebox.showerror("Error", "Please select a valid environment name.")
             return
@@ -390,7 +598,7 @@ class PyEnvStudio(ctk.CTk):
 
     def view_installed_packages(self):
         """Display installed packages in the embedded list below the button."""
-        env_name = self.entry_env_name.get().strip()
+        env_name = self.selected_env_var.get().strip()
         if not env_name or not os.path.exists(os.path.join(VENV_DIR, env_name)):
             self.selected_env_label.configure(text="")  # Clear label if invalid
             messagebox.showerror("Error", "Please select a valid environment name.")
@@ -478,7 +686,7 @@ class PyEnvStudio(ctk.CTk):
         """Handle tab change events."""
         selected_tab = self.tabview.get()
         if selected_tab == "Packages":
-            env_name = self.entry_env_name.get().strip()
+            env_name = self.selected_env_var.get().strip()
             if env_name and os.path.exists(os.path.join(VENV_DIR, env_name)):
                 self.selected_env_label.configure(
                     text=f"  Selected Environment: {env_name}",
@@ -495,7 +703,8 @@ class PyEnvStudio(ctk.CTk):
 
 
     def on_env_name_change(self, event=None):
-        env_name = self.entry_env_name.get().strip()
+        # Only update Packages tab visibility based on selected environment from table
+        env_name = self.selected_env_var.get().strip()
         if env_name and os.path.exists(os.path.join(VENV_DIR, env_name)):
             self.tabview.tab("Packages").grid()
         else:
