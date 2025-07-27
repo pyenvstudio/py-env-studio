@@ -142,7 +142,7 @@ class PyEnvStudio(ctk.CTk):
             height=28,
             command=browse_python_path_callback
         )
-        self.browse_python_btn.grid(row=1, column=2, padx=(2, 20), pady=5)
+        self.browse_python_btn.grid(row=2, column=2, padx=(2, 20), pady=5)
 
         # Radio buttons for Python version : ##for future use##
         # self.python_version_frame = ctk.CTkFrame(env_tab)
