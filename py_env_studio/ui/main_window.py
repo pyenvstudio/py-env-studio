@@ -3,18 +3,25 @@ from tkinter import messagebox, filedialog
 import customtkinter as ctk
 import os
 from PIL import Image, ImageTk
-from core.env_manager import create_env, list_envs, delete_env, get_env_python, activate_env, get_env_data, search_envs
-from core.pip_tools import list_packages, install_package, uninstall_package, update_package, export_requirements, import_requirements
+import importlib.resources as pkg_resources
+from  py_env_studio.core.env_manager import create_env, list_envs, delete_env, get_env_python, activate_env, get_env_data, search_envs
+from  py_env_studio.core.pip_tools import list_packages, install_package, uninstall_package, update_package, export_requirements, import_requirements
 import logging
 from configparser import ConfigParser
 
-# Load configuration
+def get_config_path():
+    try:
+        # Try to get config.ini from package resources
+        with pkg_resources.path('py_env_studio', 'config.ini') as config_path:
+            return str(config_path)
+    except Exception:
+        # Fallback to current directory
+        return os.path.join(os.path.dirname(__file__), 'config.ini')
+
 config = ConfigParser()
-config.read('config.ini')
+config.read(get_config_path())
 
 VENV_DIR = os.path.expanduser(config.get('settings', 'venv_dir', fallback='~/.venvs'))
-# Get the current script's directory
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 class PyEnvStudio(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -23,8 +30,8 @@ class PyEnvStudio(ctk.CTk):
         ctk.set_default_color_theme("blue")  # Enterprise blue theme
         self.title('PyEnvStudio')
         try:
-            icon_path =  os.path.join(BASE_DIR, "static", "icons","logo.png")
-            self.wm_iconbitmap(r"{icon_path}")
+            with pkg_resources.path('py_env_studio.ui.static.icons', 'logo.png') as icon_path:
+                self.wm_iconbitmap(str(icon_path))
         except Exception as e:
             logging.warning(f"Could not set window icon: {e}")
         self.geometry('1100x580')
@@ -36,26 +43,24 @@ class PyEnvStudio(ctk.CTk):
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        # Load icons
+        # Load icons using importlib.resources
         try:
-            self.icons = {
-                # full path to the logo image
-                "logo": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","logo.png"))),
-                 
-                # https://icon-sets.iconify.design/solar/?icon-filter=home-
-                "create-env": ctk.CTkImage(Image.open( os.path.join(BASE_DIR, "static", "icons","create-env.png"))),
-                "delete-env": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","delete-env.png"))),
-                "selected-env": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","selected-env.png"))),
-                "activate-env": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","activate-env.png"))),
-                "install": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","install.png"))),
-                "uninstall": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","uninstall.png"))),
-                "requirements": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","requirements.png"))),
-                "export": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","export.png"))),
-                "packages": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","packages.png"))),
-                "update": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","update.png"))),
-                "about": ctk.CTkImage(Image.open(os.path.join(BASE_DIR, "static", "icons","about.png"))),
-            }
-        except FileNotFoundError:
+            icon_names = [
+                "logo", "create-env", "delete-env", "selected-env", "activate-env",
+                "install", "uninstall", "requirements", "export", "packages", "update", "about"
+            ]
+            self.icons = {}
+            for name in icon_names:
+                fname = name.replace('-', '_') if name != "logo" else "logo"
+                file_name = f"{name}.png"
+                try:
+                    with pkg_resources.path('py_env_studio.ui.static.icons', file_name) as icon_path:
+                        self.icons[name] = ctk.CTkImage(Image.open(str(icon_path)))
+                except Exception:
+                    self.icons[name] = None
+            if not self.icons.get("logo"):
+                logging.warning("Logo icon not found. Running without icons.")
+        except Exception:
             self.icons = {}
             logging.warning("Icon files not found. Running without icons.")
 
@@ -66,8 +71,11 @@ class PyEnvStudio(ctk.CTk):
 
         
         # Logo and appearance settings (256x256 logo below the app name)
-        logo_path = os.path.join(BASE_DIR, "static", "icons","logo.png")
-        self.sidebar_logo_img = ctk.CTkImage(Image.open(logo_path), size=(256, 256))
+        try:
+            with pkg_resources.path('py_env_studio.ui.static.icons', 'logo.png') as logo_path:
+                self.sidebar_logo_img = ctk.CTkImage(Image.open(str(logo_path)), size=(256, 256))
+        except Exception:
+            self.sidebar_logo_img = None
         self.logo_label = ctk.CTkLabel(self.sidebar_frame, text="PyEnvStudio",text_color="#00797A",fg_color="#CDD3D3", font=ctk.CTkFont(size=30, weight="bold"))
         self.logo_label.grid(row=1, column=0, padx=20, pady=(10, 10))
         self.logo_img_label = ctk.CTkLabel(self.sidebar_frame, text="", image=self.sidebar_logo_img)
@@ -308,9 +316,12 @@ class PyEnvStudio(ctk.CTk):
         self.entry_env_name.bind("<KeyRelease>", self.on_env_name_change)
 
         # Set window icon
-        icon_path = os.path.join(BASE_DIR, "static", "icons","logo.png")
-        icon_img = tkinter.PhotoImage(file=icon_path)
-        self.iconphoto(True, icon_img)
+        try:
+            with pkg_resources.path('py_env_studio.ui.static.icons', 'logo.png') as icon_path:
+                icon_img = tkinter.PhotoImage(file=str(icon_path))
+                self.iconphoto(True, icon_img)
+        except Exception:
+            pass
 
 
 

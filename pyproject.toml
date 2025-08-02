@@ -24,12 +24,40 @@ dependencies = [
     "wheel"
 ]
 
+
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"py_env_studio" = ["config.ini"]
+"py_env_studio.ui.static.icons" = [
+    "about.png",
+    "activate-env.png",
+    "available-env.png",
+    "create-env.png",
+    "delete-env.png",
+    "export.png",
+    "install.png",
+    "list-env.png",
+    "logo.png",
+    "packages.png",
+    "requirements.png",
+    "selected-env.png",
+    "uninstall.png",
+    "update.png"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["py_env_studio*"]
+
 [project.optional-dependencies]
 dev = ["pytest", "black", "isort"]
 gui = ["Pillow"]
 
 [project.scripts]
-py-env-studio = "main:main"
+py-env-studio = "py_env_studio.main:main"
 
 [project.urls]
 Homepage = "https://github.com/pyenvstudio/py-env-studio"

@@ -1,7 +1,7 @@
 import argparse
-from ui.main_window import PyEnvStudio
-from core.env_manager import create_env, list_envs, delete_env, activate_env
-from core.pip_tools import install_package, uninstall_package, export_requirements, import_requirements
+from  py_env_studio.ui.main_window import PyEnvStudio
+from  py_env_studio.core.env_manager import create_env, list_envs, delete_env, activate_env
+from  py_env_studio.core.pip_tools import install_package, uninstall_package, export_requirements, import_requirements
 
 def main():
     parser = argparse.ArgumentParser(description="Virtual Environment Manager")
