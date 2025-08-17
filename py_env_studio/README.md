@@ -1,102 +1,100 @@
-   <p align="center">
+<p align="center">
   <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/py_env_studio/ui/static/icons/pes-icon-default.png?raw=true" alt="Py Env Studio Logo" width="150">
 </p>
 # 🐍🏠 Py Env Studio
 
-**Py Env Studio** is a cross-platform **Graphical Environment & Package Manager for Python** that makes managing virtual environments and packages effortless—without using the command line.
+**Py Env Studio** is a cross-platform **Graphical Environment & Package Manager for Python** that makes managing virtual environments and packages effortless without using the command line.
 
 ---
 
-## 🌟 Key Features
+## 🌟 GUI Key Features
 
-- ✅ Create and delete virtual environments  
-- ✅ Activate environments easily  
-- ✅ Install, update, and uninstall packages  
-- ✅ Import and export `requirements.txt`  
-- ✅ Clean and user-friendly **Graphical User Interface (GUI)**  
-- ✅ Optional **Command-Line Interface (CLI)** for advanced users  
+- ➕ Create and delete virtual environments
+>Easily set up new virtual environments or remove unused ones with a single click, without touching the command line.
 
+- ⚡ One click environment activation
+> Instantly activate environments directly from the GUI, eliminating the need to type activation commands manually.
+
+- 📁 Open environment at a specific location (choose working directory)
+> Launch the environment’s working directory in your file explorer to quickly access project files and scripts.
+
+- 🔷 Integrated launch: CMD, VSCode, PyCharm (Beta)
+> Open your environment directly in your preferred editor or terminal, streamlining your workflow.
+
+- 🔍 Search environments instantly
+> Use the built-in search bar to quickly locate any environment, even in large collections.
+
+- 🕑 View recent used location for each environment
+> Track where each environment was last accessed, making it easy to jump back into active projects.
+
+- 📏 See environment size details
+> View the size of each environment to identify heavy setups and manage disk space effectively.
+
+- 💫 Visual management of all environments
+> Manage all your environments through a clean, organized, and user-friendly interface with minimal clutter.
+
+- 📦 Package Management
+> Install, update, and uninstall packages visually without typing a single command.
+
+- 🚚📄 Export or import requirements
+> Import dependencies from a requirements file or export your current setup with just a click.
 ---
+
+📝 Installation
+Install via PyPI:
+
+    pip install py-env-studio
+
 
 ## 🖥️ Launch the GUI (Recommended)
 
-    py main.py
+    py-env-studio
 
 <p align="center">
   <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/1.environment-screen.PNG?raw=true" alt="Environment Screen" width="400">
   <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/2.0.package-screen.PNG?raw=true" alt="Package Screen" width="400">
 </p>
 
-The GUI lets you:
+### Command-Line Options (For Advanced Users)
+###### Create environment
+    py-env-studio --create <environment name>
 
+###### Create environment and upgrade pip
+    py-env-studio --create <environment name> --upgrade-pip
 
-➕ Create or delete environments
+###### Delete environment
+    py-env-studio --delete <environment name>
 
-📦 Install or uninstall packages
-
-📄 Export or import requirements
-
-⚡ View and manage all environments visually
-
-⚙️ Command-Line Interface (Optional)
-For scripting or quick tasks, the CLI supports:
-# Create environment
-    py-env-studio --create myenv
-
-# Create environment and upgrade pip
-    py-env-studio --create myenv --upgrade-pip
-
-# Delete environment
-    py-env-studio --delete myenv
-
-# List all environments
+###### List all environments
     py-env-studio --list
 
-# Activate environment (prints activation command)
-    py-env-studio --activate myenv
+###### Activate environment (prints activation command)
+    py-env-studio --activate <environment name>
 
-# Install package
-    py-env-studio --install myenv,numpy
+###### Install package
+    py-env-studio --install <environment name>,numpy
 
-# Uninstall package
-    py-env-studio --uninstall myenv,numpy
+###### Uninstall package
+    py-env-studio --uninstall <environment name>,numpy
 
-# Export requirements to file
-    py-env-studio --export myenv,requirements.txt
+###### Export requirements to file
+    py-env-studio --export <environment name>,requirements.txt
 
-# Import requirements from file
-py-env-studio --import-reqs myenv,requirements.txt
-📝 Installation
-Install via PyPI:
+###### Import requirements from file
+py-env-studio --import-reqs <environment name>,requirements.txt
 
-    pip install py-env-studio
-
-Or clone and run locally:
-
-    git clone https://github.com/pyenvstudio/py-env-studio.git
-
-    cd py-env-studio
-
-    python -m venv venv
-
-    venv\Scripts\activate   # On Windows
-
-    source venv/bin/activate  # On Linux/macOS
-
-    pip install -r requirements.txt
 
 🔑 Activating Environments
 Manually activate your environment after creation:
 
 Windows:
 
-    .\envs\myenv\Scripts\activate
+    .\envs\<environment name>\Scripts\activate
 
 Linux/macOS:
 
-    source envs/myenv/bin/activate
+    source envs/<environment name>/bin/activate
 
-The GUI and CLI will print the correct activation command for you.
 
 **📁 Project Structure**
 
@@ -118,7 +116,12 @@ The GUI and CLI will print the correct activation command for you.
     └── pyproject.toml
 
 **🚀 Roadmap**
+
+🏙️ Multiple Python based Environements 
+
 🔄 Environment renaming support
+
+🔍 Global environment search ✅
 
 🔍 Global package search
 
@@ -127,6 +130,7 @@ The GUI and CLI will print the correct activation command for you.
 📝 Package version locking
 
 🐳 Dockerized version
+
 
 **🤝 Contributing**
 We welcome contributions!
