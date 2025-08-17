@@ -1,5 +1,5 @@
-<p align="center">
-  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/py-env-studio/static/icons/logo.png?raw=true" alt="Py Env Studio Logo" width="150">
+   <p align="center">
+  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/py_env_studio/ui/static/icons/pes-icon-default.png?raw=true" alt="Py Env Studio Logo" width="150">
 </p>
 # 🐍🏠 Py Env Studio
 
