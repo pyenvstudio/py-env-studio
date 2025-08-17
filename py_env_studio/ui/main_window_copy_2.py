@@ -1,0 +1,576 @@
+import tkinter
+from tkinter import messagebox, filedialog
+import customtkinter as ctk
+import os
+from PIL import Image, ImageTk
+import importlib.resources as pkg_resources
+from py_env_studio.core.env_manager import (
+    create_env, list_envs, delete_env, activate_env, get_env_data, search_envs
+)
+from py_env_studio.core.pip_tools import (
+    list_packages, install_package, uninstall_package, update_package,
+    export_requirements, import_requirements
+)
+import logging
+from configparser import ConfigParser
+import threading
+import queue
+import datetime
+import tkinter.ttk as ttk
+
+# ===== THEME & CONSTANTS =====
+class Theme:
+    PADDING = 10
+    BUTTON_HEIGHT = 32
+    ENTRY_WIDTH = 250
+    SIDEBAR_WIDTH = 200
+    LOGO_SIZE = (150, 150)
+    TABLE_ROW_HEIGHT = 35
+    TABLE_FONT_SIZE = 14
+    CONSOLE_HEIGHT = 120
+
+    PRIMARY_COLOR = "#1E90FF"
+    HIGHLIGHT_COLOR = "#F2A42D"
+    ERROR_COLOR = "#FF4C4C"
+    SUCCESS_COLOR = "#61D759"
+    TEXT_COLOR_DARK = "#FFFFFF"
+    TEXT_COLOR_LIGHT = "#000000"
+
+    FONT_REGULAR = ("Segoe UI", 12)
+    FONT_BOLD = ("Segoe UI", 12, "bold")
+    FONT_CONSOLE = ("Courier", 12)
+
+def get_config_path():
+    try:
+        with pkg_resources.path('py_env_studio', 'config.ini') as config_path:
+            return str(config_path)
+    except Exception:
+        return os.path.join(os.path.dirname(__file__), 'config.ini')
+
+def show_error(msg): messagebox.showerror("Error", msg)
+def show_info(msg): messagebox.showinfo("Info", msg)
+
+# ===== MAIN APPLICATION CLASS =====
+class PyEnvStudio(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+        self.theme = Theme()
+        self._setup_config()
+        self._setup_vars()
+        self._setup_window()
+        self.icons = self._load_icons()
+        self._setup_ui()
+        self._setup_logging()
+
+    # Config, vars
+    def _setup_config(self):
+        self.config = ConfigParser()
+        self.config.read(get_config_path())
+        self.VENV_DIR = os.path.expanduser(
+            self.config.get('settings', 'venv_dir', fallback='~/.venvs')
+        )
+
+    def _setup_vars(self):
+        self.env_search_var = tkinter.StringVar()
+        self.selected_env_var = tkinter.StringVar()
+        self.dir_var = tkinter.StringVar()
+        self.open_with_var = tkinter.StringVar(value="CMD")
+        self.env_log_queue = queue.Queue()
+        self.pkg_log_queue = queue.Queue()
+
+    # Window setup
+    def _setup_window(self):
+        ctk.set_appearance_mode("System")
+        ctk.set_default_color_theme("blue")
+        self.title("PyEnvStudio")
+        try:
+            with pkg_resources.path('py_env_studio.ui.static.icons', 'pes-icon-default.png') as p:
+                self.iconphoto(True, ImageTk.PhotoImage(Image.open(str(p))))
+        except Exception as e:
+            logging.warning(f"Could not set icon: {e}")
+        self.geometry('1100x700')
+        self.minsize(800, 600)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+    # Logging loop
+    def _setup_logging(self):
+        self.env_search_var.trace_add('write', lambda *_: self.refresh_env_list())
+        self.after(100, self.process_log_queues)
+
+    # ===== Widget Factories =====
+    def btn(self, parent, text, cmd, image=None, width=150, height=None, **kw):
+        return ctk.CTkButton(parent, text=text, command=cmd, image=image,
+                             width=width, height=height or self.theme.BUTTON_HEIGHT,
+                             fg_color=self.theme.PRIMARY_COLOR, hover_color="#104E8B", **kw)
+    def entry(self, parent, ph="", var=None, width=None, **kw):
+        return ctk.CTkEntry(parent, placeholder_text=ph, textvariable=var,
+                            width=width or self.theme.ENTRY_WIDTH, **kw)
+    def lbl(self, parent, text, **kw):
+        return ctk.CTkLabel(parent, text=text, **kw)
+    def frame(self, parent, **kw):
+        return ctk.CTkFrame(parent, **kw)
+    def optmenu(self, parent, vals, cmd=None, var=None, **kw):
+        return ctk.CTkOptionMenu(parent, values=vals, command=cmd, variable=var,
+                                 height=self.theme.BUTTON_HEIGHT, **kw)
+    def chk(self, parent, text, **kw):
+        return ctk.CTkCheckBox(parent, text=text, **kw)
+
+    # ===== ICONS =====
+    def _load_icons(self):
+        names = ["logo", "create-env", "delete-env", "selected-env", "activate-env",
+                 "install", "uninstall", "requirements", "export", "packages", "update", "about"]
+        out = {}
+        for n in names:
+            try:
+                with pkg_resources.path('py_env_studio.ui.static.icons', f"{n}.png") as p:
+                    out[n] = ctk.CTkImage(Image.open(str(p)))
+            except Exception:
+                out[n] = None
+        return out
+
+    # ===== UI setup =====
+    def _setup_ui(self):
+        self._setup_sidebar()
+        self._setup_tabview()
+        self._setup_env_tab()
+        self._setup_pkg_tab()
+
+    # Sidebar
+    def _setup_sidebar(self):
+        sb = self.frame(self, width=self.theme.SIDEBAR_WIDTH, corner_radius=0)
+        sb.grid(row=0, column=0, sticky="nsew")
+        sb.grid_rowconfigure(4, weight=1)
+        try:
+            with pkg_resources.path('py_env_studio.ui.static.icons', 'pes-default-transparrent.png') as p:
+                img = ctk.CTkImage(Image.open(str(p)), size=self.theme.LOGO_SIZE)
+        except: img = None
+        self.lbl(sb, text="", image=img).grid(row=0, column=0, padx=10, pady=(10, 20))
+        self.btn(sb, "About", self.show_about_dialog, self.icons.get("about"), width=150).grid(row=4, column=0, padx=10, pady=(10, 20), sticky="ew")
+        self.lbl(sb, "Appearance Mode:", anchor="w").grid(row=5, column=0, padx=10, pady=(10, 0), sticky="w")
+        opt = self.optmenu(sb, ["Light", "Dark", "System"], self.change_appearance_mode_event, width=150)
+        opt.grid(row=6, column=0, padx=10, pady=5); opt.set("System")
+        self.lbl(sb, "UI Scaling:", anchor="w").grid(row=7, column=0, padx=10, pady=(10, 0), sticky="w")
+        scl = self.optmenu(sb, ["80%", "90%", "100%", "110%", "120%"], self.change_scaling_event, width=150)
+        scl.grid(row=8, column=0, padx=10, pady=5); scl.set("100%")
+
+    # Tabs
+    def _setup_tabview(self):
+        self.tabview = ctk.CTkTabview(self, command=self.on_tab_changed)
+        self.tabview.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
+        self.tabview.add("Environments")
+        self.tabview.add("Packages")
+        self.tabview.tab("Environments").grid_columnconfigure(0, weight=1)
+        self.tabview.tab("Packages").grid_columnconfigure(0, weight=1)
+
+    # ===== ENV TAB =====
+    def _setup_env_tab(self):
+        env_tab = self.tabview.tab("Environments")
+        env_tab.grid_rowconfigure(5, weight=1)
+        env_tab.grid_rowconfigure(6, weight=0)
+        self._env_create_section(env_tab)
+        self._env_activate_section(env_tab)
+        self._env_search_section(env_tab)
+        self._env_list_section(env_tab)
+        self._env_console_section(env_tab)
+
+    def _env_create_section(self, parent):
+        f = self.frame(parent); f.grid(row=0, column=0, columnspan=2, padx=10, pady=(10, 5), sticky="ew")
+        f.grid_columnconfigure(1, weight=1)
+        self.lbl(f, "New Environment Name:").grid(row=0, column=0, padx=(10, 5), pady=5, sticky="w")
+        self.entry_env_name = self.entry(f, "Enter environment name"); self.entry_env_name.grid(row=0, column=1, padx=(0, 10), pady=5, sticky="ew")
+        self.lbl(f, "Python Path (Optional):").grid(row=1, column=0, padx=(10, 5), pady=5, sticky="w")
+        self.entry_python_path = self.entry(f, "Enter Python interpreter path"); self.entry_python_path.grid(row=1, column=1, padx=(0, 5), pady=5, sticky="ew")
+        self.btn(f, "Browse", self.browse_python_path, width=80).grid(row=1, column=2, padx=(5, 10), pady=5)
+        self.checkbox_upgrade_pip = self.chk(f, "Upgrade pip during creation"); self.checkbox_upgrade_pip.select()
+        self.checkbox_upgrade_pip.grid(row=2, column=0, columnspan=3, padx=10, pady=5, sticky="w")
+        self.btn_create_env = self.btn(f, "Create Environment", self.create_env, self.icons.get("create-env"))
+        self.btn_create_env.grid(row=3, column=0, columnspan=3, padx=10, pady=5)
+
+    def _env_activate_section(self, parent):
+        p = self.frame(parent, corner_radius=10); p.grid(row=1, column=0, columnspan=2, padx=10, pady=5, sticky="ew")
+        p.grid_columnconfigure(1, weight=1)
+        self.lbl(p, "Open At:", font=self.theme.FONT_BOLD).grid(row=0, column=0, padx=(10, 5), pady=5, sticky="e")
+        self.dir_entry = self.entry(p, "Directory", var=self.dir_var, width=150); self.dir_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        self.btn(p, "Browse", self.browse_dir, width=80).grid(row=0, column=2, padx=5, pady=5)
+        self.lbl(p, "Open With:", font=self.theme.FONT_BOLD).grid(row=0, column=3, padx=(10, 5), pady=5, sticky="e")
+        self.open_with_dropdown = self.optmenu(p, ["CMD", "VS-Code", "PyCharm"], var=self.open_with_var, width=100)
+        self.open_with_dropdown.grid(row=0, column=4, padx=5, pady=5)
+        self.activate_button = self.btn(p, "Activate", self.activate_with_dir, self.icons.get("activate-env"), width=100)
+        self.activate_button.grid(row=0, column=5, padx=(5, 10), pady=5)
+
+    def _env_search_section(self, parent):
+        f = self.frame(parent); f.grid(row=2, column=0, columnspan=2, padx=10, pady=5, sticky="ew")
+        f.grid_columnconfigure(1, weight=1)
+        self.lbl(f, "Search Environments:").grid(row=0, column=0, padx=(10, 5), pady=5, sticky="w")
+        self.entry(f, "Search environments...", var=self.env_search_var).grid(row=0, column=1, padx=(0, 10), pady=5, sticky="ew")
+
+    def _env_list_section(self, parent):
+        self.env_scrollable_frame = ctk.CTkScrollableFrame(parent, label_text="Available Environments")
+        self.env_scrollable_frame.grid(row=5, column=0, columnspan=2, padx=10, pady=5, sticky="nsew")
+        self.env_scrollable_frame.grid_columnconfigure(0, weight=1)
+        self.refresh_env_list()
+
+    def _env_console_section(self, parent):
+        self.env_console = ctk.CTkTextbox(parent, height=self.theme.CONSOLE_HEIGHT, state="disabled", font=self.theme.FONT_CONSOLE)
+        self.env_console.grid(row=6, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
+
+    # ===== PKG TAB =====
+    def _setup_pkg_tab(self):
+        pkg_tab = self.tabview.tab("Packages")
+        pkg_tab.grid_rowconfigure(4, weight=1)
+        pkg_tab.grid_rowconfigure(5, weight=0)
+        self._pkg_header(pkg_tab)
+        self._pkg_install_section(pkg_tab)
+        self._pkg_bulk_section(pkg_tab)
+        self._pkg_manage_section(pkg_tab)
+        self._pkg_console_section(pkg_tab)
+
+    def _pkg_header(self, parent):
+        self.selected_env_label = self.lbl(parent, "", font=self.theme.FONT_BOLD)
+        self.selected_env_label.grid(row=0, column=0, columnspan=2, padx=10, pady=(10, 5), sticky="ew")
+
+    def _pkg_install_section(self, parent):
+        f = self.frame(parent); f.grid(row=1, column=0, columnspan=2, padx=10, pady=5, sticky="ew")
+        f.grid_columnconfigure(1, weight=1)
+        self.lbl(f, "Package Name:").grid(row=0, column=0, padx=(10, 5), pady=5, sticky="w")
+        self.entry_package_name = self.entry(f, "Enter package name", takefocus=True)
+        self.entry_package_name.grid(row=0, column=1, padx=(0, 10), pady=5, sticky="ew")
+        self.checkbox_confirm_install = self.chk(f, "Confirm package actions"); self.checkbox_confirm_install.select()
+        self.checkbox_confirm_install.grid(row=1, column=0, columnspan=2, padx=10, pady=5, sticky="w")
+        self.btn_install_package = self.btn(f, "Install Package", self.install_package, self.icons.get("install"))
+        self.btn_install_package.grid(row=2, column=0, columnspan=2, padx=10, pady=5)
+
+    def _pkg_bulk_section(self, parent):
+        f = self.frame(parent); f.grid(row=2, column=0, columnspan=2, padx=10, pady=5, sticky="ew")
+        self.btn_install_requirements = self.btn(f, "Install Requirements", self.install_requirements, self.icons.get("requirements"))
+        self.btn_install_requirements.grid(row=0, column=0, padx=(10, 5), pady=10)
+        self.btn_export_packages = self.btn(f, "Export Packages", self.export_packages, self.icons.get("export"))
+        self.btn_export_packages.grid(row=0, column=1, padx=(5, 10), pady=10)
+
+    def _pkg_manage_section(self, parent):
+        self.btn_view_packages = self.btn(parent, "Manage Packages", self.view_installed_packages,
+                                          self.icons.get("packages"), width=300)
+        self.btn_view_packages.grid(row=3, column=0, columnspan=2, padx=10, pady=5, sticky="ew")
+        self.packages_list_frame = ctk.CTkScrollableFrame(parent, label_text="Installed Packages")
+        self.packages_list_frame.grid(row=4, column=0, columnspan=2, padx=10, pady=5, sticky="nsew")
+        self.packages_list_frame.grid_remove()
+
+    def _pkg_console_section(self, parent):
+        self.pkg_console = ctk.CTkTextbox(parent, height=self.theme.CONSOLE_HEIGHT, state="disabled",
+                                          font=self.theme.FONT_CONSOLE)
+        self.pkg_console.grid(row=5, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
+
+    # ===== LOGIC: Async, logging, events, environment ops, package ops =====
+    def run_async(self, func, success_msg=None, error_msg=None, callback=None):
+        def target():
+            try:
+                func()
+                if success_msg:
+                    self.after(0, lambda: show_info(success_msg))
+            except Exception as e:
+                if error_msg:
+                    self.after(0, lambda: show_error(f"{error_msg}: {str(e)}"))
+            if callback:
+                self.after(0, callback)
+        threading.Thread(target=target, daemon=True).start()
+
+    def process_log_queues(self):
+        self._process_log_queue(self.env_log_queue, self.env_console)
+        self._process_log_queue(self.pkg_log_queue, self.pkg_console)
+        self.after(100, self.process_log_queues)
+
+    def _process_log_queue(self, q, console):
+        try:
+            while True:
+                msg = q.get_nowait()
+                console.configure(state="normal")
+                console.insert("end", f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {msg}\n")
+                console.configure(state="disabled")
+                console.see("end")
+        except queue.Empty:
+            pass
+
+    def update_treeview_style(self):
+        mode = ctk.get_appearance_mode()
+        bg_color = "#FFFFFF" if mode == "Light" else "#212121"
+        fg_color = self.theme.TEXT_COLOR_LIGHT if mode == "Light" else self.theme.TEXT_COLOR_DARK
+        style = ttk.Style()
+        style.configure("Treeview", background=bg_color, foreground=fg_color,
+                        fieldbackground=bg_color, rowheight=self.theme.TABLE_ROW_HEIGHT,
+                        font=self.theme.FONT_REGULAR)
+        style.map("Treeview", background=[('selected', self.theme.HIGHLIGHT_COLOR)],
+                  foreground=[('selected', fg_color)])
+        style.configure("Treeview.Heading", font=self.theme.FONT_BOLD,
+                        background=bg_color, foreground=fg_color)
+
+    def refresh_env_list(self):
+        for widget in self.env_scrollable_frame.winfo_children():
+            widget.destroy()
+        envs = search_envs(self.env_search_var.get())
+        columns = ("ENVIRONMENT", "RECENT USED LOCATION", "SIZE", "ACTION")
+        self.env_tree = ttk.Treeview(
+            self.env_scrollable_frame, columns=columns, show="headings", height=8, selectmode="browse"
+        )
+        for col, text, width, anchor in [
+            ("ENVIRONMENT", "Environment", 220, "w"),
+            ("RECENT USED LOCATION", "Recent Location", 160, "center"),
+            ("SIZE", "Size", 100, "center"),
+            ("ACTION", "Action", 80, "center")
+        ]:
+            self.env_tree.heading(col, text=text)
+            self.env_tree.column(col, width=width, anchor=anchor)
+        self.env_tree.grid(row=0, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="nsew")
+        self.update_treeview_style()
+        for env in envs:
+            data = get_env_data(env)
+            self.env_tree.insert("", "end", values=(env, data.get("recent_location", "-"), data.get("size", "-"), "Delete"))
+        def on_tree_click(event):
+            if self.env_tree.identify_column(event.x) == "#4":
+                row = self.env_tree.identify_row(event.y)
+                if row:
+                    env = self.env_tree.item(row)['values'][0]
+                    if messagebox.askyesno("Confirm", f"Delete environment '{env}'?"):
+                        self.run_async(
+                            lambda: delete_env(env, log_callback=lambda msg: self.env_log_queue.put(msg)),
+                            success_msg=f"Environment '{env}' deleted successfully.",
+                            error_msg="Failed to delete environment",
+                            callback=self.refresh_env_list
+                        )
+        self.env_tree.bind("<Button-1>", on_tree_click)
+        def on_tree_select(event):
+            sel = self.env_tree.selection()
+            if sel:
+                env = self.env_tree.item(sel[0])['values'][0]
+                self.selected_env_var.set(env)
+                self.activate_button.configure(state="normal")
+        self.env_tree.bind("<<TreeviewSelect>>", on_tree_select)
+
+    def view_installed_packages(self):
+        env_name = self.selected_env_var.get().strip()
+        self.packages_list_frame.grid()
+        self.refresh_package_list()
+
+        # ===== PACKAGE LIST REFRESH =====
+    def refresh_package_list(self):
+        """Refresh the Installed Packages list for the currently selected environment."""
+        # Clear existing list
+        for widget in self.packages_list_frame.winfo_children():
+            widget.destroy()
+
+        env_name = self.selected_env_var.get().strip()
+        if not env_name or not os.path.exists(os.path.join(self.VENV_DIR, env_name)):
+            self.selected_env_label.configure(
+                text="No valid environment selected.",
+                text_color=self.theme.ERROR_COLOR
+            )
+            self.packages_list_frame.grid_remove()
+            return
+
+        try:
+            packages = list_packages(env_name)
+            # Make the frame visible
+            self.packages_list_frame.grid()
+
+            # Header row
+            headers = ["Package", "Version", "Delete", "Update"]
+            for col, header in enumerate(headers):
+                self.lbl(
+                    self.packages_list_frame,
+                    header,
+                    font=self.theme.FONT_BOLD
+                ).grid(row=0, column=col, padx=10, pady=5, sticky="nsew")
+
+            # Package rows
+            for row, (pkg_name, pkg_version) in enumerate(packages, start=1):
+                # Name and version
+                self.lbl(self.packages_list_frame, pkg_name).grid(row=row, column=0, padx=10, pady=5, sticky="w")
+                self.lbl(self.packages_list_frame, pkg_version).grid(row=row, column=1, padx=10, pady=5, sticky="w")
+
+                # Delete button (disabled for pip)
+                if pkg_name != "pip":
+                    delete_btn = self.btn(
+                        self.packages_list_frame, "Delete",
+                        lambda pn=pkg_name: self.delete_installed_package(env_name, pn),
+                        image=self.icons.get("uninstall"), width=80
+                    )
+                else:
+                    delete_btn = self.btn(
+                        self.packages_list_frame, "Delete",
+                        None, image=self.icons.get("uninstall"),
+                        width=80, state="disabled"
+                    )
+                delete_btn.grid(row=row, column=2, padx=10, pady=5)
+
+                # Update button
+                update_btn = self.btn(
+                    self.packages_list_frame, "Update",
+                    lambda pn=pkg_name: self.update_installed_package(env_name, pn),
+                    image=self.icons.get("update"), width=80
+                )
+                update_btn.grid(row=row, column=3, padx=10, pady=5)
+
+        except Exception as e:
+            self.packages_list_frame.grid_remove()
+            show_error(f"Failed to list packages: {str(e)}")
+
+
+    def install_package(self):
+        env_name = self.selected_env_var.get().strip()
+        package_name = self.entry_package_name.get().strip()
+        if not env_name or not package_name:
+            show_error("Please select an environment and enter a package name.")
+            return
+        if self.checkbox_confirm_install.get() and not messagebox.askyesno(
+            "Confirm", f"Install '{package_name}' in '{env_name}'?"):
+            return
+        self.btn_install_package.configure(state="disabled")
+        self.run_async(
+            lambda: install_package(env_name, package_name,
+                                    log_callback=lambda msg: self.pkg_log_queue.put(msg)),
+            success_msg=f"Package '{package_name}' installed in '{env_name}'.",
+            error_msg="Failed to install package",
+            callback=lambda: [
+                self.entry_package_name.delete(0, tkinter.END),
+                self.btn_install_package.configure(state="normal"),
+                self.view_installed_packages()
+            ]
+        )
+
+    def delete_installed_package(self, env_name, package_name):
+        if self.checkbox_confirm_install.get() and not messagebox.askyesno(
+            "Confirm", f"Uninstall '{package_name}' from '{env_name}'?"):
+            return
+        self.btn_view_packages.configure(state="disabled")
+        self.run_async(
+            lambda: uninstall_package(env_name, package_name,
+                                      log_callback=lambda msg: self.pkg_log_queue.put(msg)),
+            success_msg=f"Package '{package_name}' uninstalled from '{env_name}'.",
+            error_msg="Failed to uninstall package",
+            callback=lambda: [
+                self.btn_view_packages.configure(state="normal"),
+                self.view_installed_packages()
+            ]
+        )
+
+    def update_installed_package(self, env_name, package_name):
+        self.btn_view_packages.configure(state="disabled")
+        self.run_async(
+            lambda: update_package(env_name, package_name,
+                                   log_callback=lambda msg: self.pkg_log_queue.put(msg)),
+            success_msg=f"Package '{package_name}' updated in '{env_name}'.",
+            error_msg="Failed to update package",
+            callback=lambda: [
+                self.btn_view_packages.configure(state="normal"),
+                self.view_installed_packages()
+            ]
+        )
+
+    def install_requirements(self):
+        env_name = self.selected_env_var.get().strip()
+        if not env_name or not os.path.exists(os.path.join(self.VENV_DIR, env_name)):
+            show_error("Please select a valid environment.")
+            return
+        file_path = filedialog.askopenfilename(filetypes=[("Text files", "*.txt")])
+        if file_path:
+            self.btn_install_requirements.configure(state="disabled")
+            self.run_async(
+                lambda: import_requirements(env_name, file_path,
+                                            log_callback=lambda msg: self.pkg_log_queue.put(msg)),
+                success_msg=f"Requirements from '{file_path}' installed in '{env_name}'.",
+                error_msg="Failed to install requirements",
+                callback=lambda: self.btn_install_requirements.configure(state="normal")
+            )
+
+    def export_packages(self):
+        env_name = self.selected_env_var.get().strip()
+        if not env_name or not os.path.exists(os.path.join(self.VENV_DIR, env_name)):
+            show_error("Please select a valid environment.")
+            return
+        file_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt")])
+        if file_path:
+            self.run_async(
+                lambda: export_requirements(env_name, file_path),
+                success_msg=f"Packages exported to {file_path}.",
+                error_msg="Failed to export packages"
+            )
+
+    def activate_with_dir(self):
+        env = self.selected_env_var.get()
+        directory = self.dir_var.get().strip() or None
+        open_with = self.open_with_var.get() or None
+        if not env:
+            show_error("Please select an environment to activate.")
+            return
+        self.activate_button.configure(state="disabled")
+        self.run_async(
+            lambda: activate_env(env, directory, open_with),
+            success_msg=f"Environment '{env}' activated successfully.",
+            error_msg="Failed to activate environment",
+            callback=lambda: self.activate_button.configure(state="normal")
+        )
+
+    def browse_python_path(self):
+        selected = filedialog.askopenfilename(
+            title="Select Python Interpreter",
+            filetypes=[("Python Executable", "python.exe"), ("All Files", "*")]
+        )
+        if selected:
+            self.entry_python_path.delete(0, tkinter.END)
+            self.entry_python_path.insert(0, selected)
+
+    def browse_dir(self):
+        selected = filedialog.askdirectory()
+        if selected:
+            self.dir_var.set(selected)
+
+    def change_appearance_mode_event(self, new_appearance_mode: str):
+        ctk.set_appearance_mode(new_appearance_mode)
+        self.update_treeview_style()
+        self.refresh_env_list()
+
+    def change_scaling_event(self, new_scaling: str):
+        ctk.set_widget_scaling(int(new_scaling.replace("%", "")) / 100)
+
+    def on_tab_changed(self):
+        if self.tabview.get() == "Packages":
+            env_name = self.selected_env_var.get().strip()
+            if env_name and os.path.exists(os.path.join(self.VENV_DIR, env_name)):
+                self.selected_env_label.configure(
+                    text=f"Selected Environment: {env_name}",
+                    text_color=self.theme.HIGHLIGHT_COLOR,
+                    image=self.icons.get("selected-env"),
+                    compound="left"
+                )
+            else:
+                self.selected_env_label.configure(
+                    text="No valid environment selected.",
+                    text_color=self.theme.ERROR_COLOR
+                )
+            self.packages_list_frame.grid_remove()
+
+
+    def create_env(self):
+        env_name = self.entry_env_name.get().strip()
+        python_path = self.entry_python_path.get().strip() or None
+        if not env_name:
+            messagebox.showerror("Error", "Please enter an environment name.")
+            return
+        if os.path.exists(os.path.join(self.VENV_DIR, env_name)):
+            messagebox.showerror("Error", f"Environment '{env_name}' already exists.")
+            return
+        self.btn_create_env.configure(state="disabled")
+        self.run_async(
+            lambda: create_env(env_name, python_path, self.checkbox_upgrade_pip.get(), log_callback=lambda msg: self.env_log_queue.put(msg)),
+            success_msg=f"Environment '{env_name}' created successfully.",
+            error_msg="Failed to create environment",
+            callback=lambda: [self.entry_env_name.delete(0, tkinter.END), self.entry_python_path.delete(0, tkinter.END), self.btn_create_env.configure(state="normal"), self.refresh_env_list()]
+        )
+
+    def show_about_dialog(self):
+        show_info("PyEnvStudio: Manage Python virtual environments and packages.\n\nCreated by: Wasim Shaikh\nVersion: 1.0.0\n\nVisit: https://github.com/pyenvstudio")
+
+# ===== RUN APP =====
+if __name__ == "__main__":
+    app = PyEnvStudio()
+    app.mainloop()
