@@ -4,8 +4,10 @@ import customtkinter as ctk
 import os
 from PIL import Image, ImageTk
 import importlib.resources as pkg_resources
+from datetime import datetime as DT
+
 from py_env_studio.core.env_manager import (
-    create_env,rename_env , list_envs, delete_env, activate_env, get_env_data, search_envs,
+    create_env,rename_env , list_envs, delete_env, activate_env, get_env_data, search_envs,set_env_data,
     VENV_DIR
 )
 
@@ -15,7 +17,7 @@ from py_env_studio.core.pip_tools import (
 )
 
 from py_env_studio.utils.vulneribility_scanner import DBHelper, SecurityMatrix
-from .vulneribility_insights  import VulnerabilityInsightsApp
+from  py_env_studio.utils.vulneribility_insights  import VulnerabilityInsightsApp
 
 import logging
 from configparser import ConfigParser
@@ -41,8 +43,8 @@ class Theme:
     BORDER_COLOR = "#2B4F6B"
     ERROR_COLOR = "#FF4C4C"
     SUCCESS_COLOR = "#61D759"
-    TEXT_COLOR_DARK = "#FFFFFF"
-    TEXT_COLOR_LIGHT = "#000000"
+    TEXT_COLOR_LIGHT = "#FFFFFF"
+    TEXT_COLOR_DARK = "#000000"
 
     FONT_REGULAR = ("Segoe UI", 12)
     FONT_BOLD = ("Segoe UI", 12, "bold")
@@ -63,6 +65,71 @@ def show_error(msg):
 
 def show_info(msg):
     messagebox.showinfo("Info", msg)
+
+
+class MoreActionsDialog(ctk.CTkToplevel):
+    """Custom dialog for showing More actions with Vulnerability Report and Scan Now buttons"""
+    
+    def __init__(self, parent, env_name, callback_vulnerability, callback_scan):
+        super().__init__(parent)
+        
+        self.env_name = env_name
+        self.callback_vulnerability = callback_vulnerability
+        self.callback_scan = callback_scan
+        
+        # Configure dialog
+        self.title(f"Actions for {env_name}")
+        self.geometry("300x150")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+        
+        # Center the dialog
+        self.geometry(f"+{parent.winfo_rootx() + 900}+{parent.winfo_rooty() + 500}")
+        
+        # Configure grid
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure((0, 1, 2), weight=1)
+        
+        # Title label
+        title_label = ctk.CTkLabel(
+            self, 
+            text=f"Environment: {env_name}", 
+            font=("Segoe UI", 14, "bold")
+        )
+        title_label.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="ew")
+        
+        # Vulnerability Report button
+        vulnerability_btn = ctk.CTkButton(
+            self,
+            text="📊 Vulnerability Report",
+            command=self.vulnerability_report,
+            height=35,
+            width=250
+        )
+        vulnerability_btn.grid(row=1, column=0, padx=20, pady=5, sticky="ew")
+        
+        # Scan Now button
+        scan_btn = ctk.CTkButton(
+            self,
+            text="🔍 Scan Now",
+            command=self.scan_now,
+            height=35,
+            width=250
+        )
+        scan_btn.grid(row=2, column=0, padx=20, pady=(5, 20), sticky="ew")
+        
+    def vulnerability_report(self):
+        """Handle Vulnerability Report button click"""
+        self.destroy()
+        if self.callback_vulnerability:
+            self.callback_vulnerability(self.env_name)
+    
+    def scan_now(self):
+        """Handle Scan Now button click"""
+        self.destroy()
+        if self.callback_scan:
+            self.callback_scan(self.env_name)
 
 
 class PyEnvStudio(ctk.CTk):
@@ -230,7 +297,7 @@ class PyEnvStudio(ctk.CTk):
         self.entry(f, "Search environments...", var=self.env_search_var).grid(row=0, column=1, padx=(0, 10), pady=5, sticky="ew")
 
     def _env_list_section(self, parent):
-        self.env_scrollable_frame = ctk.CTkScrollableFrame(parent, label_text="Available Environments")
+        self.env_scrollable_frame = ctk.CTkScrollableFrame(parent, label_text=f"Available Environments",)
         self.env_scrollable_frame.grid(row=5, column=0, columnspan=2, padx=10, pady=5, sticky="nsew")
         self.env_scrollable_frame.grid_columnconfigure(0, weight=1)
         self.refresh_env_list()
@@ -321,7 +388,7 @@ class PyEnvStudio(ctk.CTk):
 
     def update_treeview_style(self):
         mode = ctk.get_appearance_mode()
-        bg_color = "#FFFFFF" if mode == "Light" else "#212121"
+        bg_color = self.theme.TEXT_COLOR_DARK if mode == "Light" else self.theme.TEXT_COLOR_LIGHT
         fg_color = self.theme.TEXT_COLOR_LIGHT if mode == "Light" else self.theme.TEXT_COLOR_DARK
         style = ttk.Style()
         style.configure("Treeview", background=bg_color, foreground=fg_color,
@@ -329,15 +396,15 @@ class PyEnvStudio(ctk.CTk):
                         font=self.theme.FONT_REGULAR)
         style.map("Treeview", background=[('selected', self.theme.HIGHLIGHT_COLOR)],
                   foreground=[('selected', fg_color)])
-        style.configure("Treeview.Heading", font=self.theme.FONT_BOLD,
-                        background=bg_color, foreground=fg_color)
+        style.configure("Treeview.Heading", font=self.theme.FONT_BOLD)
 
     # ===== ENVIRONMENTS TABLE =====
     def refresh_env_list(self):
         for widget in self.env_scrollable_frame.winfo_children():
             widget.destroy()
         envs = search_envs(self.env_search_var.get())
-        columns = ("ENVIRONMENT", "LAST_LOCATION", "SIZE", "RENAME", "DELETE", "LAST_SCANNED", "SCAN_NOW")
+        # Updated columns - replaced SCAN_NOW with MORE
+        columns = ("ENVIRONMENT", "LAST_LOCATION", "SIZE", "RENAME", "DELETE", "LAST_SCANNED", "MORE")
         self.env_tree = ttk.Treeview(
             self.env_scrollable_frame, columns=columns, show="headings", height=8, selectmode="browse"
         )
@@ -348,7 +415,7 @@ class PyEnvStudio(ctk.CTk):
             ("RENAME", "Rename", 80, "center"),
             ("DELETE", "Delete", 80, "center"),
             ("LAST_SCANNED", "Last Scanned", 120, "center"),
-            ("SCAN_NOW", "Scan Now", 80, "center")
+            ("MORE", "More", 80, "center")  # New More column
         ]:
             self.env_tree.heading(col, text=text)
             self.env_tree.column(col, width=width, anchor=anchor)
@@ -361,12 +428,11 @@ class PyEnvStudio(ctk.CTk):
                 env,
                 data.get("recent_location", "-"),
                 data.get("size", "-"),
-                "Rename",
-                "Delete",
+                "🖊",
+                "🗑️",
                 data.get("last_scanned", "-"),
-                "Scan Now"
+                "⋮"  # more
             ))
-
 
         def on_tree_click(event):
             col = self.env_tree.identify_column(event.x)
@@ -402,26 +468,9 @@ class PyEnvStudio(ctk.CTk):
                         error_msg="Failed to delete environment",
                         callback=self.refresh_env_list
                     )
-            elif col == "#7":  # Scan Now
-                if messagebox.askyesno("Confirm", f"Scan environment '{env}' for vulnerabilities?"):
-                    # db initialization
-                    db = DBHelper().init_db()
-                    # scan environment
-                    scanner = SecurityMatrix()
-                    if scanner.scan_env(env):
-                        self.env_log_queue.put(f"Environment '{env}' scanned successfully.")
-                        # simulate scanning process
-                        for i in range(5):
-                            # import time
-                            # time.sleep(1)
-                            self.env_log_queue.put(f"Scanning... {i * 20}% complete")
-                        self.env_log_queue.put(f"Environment '{env}' scan completed.")
-                        # open another window with insights
-                        insights_window = ctk.CTkToplevel(self)
-                        insights_window.title(f"Vulnerability Insights - {env}")
-                        insights_window.geometry("600x400")
-                        insights_label = ctk.CTkLabel(insights_window, text="Vulnerability Insights will be displayed here.")
-                        insights_label.pack(pady=20)
+            elif col == "#7":  # More (... column)
+                # Show the More actions dialog
+                self.show_more_actions_dialog(env)
 
         self.env_tree.bind("<Button-1>", on_tree_click)
 
@@ -433,6 +482,65 @@ class PyEnvStudio(ctk.CTk):
                 self.activate_button.configure(state="normal")
 
         self.env_tree.bind("<<TreeviewSelect>>", on_tree_select)
+
+    def show_more_actions_dialog(self, env_name):
+        """Show the More actions dialog with Vulnerability Report and Scan Now buttons"""
+        dialog = MoreActionsDialog(
+            parent=self,
+            env_name=env_name,
+            callback_vulnerability=self.show_vulnerability_report,
+            callback_scan=self.scan_environment_now
+        )
+        
+    def show_vulnerability_report(self, env_name):
+        """Handle Vulnerability Report action"""
+        try:
+            # Check if environment has been scanned
+            data = get_env_data(env_name)
+            if not data.get("last_scanned"):
+                if messagebox.askyesno(
+                    "No Scan Data", 
+                    f"Environment '{env_name}' hasn't been scanned yet.\nWould you like to scan it first?"
+                ):
+                    self.scan_environment_now(env_name)
+                return
+            
+            # Launch vulnerability insights app
+            self.launch_vulnerability_insights(env_name)
+
+        except Exception as e:
+            show_error(f"Failed to show vulnerability report: {str(e)}")
+
+    def launch_vulnerability_insights(self, env_name):
+        """Launch the Vulnerability Insights application."""
+        root = ctk.CTk()
+        app = VulnerabilityInsightsApp(root, env_name)
+        root.mainloop()
+
+    def scan_environment_now(self, env_name):
+        """Handle Scan Now action with run_async"""
+        if not messagebox.askyesno("Confirm", f"Scan environment '{env_name}' for vulnerabilities?"):
+            return
+
+        def scan_task():
+            # db initialization
+            db = DBHelper().init_db()
+
+            # start scan
+            scanner = SecurityMatrix()
+            if not scanner.scan_env(env_name, log_callback=lambda msg: self.env_log_queue.put(msg)):
+                raise RuntimeError("Scanner failed to start.")
+            # update last scanned time
+            set_env_data(env_name, last_scanned=DT.now().isoformat())
+            self.env_log_queue.put(f"Environment '{env_name}' scan completed.")
+
+        # Run scan asynchronously
+        self.run_async(
+            scan_task,
+            success_msg=f"Environment '{env_name}' scanned successfully.",
+            error_msg="Failed to scan environment",
+            callback=self.refresh_env_list
+        )
 
     # ===== PACKAGES TABLE =====
     def view_installed_packages(self):
@@ -471,7 +579,7 @@ class PyEnvStudio(ctk.CTk):
             self.update_treeview_style()
 
             for pkg_name, pkg_version in packages:
-                self.pkg_tree.insert("", "end", values=(pkg_name, pkg_version, "Delete", "Update"))
+                self.pkg_tree.insert("", "end", values=(pkg_name, pkg_version, "🗑️", "⟳"))
 
             def on_pkg_click(event):
                 col = self.pkg_tree.identify_column(event.x)

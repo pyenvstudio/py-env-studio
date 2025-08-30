@@ -29,6 +29,8 @@ config.read('config.ini')
 VENV_DIR = os.path.expanduser(config.get('settings', 'venv_dir', fallback='~/.venvs'))
 PYTHON_PATH = config.get('settings', 'python_path', fallback=None)
 LOG_FILE = config.get('settings', 'log_file', fallback='venv_manager.log')
+DB_FILE = config.get('settings', 'db_file', fallback='py_env_studio.db')
+MATRIX_FILE = config.get('settings', 'matrix_file', fallback='security_matrix_lts.json')
 logging.basicConfig(filename=LOG_FILE, level=logging.INFO)
 
 # Path to environment data tracking file
@@ -55,7 +57,7 @@ def _save_env_data(data):
     except Exception as e:
         logging.error(f"Failed to save env data: {e}")
 
-def set_env_data(env_name, recent_location=None, size=None):
+def set_env_data(env_name, recent_location=None, size=None,last_scanned=None):
     """
     Update the tracking data for an environment. Only updates provided fields.
     Structure: { env_name: {"recent_location": str, "size": str} }
@@ -66,6 +68,9 @@ def set_env_data(env_name, recent_location=None, size=None):
         entry['recent_location'] = recent_location
     if size is not None:
         entry['size'] = size
+
+    if last_scanned is not None:
+        entry['last_scanned'] = last_scanned
     data[env_name] = entry
     _save_env_data(data)
 

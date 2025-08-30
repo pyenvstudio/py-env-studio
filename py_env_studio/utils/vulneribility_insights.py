@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from collections import defaultdict
 from datetime import datetime
+from .handlers import DBHelper
 
 
 # Set customtkinter appearance
@@ -15,9 +16,13 @@ ctk.set_default_color_theme("blue")
 class VulnerabilityInsightsApp:
     """Dashboard application for exploring vulnerability insights."""
 
-    def __init__(self, root, json_file):
+    def __init__(self, root, env_name):
         self.root = root
-        self.data = self._load_json(json_file)
+        self.env_name = env_name
+
+        # json_file = r"C:\Users\Lenovo\Desktop\Contribution\py_env_studio\py_env_studio\utils\security_matrix.json"
+        # self.data = self._load_json(json_file)
+        self.data = DBHelper.get_vulnerability_info(self.env_name)
 
         # state
         self.current_pkg_key = None           # key in packages_map: "name (version)"
@@ -28,7 +33,7 @@ class VulnerabilityInsightsApp:
         self.packages_map = self._packages_map()
 
         # Window setup
-        self.root.title("Vulnerability Insights Dashboard")
+        self.root.title(f"Vulnerability Insights Dashboard - {self.env_name}")
         self.root.geometry("1400x800")
 
         # Setup GUI
@@ -198,7 +203,7 @@ class VulnerabilityInsightsApp:
         meta = pkg_data.get("metadata", {})
         pkg = meta.get("package", "Unknown")
         version = meta.get("version", "?")
-        self.root.title(f"Vulnerability Insights Dashboard [{pkg}:{version}]")
+        self.root.title(f"Vulnerability Insights Dashboard - {self.env_name} [{pkg}:{version}]")
 
     def populate_treeview(self):
         self.tree.delete(*self.tree.get_children())
@@ -350,5 +355,5 @@ class VulnerabilityInsightsApp:
 
 if __name__ == "__main__":
     root = ctk.CTk()
-    app = VulnerabilityInsightsApp(root, "security_matrix.json")
+    app = VulnerabilityInsightsApp(root)
     root.mainloop()
