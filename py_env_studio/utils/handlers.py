@@ -2,6 +2,7 @@ from datetime import datetime
 import json,os
 import sqlite3
 from py_env_studio.core.env_manager import VENV_DIR, DB_FILE,MATRIX_FILE 
+print(f"{DB_FILE=}")
 # ===================== Data Helper =====================
 
 class DataHelper:

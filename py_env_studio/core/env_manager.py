@@ -26,11 +26,13 @@ from configparser import ConfigParser
 # Load configuration once
 config = ConfigParser()
 config.read('config.ini')
+# base dir is one step down from the current file
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VENV_DIR = os.path.expanduser(config.get('settings', 'venv_dir', fallback='~/.venvs'))
 PYTHON_PATH = config.get('settings', 'python_path', fallback=None)
-LOG_FILE = config.get('settings', 'log_file', fallback='venv_manager.log')
-DB_FILE = config.get('settings', 'db_file', fallback='py_env_studio.db')
-MATRIX_FILE = config.get('settings', 'matrix_file', fallback='security_matrix_lts.json')
+LOG_FILE = os.path.join(base_dir, config.get('settings', 'log_file', fallback='venv_manager.log'))
+DB_FILE = os.path.join(base_dir, config.get('settings', 'db_file', fallback='resources/py_env_studio.db'))
+MATRIX_FILE = os.path.join(base_dir, config.get('settings', 'matrix_file', fallback='security_matrix_lts.json'))
 logging.basicConfig(filename=LOG_FILE, level=logging.INFO)
 
 # Path to environment data tracking file

@@ -6,9 +6,6 @@ from .handlers import DBHelper
 from py_env_studio.core.env_manager import VENV_DIR, DB_FILE
 from py_env_studio.core.pip_tools import list_packages
 
-# configuration
-DB_PATH = r"C:\Users\Lenovo\Desktop\Contribution\py_env_studio\py_env_studio.db"
-
 # ===================== Helpers =====================
 class Helpers:
     pass

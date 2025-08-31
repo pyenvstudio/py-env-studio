@@ -24,6 +24,9 @@
 - 🔍 Search environments instantly
 > Use the built-in search bar to quickly locate any environment, even in large collections.
 
+- ✏️ Rename environments
+> Quickly rename environments to maintain clarity and organization in your workspace.
+
 - 🕑 View recent used location for each environment
 > Track where each environment was last accessed, making it easy to jump back into active projects.
 
@@ -38,6 +41,10 @@
 
 - 🚚📄 Export or import requirements
 > Import dependencies from a requirements file or export your current setup with just a click.
+
+- 🛡️ Environment Vulnerability Scanner with Insights Dashboard
+> Scan environments for known security vulnerabilities in installed packages.  
+  Generate insightful reports with risk levels, recommended updates, and a dashboard overview to keep your projects secure.
 ---
 
 📝 Installation
@@ -139,5 +146,5 @@ Feel free to fork the repository, raise issues, or submit pull requests.
 **📜 License**
 This project is licensed under the MIT License.
 
-Py Env Studio — Simplifying Python environment management for everyone.
+Py Env Studio — Simplifying Python environment management for everyone with security scanning.
 ---
