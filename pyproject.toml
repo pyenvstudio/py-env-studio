@@ -49,7 +49,9 @@ include-package-data = true
     "requirements.png",
     "selected-env.png",
     "uninstall.png",
-    "update.png"
+    "update.png",
+    "pes-icon-default.png",
+    "pes-default-transparrent.png",
 ]
 
 [tool.setuptools.packages.find]

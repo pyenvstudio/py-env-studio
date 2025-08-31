@@ -2,7 +2,7 @@ from datetime import datetime
 import json,os
 import sqlite3
 from py_env_studio.core.env_manager import VENV_DIR, DB_FILE,MATRIX_FILE 
-print(f"{DB_FILE=}")
+# print(f"{DB_FILE=}")
 # ===================== Data Helper =====================
 
 class DataHelper:
@@ -81,39 +81,43 @@ class DataHelper:
 class DBHelper:
     @staticmethod
     def init_db():
-        try:
-            with sqlite3.connect(DB_FILE) as conn:
-                cur = conn.cursor()
-                
-                # Create environments table
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS environments (
-                        env_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        env_name TEXT UNIQUE NOT NULL,
-                        env_path TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """)
-                
-                # Create env_vulneribility_info table
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS env_vulneribility_info (
-                        vid INTEGER PRIMARY KEY AUTOINCREMENT,
-                        env_id INTEGER NOT NULL,
-                        vulneribilities TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (env_id) REFERENCES environments(env_id)
-                    )
-                """)
-                
-                # Context manager automatically commits and closes connection
-                
-        except sqlite3.Error as e:
-            print(f"Database error: {e}")
-            raise
-        except Exception as e:
-            print(f"Unexpected error: {e}")
-            raise
+        """Initialize DB only if file doesn't exist (first run)."""
+        if not os.path.exists(DB_FILE):
+            try:
+                with sqlite3.connect(DB_FILE) as conn:
+                    cur = conn.cursor()
+                    
+                    # Create environments table
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS environments (
+                            env_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            env_name TEXT UNIQUE NOT NULL,
+                            env_path TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """)
+                    
+                    # Create env_vulneribility_info table
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS env_vulneribility_info (
+                            vid INTEGER PRIMARY KEY AUTOINCREMENT,
+                            env_id INTEGER NOT NULL,
+                            vulneribilities TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (env_id) REFERENCES environments(env_id)
+                        )
+                    """)
+                    
+                    print("✅ Database initialized.")
+            except sqlite3.Error as e:
+                print(f"Database error: {e}")
+                raise
+            except Exception as e:
+                print(f"Unexpected error: {e}")
+                raise
+        else:
+            # File exists, no need to recreate
+            pass
 
 
     @staticmethod
