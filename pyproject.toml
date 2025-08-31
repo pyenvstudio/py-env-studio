@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "py-env-studio"
-version = "2.0.0"
+version = "2.0.1"
 description = "A cross-platform GUI and CLI tool for managing Python virtual environments and packages. Features include environment creation, activation, package installation, requirements management, updates, deletion, and export."
 requires-python = ">=3.7"
 authors = [
