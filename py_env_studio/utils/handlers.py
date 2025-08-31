@@ -84,6 +84,7 @@ class DBHelper:
         """Initialize DB only if file doesn't exist (first run)."""
         if not os.path.exists(DB_FILE):
             try:
+                os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
                 with sqlite3.connect(DB_FILE) as conn:
                     cur = conn.cursor()
                     
