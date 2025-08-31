@@ -60,6 +60,8 @@ Install via PyPI:
 <p align="center">
   <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/1.environment-screen.PNG?raw=true" alt="Environment Screen" width="400">
   <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/2.0.package-screen.PNG?raw=true" alt="Package Screen" width="400">
+  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/1.2.1_vulneribility_scan_report.PNG?raw=true" alt="Package Screen" width="400">
+  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/1.2.2_vulneribility_scan_report.PNG?raw=true" alt="Package Screen" width="400">
 </p>
 
 ### Command-Line Options (For Advanced Users)
@@ -107,10 +109,16 @@ Linux/macOS:
 
     py-env-studio/
     ├── __init__.py
+    ├──resources
     ├── core/
     │   ├── __init__.py
     │   ├── env_manager.py
     │   └── pip_tools.py
+    ├── utils/
+    │   ├── __init__.py
+    │   ├── handlers.py
+    │   └── vulneribility_scanner.py
+    │   └── vulneribility_insights.py  
     ├── ui/
     │   ├── __init__.py
     │   └── main_window.py
@@ -125,10 +133,6 @@ Linux/macOS:
 **🚀 Roadmap**
 
 🏙️ Multiple Python based Environements 
-
-🔄 Environment renaming support
-
-🔍 Global environment search ✅
 
 🔍 Global package search
 
