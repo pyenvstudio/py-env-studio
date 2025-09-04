@@ -10,6 +10,7 @@
 ![Total Downloads](https://static.pepy.tech/badge/py-env-studio)
 ![Monthly Downloads](https://static.pepy.tech/badge/py-env-studio/month)
 ![Weekly Downloads](https://static.pepy.tech/badge/py-env-studio/week)
+[![Documentation Status](https://readthedocs.org/projects/py-env-studio/badge/?version=latest)](https://py-env-studio.readthedocs.io/en/latest/?badge=latest)
 [![GitHub Stars](https://img.shields.io/github/stars/pyenvstudio/py-env-studio?style=flat&logo=github)](https://github.com/pyenvstudio/py-env-studio/stargazers)
 [![Open Issues](https://img.shields.io/github/issues/pyenvstudio/py-env-studio?logo=github)](https://github.com/pyenvstudio/py-env-studio/issues)
 [![Last Commit](https://img.shields.io/github/last-commit/pyenvstudio/py-env-studio?logo=git)](https://github.com/pyenvstudio/py-env-studio/commits/main)
