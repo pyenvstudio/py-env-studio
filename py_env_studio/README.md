@@ -1,7 +1,21 @@
 <p align="center">
   <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/py_env_studio/ui/static/icons/pes-icon-default.png?raw=true" alt="Py Env Studio Logo" width="150">
 </p>
-# 🐍🏠 Py Env Studio
+
+# 🐍🏠 Py Env Studio  
+
+[![PyPI Version](https://img.shields.io/pypi/v/py-env-studio.svg?logo=pypi&logoColor=white)](https://pypi.org/project/py-env-studio/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/py-env-studio.svg?logo=python&logoColor=yellow)](https://pypi.org/project/py-env-studio/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/pyenvstudio/py-env-studio/blob/main/LICENSE)
+![Total Downloads](https://static.pepy.tech/badge/py-env-studio)
+![Monthly Downloads](https://static.pepy.tech/badge/py-env-studio/month)
+![Weekly Downloads](https://static.pepy.tech/badge/py-env-studio/week)
+[![GitHub Stars](https://img.shields.io/github/stars/pyenvstudio/py-env-studio?style=flat&logo=github)](https://github.com/pyenvstudio/py-env-studio/stargazers)
+[![Open Issues](https://img.shields.io/github/issues/pyenvstudio/py-env-studio?logo=github)](https://github.com/pyenvstudio/py-env-studio/issues)
+[![Last Commit](https://img.shields.io/github/last-commit/pyenvstudio/py-env-studio?logo=git)](https://github.com/pyenvstudio/py-env-studio/commits/main)
+[![Made with Python](https://img.shields.io/badge/Made%20with-Python-blue?logo=python)]()
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/pyenvstudio/py-env-studio/pulls)
+[![Telegram](https://img.shields.io/badge/Join%20Community-Telegram-2CA5E0?logo=telegram&logoColor=white)](https://t.me/pyenvstudio)
 
 **Py Env Studio** is a cross-platform **Graphical Environment & Package Manager for Python** that makes managing virtual environments and packages effortless without using the command line.
 
@@ -20,6 +34,11 @@
 
 - 🔷 Integrated launch: CMD, VSCode, PyCharm (Beta)
 > Open your environment directly in your preferred editor or terminal, streamlining your workflow.
+
+- 🛡️ Environment Vulnerability Scanner with Insights Dashboard
+> Scan environments for known security vulnerabilities in installed packages.  
+  Generate insightful reports with risk levels, recommended updates, and a dashboard overview to keep your projects secure.
+
 
 - 🔍 Search environments instantly
 > Use the built-in search bar to quickly locate any environment, even in large collections.
@@ -42,13 +61,9 @@
 - 🚚📄 Export or import requirements
 > Import dependencies from a requirements file or export your current setup with just a click.
 
-- 🛡️ Environment Vulnerability Scanner with Insights Dashboard
-> Scan environments for known security vulnerabilities in installed packages.  
-  Generate insightful reports with risk levels, recommended updates, and a dashboard overview to keep your projects secure.
 ---
 
-📝 Installation
-Install via PyPI:
+📥 Install via PyPI:
 
     pip install py-env-studio
 
@@ -59,7 +74,7 @@ Install via PyPI:
 
 <p align="center">
   <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/1.environment-screen.PNG?raw=true" alt="Environment Screen" width="400">
-  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/2.0.package-screen.PNG?raw=true" alt="Package Screen" width="400">
+  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/2.0.package-screen.PNG?raw=true" alt="Package Screen" width="400"><br>
   <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/1.2.1_vulneribility_scan_report.PNG?raw=true" alt="Package Screen" width="400">
   <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/1.2.2_vulneribility_scan_report.PNG?raw=true" alt="Package Screen" width="400">
 </p>
@@ -147,8 +162,11 @@ Linux/macOS:
 We welcome contributions!
 Feel free to fork the repository, raise issues, or submit pull requests.
 
-**📜 License**
+**⚖️ License**
 This project is licensed under the MIT License.
 
-Py Env Studio — Simplifying Python environment management for everyone with security scanning.
+Py Env Studio — Simplifying Python environment management for everyone with built-in security scanner.
+
+> ⭐ Star this repo if you find it useful! | 💬 Join us on Telegram
+
 ---
