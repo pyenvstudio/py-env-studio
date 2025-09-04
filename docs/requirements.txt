@@ -1,2 +1,5 @@
 mkdocs>=1.5
 mkdocs-material>=9.0
+mkdocstrings>=0.24
+mkdocstrings-python>=1.9
+mkdocs-awesome-pages-plugin>=2.9
