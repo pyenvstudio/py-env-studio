@@ -12,10 +12,49 @@ authors = [
 ]
 readme = "README.md"
 license = { file = "LICENSE" }
-keywords = ["python", "virtualenv", "environment-manager", "package-manager", "gui", "cli"]
+keywords = [
+    "python",
+    "virtualenv",
+    "venv",
+    "conda",
+    "environment-manager",
+    "package-manager",
+    "dependency-manager",
+    "requirements.txt",
+    "pip",
+    "python-packages",
+    "python-gui",
+    "cli",
+    "virtual-environment-gui",
+    "pyenv",
+    "python-env",
+    "python-environment-manager",
+    "pip-gui",
+    "pip-manager",
+    "python-security",
+    "vulnerability-scanner",
+    "python-tool",
+    "cross-platform",
+    "IDE"
+]
 classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Operating System :: OS Independent"
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Installation/Setup",
+    "Topic :: Utilities"
 ]
 dependencies = [
     "customtkinter>=5.2.2",
