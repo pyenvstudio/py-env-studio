@@ -1,5 +1,6 @@
 import tkinter
 from tkinter import messagebox, filedialog
+import ctypes
 import customtkinter as ctk
 import os
 from PIL import Image, ImageTk
@@ -142,7 +143,7 @@ class PyEnvStudio(ctk.CTk):
         self.icons = self._load_icons()
         self._setup_ui()
         self._setup_logging()
-
+        
     def _setup_config(self):
         self.config = ConfigParser()
         self.config.read(get_config_path())
@@ -159,18 +160,34 @@ class PyEnvStudio(ctk.CTk):
         self.pkg_log_queue = queue.Queue()
 
     def _setup_window(self):
+        # Add Windows taskbar icon fix at the start
+        if os.name == 'nt':  # Windows only
+            try:
+                myappid = 'pyenvstudio.application.1.0'
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+            except Exception as e:
+                logging.warning(f"Could not set Windows AppUserModelID: {e}")
+        
         ctk.set_appearance_mode("System")
         ctk.set_default_color_theme("blue")
         self.title("PyEnvStudio")
-        try:
-            with pkg_resources.path('py_env_studio.ui.static.icons', 'pes-icon-default.png') as p:
-                self.iconphoto(True, ImageTk.PhotoImage(Image.open(str(p))))
-        except Exception as e:
-            logging.warning(f"Could not set icon: {e}")
         self.geometry('1100x700')
         self.minsize(800, 600)
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
+
+        try:
+            with pkg_resources.path('py_env_studio.ui.static.icons', 'pes-icon-default.ico') as p:
+                self.icon = ImageTk.PhotoImage(file=str(p))
+
+            # Clear default icon and set new one with delay for reliability on Windows
+            self.wm_iconbitmap()
+            # Use iconbitmap for .ico files first, then iconphoto
+            self.after(300, lambda: self.iconbitmap(str(p)))
+            self.after(350, lambda: self.iconphoto(False, self.icon))
+        except Exception as e:
+            logging.warning(f"Could not set icon: {e}")
+
 
     def _setup_logging(self):
         self.env_search_var.trace_add('write', lambda *_: self.refresh_env_list())
@@ -754,7 +771,7 @@ class PyEnvStudio(ctk.CTk):
 
     def show_about_dialog(self):
         show_info("PyEnvStudio: Manage Python virtual environments and packages.\n\n"
-                  "Created by: Wasim Shaikh\nVersion: 1.0.0\n\nVisit: https://github.com/pyenvstudio")
+                  "Created by: Wasim Shaikh\nVersion: 2.0.2\n\nVisit: https://github.com/pyenvstudio")
 
 
 # ===== RUN APP =====

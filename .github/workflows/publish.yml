@@ -20,6 +20,18 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          echo "version=${TAG_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Update pyproject.toml version
+        run: |
+          VERSION=${{ steps.get_version.outputs.version }}
+          sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" pyproject.toml
+          echo "Updated pyproject.toml to version $VERSION"
+
       - name: Install build tools
         run: pip install build
 
