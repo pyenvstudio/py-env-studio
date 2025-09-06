@@ -68,6 +68,14 @@ Perfect for:
 - 🚚📄 Export or import requirements
 > Import dependencies from a requirements file or export your current setup with just a click.
 
+## ☕ Support  
+
+If you find **Py Env Studio** helpful, consider supporting me:  
+
+<a href="https://www.buymeacoffee.com/wasimshaikh" target="_blank">
+  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="45" width="170">
+</a>
+
 ---
 
 📥 Install via PyPI:
