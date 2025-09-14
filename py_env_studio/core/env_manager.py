@@ -287,7 +287,7 @@ def get_env_python(env_name):
     """
     return os.path.join(VENV_DIR, env_name, "Scripts" if os.name == "nt" else "bin", "python")
 
-def activate_env(env_name, directory=None, open_with=None):
+def activate_env(env_name, directory=None, open_with=None, log_callback=None):
     """
     Activate the specified environment in a new CMD window (Windows only), or open the environment directory with an IDE.
     Optionally open the environment at a specific directory or with a supported IDE (VSCode, PyCharm).
@@ -337,11 +337,20 @@ def activate_env(env_name, directory=None, open_with=None):
             with open(settings_path, "w", encoding="utf-8") as f:
                 json.dump(settings, f, indent=4)
             subprocess.Popen(["code", target_dir], shell=True)
-            print(f"Opened VSCode in {target_dir} with interpreter {python_path} and auto-activation")
+            if log_callback:
+                    log_callback(f"Opened VSCode in {target_dir} with interpreter {python_path} and auto-activation")
             return
-        elif open_with.lower() == "pycharm(beta)":
-            subprocess.Popen(["charm", target_dir], shell=True)
-            return
+        elif open_with.lower() == "pycharm":
+            try:
+                subprocess.Popen(["charm", target_dir], text=True)
+                return
+            except Exception as e:
+                err_msg = f"Failed to activate environment: {e}"
+                logging.error(err_msg)
+                if log_callback:
+                    log_callback(err_msg)
+                raise
+
 
     # Default: open CMD and activate environment
     if os.name == "nt":

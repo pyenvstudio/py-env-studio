@@ -143,7 +143,7 @@ class PyEnvStudio(ctk.CTk):
         self.icons = self._load_icons()
         self._setup_ui()
         self._setup_logging()
-        
+
     def _setup_config(self):
         self.config = ConfigParser()
         self.config.read(get_config_path())
@@ -177,7 +177,7 @@ class PyEnvStudio(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
 
         try:
-            with pkg_resources.path('py_env_studio.ui.static.icons', 'pes-icon-default.ico') as p:
+            with pkg_resources.path('py_env_studio.ui.static.icons', 'pes-transparrent-icon-default.ico') as p:
                 self.icon = ImageTk.PhotoImage(file=str(p))
 
             # Clear default icon and set new one with delay for reliability on Windows
@@ -457,14 +457,44 @@ class PyEnvStudio(ctk.CTk):
             if not row:
                 return
             env = self.env_tree.item(row)['values'][0]
-            env_path = os.path.join(self.VENV_DIR, env)
+
+
+            if col == "#1":
+                recent_location = self.env_tree.item(row)['values'][1]
+                if recent_location and recent_location != "-":
+                    try:
+                        self.env_tree.selection_set(row)
+                    except Exception:
+                        pass
+                    self.selected_env_var.set(env)
+                    self.activate_button.configure(state="normal")
+                    self.dir_var.set(recent_location)
+                return
+            
+            if col == "#2":
+                recent_location = self.env_tree.item(row)['values'][1]
+                if recent_location and recent_location != "-":
+                    try:
+                        self.env_tree.selection_set(row)
+                    except Exception:
+                        pass
+                    self.selected_env_var.set(env)
+                    self.activate_button.configure(state="normal")
+                    self.dir_var.set(recent_location)
+
+                     # Copy location to clipboard
+                    self.clipboard_clear()
+                    self.clipboard_append(recent_location)
+                    self.update()  # ensures clipboard is updated
+                    # Log the copy action in the log window
+                    self.env_log_queue.put(f"Path:'{recent_location}' copied to clipboard!")
+                return
+
             if col == "#4":  # Rename
-                # ctk.CTkInputDialog
                 dialog = ctk.CTkInputDialog(
                     text=f"Enter new name for '{env}':",
                     title="Environment Rename"
                 )
-                # center dialog
                 dialog.geometry("+%d+%d" % (self.winfo_rootx() + 600, self.winfo_rooty() + 300))
                 new_name = dialog.get_input()
                 if new_name and new_name != env:
@@ -486,10 +516,20 @@ class PyEnvStudio(ctk.CTk):
                         callback=self.refresh_env_list
                     )
             elif col == "#7":  # More (... column)
-                # Show the More actions dialog
                 self.show_more_actions_dialog(env)
 
+        def on_tree_double_click(event):
+            col = self.env_tree.identify_column(event.x)
+            row = self.env_tree.identify_row(event.y)
+            if not row:
+                return
+
+            # Double click on name,recent,size,scanned -> trigger Activate button
+            if col in ("#1","#2","#3","#6"):
+                self.activate_button.invoke()
+
         self.env_tree.bind("<Button-1>", on_tree_click)
+        self.env_tree.bind("<Double-1>", on_tree_double_click)
 
         def on_tree_select(event):
             sel = self.env_tree.selection()
@@ -497,6 +537,7 @@ class PyEnvStudio(ctk.CTk):
                 env = self.env_tree.item(sel[0])['values'][0]
                 self.selected_env_var.set(env)
                 self.activate_button.configure(state="normal")
+
 
         self.env_tree.bind("<<TreeviewSelect>>", on_tree_select)
 
@@ -701,8 +742,8 @@ class PyEnvStudio(ctk.CTk):
             return
         self.activate_button.configure(state="disabled")
         self.run_async(
-            lambda: activate_env(env, directory, open_with),
-            success_msg=f"Environment '{env}' activated successfully.",
+            lambda: activate_env(env, directory, open_with, log_callback=lambda msg: self.env_log_queue.put(msg)),
+            success_msg=f"Environment '{env}' activated successfully in {open_with}.",
             error_msg="Failed to activate environment",
             callback=lambda: self.activate_button.configure(state="normal")
         )
