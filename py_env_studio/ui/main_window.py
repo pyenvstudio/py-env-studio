@@ -312,7 +312,7 @@ class PyEnvStudio(ctk.CTk):
         except:
             img = None
         self.lbl(sb, text="", image=img).grid(row=0, column=0, padx=10, pady=(10, 20))
-        self.btn(sb, "About", self.show_about_dialog, self.icons.get("about"), width=150).grid(row=4, column=0, padx=10, pady=(10, 20), sticky="ew")
+        # self.btn(sb, "About", self.show_about_dialog, self.icons.get("about"), width=150).grid(row=4, column=0, padx=10, pady=(10, 20), sticky="ew")
         self.lbl(sb, "Appearance Mode:", anchor="w").grid(row=5, column=0, padx=10, pady=(10, 0), sticky="w")
         opt = self.optmenu(sb, ["Light", "Dark", "System"], self.change_appearance_mode_event, width=150)
         opt.grid(row=6, column=0, padx=10, pady=5)
