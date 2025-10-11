@@ -1,4 +1,4 @@
-import tkinter
+import tkinter,json
 from tkinter import messagebox, filedialog
 import ctypes
 import customtkinter as ctk
@@ -9,12 +9,13 @@ from datetime import datetime as DT
 
 from py_env_studio.core.env_manager import (
     create_env,rename_env , list_envs, delete_env, activate_env, get_env_data, search_envs,set_env_data,
+    _extract_python_version,
     VENV_DIR
 )
 
 from py_env_studio.core.pip_tools import (
     list_packages, install_package, uninstall_package, update_package,
-    export_requirements, import_requirements
+    export_requirements, import_requirements, check_outdated_packages
 )
 
 from py_env_studio.utils.vulneribility_scanner import DBHelper, SecurityMatrix
@@ -145,19 +146,40 @@ class PyEnvStudio(ctk.CTk):
         self._setup_logging()
 
     def _setup_config(self):
-        self.config = ConfigParser()
-        self.config.read(get_config_path())
+        self.app_config = ConfigParser()
+        self.app_config.read(get_config_path())
         self.VENV_DIR = os.path.expanduser(
-            self.config.get('settings', 'venv_dir', fallback='~/.venvs')
+            self.app_config.get('settings', 'venv_dir', fallback='~/.venvs')
         )
+        self.version = self.app_config.get('project', 'version', fallback='1.0.0')
 
     def _setup_vars(self):
         self.env_search_var = tkinter.StringVar()
         self.selected_env_var = tkinter.StringVar()
         self.dir_var = tkinter.StringVar()
-        self.open_with_var = tkinter.StringVar(value="CMD")
+        # Load open_with tools from config or default
+        self.open_with_tools = self._load_open_with_tools()
+        self.open_with_var = tkinter.StringVar(value=self.open_with_tools[0] if self.open_with_tools else "CMD")
+        self.choosen_python_var = tkinter.StringVar()
         self.env_log_queue = queue.Queue()
-        self.pkg_log_queue = queue.Queue()
+        self.env_log_queue = queue.Queue()
+
+    def _load_open_with_tools(self):
+        # Use env_manager dynamic tool logic
+        from py_env_studio.core.env_manager import get_available_tools
+        tools = get_available_tools()
+        names = [t["name"] for t in tools]
+        if "Add Tool..." not in names:
+            names.append("Add Tool...")
+        return names
+
+    def _save_open_with_tools(self):
+        # Save current open_with_tools to config via env_manager
+        from py_env_studio.core.env_manager import add_tool
+        # Only save user-added tools (skip 'Add Tool...')
+        for t in self.open_with_tools:
+            if t != "Add Tool...":
+                add_tool(t)
 
     def _setup_window(self):
         # Add Windows taskbar icon fix at the start
@@ -231,10 +253,54 @@ class PyEnvStudio(ctk.CTk):
 
     # ===== UI SETUP =====
     def _setup_ui(self):
+        self._setup_menubar()
         self._setup_sidebar()
         self._setup_tabview()
         self._setup_env_tab()
         self._setup_pkg_tab()
+        self._setup_console()
+
+
+    def _setup_menubar(self):
+        menubar = tkinter.Menu(self)
+
+        # === File Menu ===
+        file_menu = tkinter.Menu(menubar, tearoff=0)
+        # Use the _pkg_install_section for install package dialog
+        file_menu.add_command(label="Install Package", command=self.show_install_package_dialog)
+
+        file_menu.add_command(label="Install Requirements", command=self.install_requirements)
+        file_menu.add_command(label="Export Packages", command=self.export_packages)
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.quit)
+
+        # === Edit Menu ===
+        edit_menu = tkinter.Menu(menubar, tearoff=0)
+        # edit_menu.add_command(label="Rename Env", command=lambda: self.rename_selected_env())
+        # edit_menu.add_command(label="Delete Env", command=lambda: self.delete_selected_env())
+
+        # === View Menu ===
+        view_menu = tkinter.Menu(menubar, tearoff=0)
+        view_menu.add_command(label="Refresh Environments", command=self.refresh_env_list)
+
+        # === Tools Menu ===
+        tools_menu = tkinter.Menu(menubar, tearoff=0)
+        tools_menu.add_command(label="Scan Now", command=lambda: self.scan_environment_now(self.selected_env_var.get()))
+        tools_menu.add_command(label="Vulnerability Report", command=lambda: self.show_vulnerability_report(self.selected_env_var.get()))
+        tools_menu.add_command(label="Check for Package Updates", command=lambda: self.check_for_package_updates(self.selected_env_var.get()))
+
+        # === Help Menu ===
+        help_menu = tkinter.Menu(menubar, tearoff=0)
+        help_menu.add_command(label="About", command=self.show_about_dialog)
+        # help_menu.add_command(label="Check for Updates", command=self.check_outdated_packages)
+
+        # === set menubar ===
+        menubar.add_cascade(label="File", menu=file_menu)
+        # menubar.add_cascade(label="Edit", menu=edit_menu)
+        menubar.add_cascade(label="View", menu=view_menu)
+        menubar.add_cascade(label="Tools", menu=tools_menu)
+        menubar.add_cascade(label="Help", menu=help_menu)
+        self.config(menu=menubar)
 
     def _setup_sidebar(self):
         sb = self.frame(self, width=self.theme.SIDEBAR_WIDTH, corner_radius=0)
@@ -273,24 +339,53 @@ class PyEnvStudio(ctk.CTk):
         self._env_activate_section(env_tab)
         self._env_search_section(env_tab)
         self._env_list_section(env_tab)
-        self._env_console_section(env_tab)
 
     def _env_create_section(self, parent):
+
         f = self.frame(parent, corner_radius=12, border_width=1, border_color=self.theme.BORDER_COLOR)
         f.grid(row=0, column=0, columnspan=2, padx=10, pady=(10, 5), sticky="ew")
         f.grid_columnconfigure(1, weight=1)
+
+        # Environment name label and entry
         self.lbl(f, "New Environment Name:").grid(row=0, column=0, padx=(10, 5), pady=5, sticky="w")
         self.entry_env_name = self.entry(f, "Enter environment name")
         self.entry_env_name.grid(row=0, column=1, padx=(0, 10), pady=5, sticky="ew")
+
+        # Python path label, entry, and browse button on row 1
         self.lbl(f, "Python Path (Optional):").grid(row=1, column=0, padx=(10, 5), pady=5, sticky="w")
-        self.entry_python_path = self.entry(f, "Enter Python interpreter path")
+
+        # Smaller width for python path entry to fit button and option menu on same row
+        self.entry_python_path = self.entry(f, "Enter Python interpreter path", width=180)
         self.entry_python_path.grid(row=1, column=1, padx=(0, 5), pady=5, sticky="ew")
-        self.btn(f, "Browse", self.browse_python_path, width=80).grid(row=1, column=2, padx=(5, 10), pady=5)
+
+        self.btn(f, "Browse", self.browse_python_path, width=80).grid(row=1, column=2, padx=(5, 5), pady=5)
+
+        # "or select:" label next to browse button
+        from py_env_studio.core.env_manager import list_pythons
+        self.lbl(f, "or select:").grid(row=1, column=3, padx=(5, 5), pady=5, sticky="w")
+
+        # OptionMenu for python interpreters on same row, next column
+        self.available_python = self.optmenu(
+            f,
+            list_pythons(),
+            var=self.choosen_python_var,
+            cmd=self.browse_python_path,
+            width=150
+        )
+        self.available_python.grid(row=1, column=4, padx=(5, 10), pady=5, sticky="w")
+
+        # Upgrade pip checkbox below, full width
         self.checkbox_upgrade_pip = self.chk(f, "Upgrade pip during creation")
         self.checkbox_upgrade_pip.select()
-        self.checkbox_upgrade_pip.grid(row=2, column=0, columnspan=3, padx=10, pady=5, sticky="w")
+        self.checkbox_upgrade_pip.grid(row=2, column=0, columnspan=5, padx=10, pady=5, sticky="w")
+
+        # show python version information label below checkbox
+        self.python_version_info = self.lbl(f, "USING PYTHON: Default", font=self.theme.FONT_BOLD, text_color=self.theme.HIGHLIGHT_COLOR)
+        self.python_version_info.grid(row=3, column=0, columnspan=5, padx=10, pady=5, sticky="w")
+
+        # Create environment button below
         self.btn_create_env = self.btn(f, "Create Environment", self.create_env, self.icons.get("create-env"))
-        self.btn_create_env.grid(row=3, column=0, columnspan=3, padx=10, pady=5)
+        self.btn_create_env.grid(row=4, column=0, columnspan=5, padx=10, pady=5)
 
     def _env_activate_section(self, parent):
         p = self.frame(parent, corner_radius=12, border_width=1, border_color=self.theme.BORDER_COLOR)
@@ -301,10 +396,38 @@ class PyEnvStudio(ctk.CTk):
         self.dir_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
         self.btn(p, "Browse", self.browse_dir, width=80).grid(row=0, column=2, padx=5, pady=5)
         self.lbl(p, "Open With:", font=self.theme.FONT_BOLD).grid(row=0, column=3, padx=(10, 5), pady=5, sticky="e")
-        self.open_with_dropdown = self.optmenu(p, ["CMD", "VS-Code", "PyCharm"], var=self.open_with_var, width=100)
+        self.open_with_dropdown = self.optmenu(p, self.open_with_tools, cmd=self.on_open_with_change, var=self.open_with_var, width=120)
         self.open_with_dropdown.grid(row=0, column=4, padx=5, pady=5)
         self.activate_button = self.btn(p, "Activate", self.activate_with_dir, self.icons.get("activate-env"), width=100)
         self.activate_button.grid(row=0, column=5, padx=(5, 10), pady=5)
+
+    def on_open_with_change(self, value):
+        if value == "Add Tool...":
+            dialog = ctk.CTkInputDialog(text="Enter tool name (and optionally path, e.g. Sublime:/path/to/sublime):", title="Add Open With Tool")
+            dialog.geometry("+%d+%d" % (self.winfo_rootx() + 600, self.winfo_rooty() + 300))
+            entry = dialog.get_input()
+            if entry:
+                if ':' in entry:
+                    name, path = entry.split(':', 1)
+                else:
+                    name, path = entry, None
+                from py_env_studio.core.env_manager import add_tool
+                add_tool(name, path)
+                # Reload tools
+                self.open_with_tools = self._load_open_with_tools()
+                self.open_with_dropdown.configure(values=self.open_with_tools)
+                self.open_with_var.set(name)
+
+    def add_open_with_tool(self):
+        # Prompt user to add a new tool
+        dialog = ctk.CTkInputDialog(text="Enter tool name to add (e.g. Sublime, Atom):", title="Add Open With Tool")
+        dialog.geometry("+%d+%d" % (self.winfo_rootx() + 600, self.winfo_rooty() + 300))
+        tool_name = dialog.get_input()
+        if tool_name and tool_name not in self.open_with_tools:
+            self.open_with_tools.append(tool_name)
+            self._save_open_with_tools()
+            self.open_with_dropdown.configure(values=self.open_with_tools)
+            self.open_with_var.set(tool_name)
 
     def _env_search_section(self, parent):
         f = self.frame(parent, corner_radius=12, border_width=1, border_color=self.theme.BORDER_COLOR)
@@ -319,9 +442,10 @@ class PyEnvStudio(ctk.CTk):
         self.env_scrollable_frame.grid_columnconfigure(0, weight=1)
         self.refresh_env_list()
 
-    def _env_console_section(self, parent):
-        self.env_console = ctk.CTkTextbox(parent, height=self.theme.CONSOLE_HEIGHT, state="disabled", font=self.theme.FONT_CONSOLE)
-        self.env_console.grid(row=6, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
+    def _setup_console(self):
+
+        self.console_frame = ctk.CTkTextbox(self, height=self.theme.CONSOLE_HEIGHT, state="disabled", font=self.theme.FONT_CONSOLE)
+        self.console_frame.grid(row=6, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
 
     # === PKG TAB ===
     def _setup_pkg_tab(self):
@@ -332,7 +456,6 @@ class PyEnvStudio(ctk.CTk):
         self._pkg_install_section(pkg_tab)
         self._pkg_bulk_section(pkg_tab)
         self._pkg_manage_section(pkg_tab)
-        self._pkg_console_section(pkg_tab)
 
     def _pkg_header(self, parent):
         self.selected_env_label = self.lbl(parent, "", font=self.theme.FONT_BOLD)
@@ -367,11 +490,6 @@ class PyEnvStudio(ctk.CTk):
         self.packages_list_frame.grid(row=4, column=0, columnspan=2, padx=10, pady=5, sticky="nsew")
         self.packages_list_frame.grid_remove()
 
-    def _pkg_console_section(self, parent):
-        self.pkg_console = ctk.CTkTextbox(parent, height=self.theme.CONSOLE_HEIGHT, state="disabled",
-                                          font=self.theme.FONT_CONSOLE)
-        self.pkg_console.grid(row=5, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
-
     # === Environment & Package Logic follows (using Treeview for Packages) ===
     # ===== LOGIC: Async, logging, events, environment ops, package ops =====
     def run_async(self, func, success_msg=None, error_msg=None, callback=None):
@@ -388,8 +506,7 @@ class PyEnvStudio(ctk.CTk):
         threading.Thread(target=target, daemon=True).start()
 
     def process_log_queues(self):
-        self._process_log_queue(self.env_log_queue, self.env_console)
-        self._process_log_queue(self.pkg_log_queue, self.pkg_console)
+        self._process_log_queue(self.env_log_queue, self.console_frame)
         self.after(100, self.process_log_queues)
 
     def _process_log_queue(self, q, console):
@@ -416,17 +533,19 @@ class PyEnvStudio(ctk.CTk):
         style.configure("Treeview.Heading", font=self.theme.FONT_BOLD)
 
     # ===== ENVIRONMENTS TABLE =====
+    
     def refresh_env_list(self):
         for widget in self.env_scrollable_frame.winfo_children():
             widget.destroy()
         envs = search_envs(self.env_search_var.get())
         # Updated columns - replaced SCAN_NOW with MORE
-        columns = ("ENVIRONMENT", "LAST_LOCATION", "SIZE", "RENAME", "DELETE", "LAST_SCANNED", "MORE")
+        columns = ("ENVIRONMENT", "PYTHON_VERSION", "LAST_LOCATION", "SIZE", "RENAME", "DELETE", "LAST_SCANNED", "MORE")
         self.env_tree = ttk.Treeview(
             self.env_scrollable_frame, columns=columns, show="headings", height=8, selectmode="browse"
         )
         for col, text, width, anchor in [
             ("ENVIRONMENT", "Environment", 220, "w"),
+            ("PYTHON_VERSION", "Python Version", 120, "center"),
             ("LAST_LOCATION", "Recent Location", 160, "center"),
             ("SIZE", "Size", 100, "center"),
             ("RENAME", "Rename", 80, "center"),
@@ -443,6 +562,7 @@ class PyEnvStudio(ctk.CTk):
             data = get_env_data(env)
             self.env_tree.insert("", "end", values=(
                 env,
+                data.get("python_version", "-"),
                 data.get("recent_location", "-"),
                 data.get("size", "-"),
                 "🖊",
@@ -458,9 +578,8 @@ class PyEnvStudio(ctk.CTk):
                 return
             env = self.env_tree.item(row)['values'][0]
 
-
-            if col == "#1":
-                recent_location = self.env_tree.item(row)['values'][1]
+            if col == "#1" or col == "#2"  or col == "#4" or col == "#7":  # Name| Version | Size | Last Scanned
+                recent_location = self.env_tree.item(row)['values'][2]
                 if recent_location and recent_location != "-":
                     try:
                         self.env_tree.selection_set(row)
@@ -471,8 +590,8 @@ class PyEnvStudio(ctk.CTk):
                     self.dir_var.set(recent_location)
                 return
             
-            if col == "#2":
-                recent_location = self.env_tree.item(row)['values'][1]
+            if col == "#3":  # Recent Location
+                recent_location = self.env_tree.item(row)['values'][2]
                 if recent_location and recent_location != "-":
                     try:
                         self.env_tree.selection_set(row)
@@ -490,7 +609,7 @@ class PyEnvStudio(ctk.CTk):
                     self.env_log_queue.put(f"Path:'{recent_location}' copied to clipboard!")
                 return
 
-            if col == "#4":  # Rename
+            if col == "#5":  # Rename
                 dialog = ctk.CTkInputDialog(
                     text=f"Enter new name for '{env}':",
                     title="Environment Rename"
@@ -507,7 +626,7 @@ class PyEnvStudio(ctk.CTk):
                         error_msg="Failed to rename environment",
                         callback=self.refresh_env_list
                     )
-            elif col == "#5":  # Delete
+            elif col == "#6":  # Delete
                 if messagebox.askyesno("Confirm", f"Delete environment '{env}'?"):
                     self.run_async(
                         lambda: delete_env(env, log_callback=lambda msg: self.env_log_queue.put(msg)),
@@ -515,7 +634,7 @@ class PyEnvStudio(ctk.CTk):
                         error_msg="Failed to delete environment",
                         callback=self.refresh_env_list
                     )
-            elif col == "#7":  # More (... column)
+            elif col == "#8":  # More (... column)
                 self.show_more_actions_dialog(env)
 
         def on_tree_double_click(event):
@@ -524,8 +643,8 @@ class PyEnvStudio(ctk.CTk):
             if not row:
                 return
 
-            # Double click on name,recent,size,scanned -> trigger Activate button
-            if col in ("#1","#2","#3","#6"):
+            # Double click on name,recent,size,more -> trigger Activate button
+            if col in ("#1","#3","#4","#7"):
                 self.activate_button.invoke()
 
         self.env_tree.bind("<Button-1>", on_tree_click)
@@ -600,6 +719,101 @@ class PyEnvStudio(ctk.CTk):
             callback=self.refresh_env_list
         )
 
+    def show_updatable_packages(self, updatable_packages):
+        if not updatable_packages:
+            show_info("All packages are up to date.")
+            return
+
+        # Create a new window to display updatable packages
+        top = ctk.CTkToplevel(self)
+        top.title("Updatable Packages")
+        top.geometry("500x320")
+        top.transient(self)
+        top.grab_set()
+
+        # Center the dialog
+        top.geometry(f"+{self.winfo_rootx() + 600}+{self.winfo_rooty() + 300}")
+
+        # Configure grid
+        top.grid_columnconfigure(0, weight=1)
+        top.grid_rowconfigure(0, weight=1)
+
+        # Treeview for updatable packages
+        columns = ("PACKAGE", "CURRENT_VERSION", "NEW_VERSION")
+        tree = ttk.Treeview(top, columns=columns, show="headings", height=10, selectmode="extended")
+        for col, text, width, anchor in [
+            ("PACKAGE", "Package", 140, "w"),
+            ("CURRENT_VERSION", "Current Version", 100, "center"),
+            ("NEW_VERSION", "New Version", 100, "center"),
+           
+        ]:
+            tree.heading(col, text=text)
+            tree.column(col, width=width, anchor=anchor)
+        tree.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+
+        for pkg_name, current_version, new_version, _ in updatable_packages:
+            tree.insert("", "end", values=(pkg_name, current_version, new_version))
+
+        def on_pkg_click(event):
+            col = tree.identify_column(event.x)
+            row = tree.identify_row(event.y)
+            if not row:
+                return
+            if col == "#5":  # Action column
+                pkg_name = tree.item(row)["values"][0]
+                self.update_installed_package(self.selected_env_var.get().strip(), pkg_name)
+
+        tree.bind("<Button-1>", on_pkg_click)
+
+        def update_selected_packages():
+            selected_items = tree.selection()
+            if not selected_items:
+                show_info("No packages selected for update.")
+                return
+            for item in selected_items:
+                pkg_name = tree.item(item)["values"][0]
+                self.update_installed_package(self.selected_env_var.get().strip(), pkg_name)
+
+        # Update Selected button
+        btn_update = self.btn(top, "Update Selected", update_selected_packages)
+        btn_update.grid(row=1, column=0, pady=(0, 10))
+
+        # Close button
+        btn_close = self.btn(top, "Close", top.destroy)
+        btn_close.grid(row=2, column=0, pady=(0, 10))
+
+    def check_for_package_updates(self, env_name):
+        """Check for package updates in the selected environment."""
+        if not env_name:
+            show_error("Please select an environment to check for updates.")
+            return
+
+        def task():
+            try:
+                # check_outdated_packages returns a JSON string
+                result_json = check_outdated_packages(env_name, log_callback=lambda msg: self.env_log_queue.put(msg))
+                updatable_packages = []
+                if result_json:
+                    data = json.loads(result_json)
+                    # Expecting: [{"name": ..., "version": ..., "latest_version": ..., "latest_filetype": ...}, ...]
+                    for pkg in data:
+                        updatable_packages.append((
+                            pkg.get("name", ""),
+                            pkg.get("version", ""),
+                            pkg.get("latest_version", ""),
+                            pkg.get("latest_filetype", "")
+                        ))
+                self.after(0, lambda: self.show_updatable_packages(updatable_packages))
+            except Exception as e:
+                self.after(0, lambda: show_error(f"Failed to check for package updates: {str(e)}"))
+
+        self.run_async(
+            task,
+            success_msg=None,
+            error_msg=None,
+            callback=None
+        )
+
     # ===== PACKAGES TABLE =====
     def view_installed_packages(self):
         env_name = self.selected_env_var.get().strip()
@@ -659,26 +873,37 @@ class PyEnvStudio(ctk.CTk):
             show_error(f"Failed to list packages: {str(e)}")
 
     # ===== PACKAGE OPS =====
-    def install_package(self):
-        env_name = self.selected_env_var.get().strip()
-        package_name = self.entry_package_name.get().strip()
+    def _install_package_workflow(self, env_name, package_name, confirm=True, on_complete=None, entry_widget=None, button_widget=None):
+        """Reusable install package workflow for both tab and menubar."""
         if not env_name or not package_name:
             show_error("Please select an environment and enter a package name.")
             return
-        if self.checkbox_confirm_install.get() and not messagebox.askyesno(
+        if confirm and not messagebox.askyesno(
             "Confirm", f"Install '{package_name}' in '{env_name}'?"):
             return
-        self.btn_install_package.configure(state="disabled")
+        if button_widget:
+            button_widget.configure(state="disabled")
         self.run_async(
             lambda: install_package(env_name, package_name,
-                                    log_callback=lambda msg: self.pkg_log_queue.put(msg)),
+                                    log_callback=lambda msg: self.env_log_queue.put(msg)),
             success_msg=f"Package '{package_name}' installed in '{env_name}'.",
             error_msg="Failed to install package",
             callback=lambda: [
-                self.entry_package_name.delete(0, tkinter.END),
-                self.btn_install_package.configure(state="normal"),
-                self.view_installed_packages()
+                entry_widget.delete(0, tkinter.END) if entry_widget else None,
+                button_widget.configure(state="normal") if button_widget else None,
+                self.view_installed_packages() if on_complete is None else on_complete()
             ]
+        )
+
+    def install_package(self):
+        env_name = self.selected_env_var.get().strip()
+        package_name = self.entry_package_name.get().strip()
+        self._install_package_workflow(
+            env_name,
+            package_name,
+            confirm=bool(self.checkbox_confirm_install.get()),
+            entry_widget=self.entry_package_name,
+            button_widget=self.btn_install_package
         )
 
     def delete_installed_package(self, env_name, package_name):
@@ -687,7 +912,7 @@ class PyEnvStudio(ctk.CTk):
             return
         self.run_async(
             lambda: uninstall_package(env_name, package_name,
-                                      log_callback=lambda msg: self.pkg_log_queue.put(msg)),
+                                      log_callback=lambda msg: self.env_log_queue.put(msg)),
             success_msg=f"Package '{package_name}' uninstalled from '{env_name}'.",
             error_msg="Failed to uninstall package",
             callback=lambda: self.view_installed_packages()
@@ -696,7 +921,7 @@ class PyEnvStudio(ctk.CTk):
     def update_installed_package(self, env_name, package_name):
         self.run_async(
             lambda: update_package(env_name, package_name,
-                                   log_callback=lambda msg: self.pkg_log_queue.put(msg)),
+                                   log_callback=lambda msg: self.env_log_queue.put(msg)),
             success_msg=f"Package '{package_name}' updated in '{env_name}'.",
             error_msg="Failed to update package",
             callback=lambda: self.view_installed_packages()
@@ -713,7 +938,7 @@ class PyEnvStudio(ctk.CTk):
             self.btn_install_requirements.configure(state="disabled")
             self.run_async(
                 lambda: import_requirements(env_name, file_path,
-                                            log_callback=lambda msg: self.pkg_log_queue.put(msg)),
+                                            log_callback=lambda msg: self.env_log_queue.put(msg)),
                 success_msg=f"Requirements from '{file_path}' installed in '{env_name}'.",
                 error_msg="Failed to install requirements",
                 callback=lambda: self.btn_install_requirements.configure(state="normal")
@@ -734,9 +959,11 @@ class PyEnvStudio(ctk.CTk):
 
     # ===== ENV OPS =====
     def activate_with_dir(self):
+        from py_env_studio.core.integration import activate_env
         env = self.selected_env_var.get()
         directory = self.dir_var.get().strip() or None
         open_with = self.open_with_var.get() or None
+
         if not env:
             show_error("Please select an environment to activate.")
             return
@@ -748,7 +975,34 @@ class PyEnvStudio(ctk.CTk):
             callback=lambda: self.activate_button.configure(state="normal")
         )
 
-    def browse_python_path(self):
+
+    def show_detected_version(self, path):
+        version = _extract_python_version(path)
+        if not version:
+            detected_version = "Please choose valid python or leave empty for default"
+            # Set error color here for immediate feedback
+            self.python_version_info.configure(
+                text=f"USING PYTHON: {detected_version}",
+                text_color=self.theme.ERROR_COLOR,
+            )
+            self.entry_python_path.delete(0, tkinter.END)
+            self.entry_python_path.insert(0, "")
+        else:
+            detected_version = version
+            # Set highlight color for success
+            self.python_version_info.configure(
+                text=f"USING PYTHON: {detected_version}",
+                text_color=self.theme.HIGHLIGHT_COLOR,
+            )
+        return detected_version
+
+    def browse_python_path(self, choice=None):
+        if choice:
+            self.entry_python_path.delete(0, tkinter.END)
+            self.entry_python_path.insert(0, choice)
+            self.choosen_python_var.set("")
+            self.show_detected_version(choice)
+            return
         selected = filedialog.askopenfilename(
             title="Select Python Interpreter",
             filetypes=[("Python Executable", "python.exe"), ("All Files", "*")]
@@ -756,6 +1010,8 @@ class PyEnvStudio(ctk.CTk):
         if selected:
             self.entry_python_path.delete(0, tkinter.END)
             self.entry_python_path.insert(0, selected)
+            self.choosen_python_var.set("")
+            self.show_detected_version(selected)
 
     def browse_dir(self):
         selected = filedialog.askdirectory()
@@ -798,7 +1054,7 @@ class PyEnvStudio(ctk.CTk):
             return
         self.btn_create_env.configure(state="disabled")
         self.run_async(
-            lambda: create_env(env_name, python_path, self.checkbox_upgrade_pip.get(),
+            lambda: create_env(env_name, python_path, bool(self.checkbox_upgrade_pip.get()),
                                log_callback=lambda msg: self.env_log_queue.put(msg)),
             success_msg=f"Environment '{env_name}' created successfully.",
             error_msg="Failed to create environment",
@@ -811,9 +1067,29 @@ class PyEnvStudio(ctk.CTk):
         )
 
     def show_about_dialog(self):
-        show_info("PyEnvStudio: Manage Python virtual environments and packages.\n\n"
-                  "Created by: Wasim Shaikh\nVersion: 2.0.2\n\nVisit: https://github.com/pyenvstudio")
+        show_info(f"PyEnvStudio: Manage Python virtual environments and packages.\n\n"
+                  f"Created by: Wasim Shaikh\nVersion: {self.version}\n\nVisit: https://github.com/pyenvstudio")
 
+    def show_install_package_dialog(self):
+        """Show a dialog to install a package in the selected environment."""
+        env_name = self.selected_env_var.get().strip()
+        if not env_name or not os.path.exists(os.path.join(self.VENV_DIR, env_name)):
+            show_error("Please select a valid environment before installing a package.")
+            return
+
+        dialog = ctk.CTkInputDialog(
+            text=f"Enter package name to install in '{env_name}':",
+            title="Install Package"
+        )
+        dialog.geometry("+%d+%d" % (self.winfo_rootx() + 600, self.winfo_rooty() + 300))
+        package_name = dialog.get_input()
+        if package_name:
+            self._install_package_workflow(
+                env_name,
+                package_name,
+                confirm=True,
+                on_complete=self.view_installed_packages
+            )
 
 # ===== RUN APP =====
 if __name__ == "__main__":

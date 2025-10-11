@@ -12,6 +12,50 @@ def search_envs(query):
 
 
 # =============================
+def get_available_tools():
+    """
+    Get available open_with tools from config and system detection.
+    Returns a list of dicts: {"name": str, "path": str or None}
+    """
+    # Import integration logic for plug-and-play tool detection
+    from .integration import detect_tools
+    config_path = os.path.join(base_dir, 'config.ini')
+    parser = ConfigParser()
+    parser.read(config_path)
+    tools_raw = parser.get('settings', 'open_with_tools', fallback=None)
+    config_tools = []
+    if tools_raw:
+        for entry in tools_raw.split(','):
+            if ':' in entry:
+                name, path = entry.split(':', 1)
+                config_tools.append({"name": name.strip(), "path": path.strip()})
+            else:
+                config_tools.append({"name": entry.strip(), "path": None})
+    # System-detected tools (plug-and-play)
+    detected_tools = detect_tools()
+    # Merge config and detected tools, preferring config if duplicate names
+    all_tools = config_tools.copy()
+    config_names = {t["name"].lower() for t in config_tools}
+    for dt in detected_tools:
+        if dt["name"].lower() not in config_names:
+            all_tools.append(dt)
+    return all_tools
+
+def add_tool(name, path=None):
+    """
+    Add a new open_with tool to config.
+    """
+    config_path = os.path.join(base_dir, 'config.ini')
+    parser = ConfigParser()
+    parser.read(config_path)
+    tools_raw = parser.get('settings', 'open_with_tools', fallback='')
+    entries = [e for e in tools_raw.split(',') if e.strip()]
+    entry = f"{name}:{path}" if path else name
+    entries.append(entry)
+    parser.set('settings', 'open_with_tools', ','.join(entries))
+    with open(config_path, 'w', encoding='utf-8') as f:
+        parser.write(f)
+
 # Imports and Configuration
 # =============================
 import os
@@ -59,7 +103,7 @@ def _save_env_data(data):
     except Exception as e:
         logging.error(f"Failed to save env data: {e}")
 
-def set_env_data(env_name, recent_location=None, size=None,last_scanned=None):
+def set_env_data(env_name, recent_location=None, size=None,last_scanned=None,python_version=None):
     """
     Update the tracking data for an environment. Only updates provided fields.
     Structure: { env_name: {"recent_location": str, "size": str} }
@@ -73,6 +117,10 @@ def set_env_data(env_name, recent_location=None, size=None,last_scanned=None):
 
     if last_scanned is not None:
         entry['last_scanned'] = last_scanned
+
+    if python_version is not None:
+        entry['python_version'] = python_version
+
     data[env_name] = entry
     _save_env_data(data)
 
@@ -105,6 +153,8 @@ def is_valid_python(python_path):
     """
     return shutil.which(python_path) is not None and 'python' in python_path.lower()
 
+
+
 def _is_valid_env_name(name: str) -> bool:
     """
     Validate environment name.
@@ -120,10 +170,11 @@ def create_env(name, python_path=None, upgrade_pip=False, log_callback=None):
     Create a virtual environment using the specified Python interpreter.
     """
     env_path = os.path.join(VENV_DIR, name)
+    python_version = _extract_python_version(python_path) if python_path else "default"
     python_path = 'python' if python_path is None else python_path
     try:
         if log_callback:
-            log_callback(f"Creating virtual environment '{name}' at {env_path} with Python: {python_path}")
+            log_callback(f"Creating virtual environment '{name}' at {env_path} with Python: {python_version}")
 
         if not os.path.exists(VENV_DIR):
             os.makedirs(VENV_DIR)
@@ -165,6 +216,11 @@ def create_env(name, python_path=None, upgrade_pip=False, log_callback=None):
             if process.returncode != 0:
                 raise subprocess.CalledProcessError(process.returncode, process.args)
         
+        # Save initial env data
+        size_mb = calculate_env_size_mb(env_path)
+        python_version = _extract_python_version(venv_python)
+        set_env_data(name, recent_location=env_path, size=size_mb, python_version=python_version)
+
         logging.info(f"Created environment at: {env_path} with Python: {python_path}")
         if log_callback:
             log_callback(f"Environment '{name}' created successfully")
@@ -255,6 +311,45 @@ def list_envs():
         return []
     return [d for d in os.listdir(VENV_DIR)
             if os.path.isdir(os.path.join(VENV_DIR, d)) and os.path.exists(os.path.join(VENV_DIR, d, 'pyvenv.cfg'))]
+def _extract_python_version(python_path):
+    """
+    Extract the Python version from the given executable path.
+    Returns version string like '3.9.1' or None if not valid.
+    """
+    try:
+        output = subprocess.check_output([python_path, "--version"], text=True).strip()
+        if output.startswith("Python "):
+            return output.split()[1]
+    except Exception:
+        return None
+    return None
+
+def list_pythons():
+    """
+    List all Python executables available on the system PATH.
+    Returns a list of paths to Python executables.
+    """
+
+    path_list = set()
+    paths = os.environ.get("PATH", "").split(os.pathsep)
+
+    # Regex to match python executables with optional version and extensions
+    pattern = re.compile(r'^python(\d+(\.\d+)?)?(\.exe)?$', re.IGNORECASE)
+    id = 0
+    for path in paths:
+        if os.path.isdir(path):
+            try:
+                for file in os.listdir(path):
+                    if pattern.match(file):
+                        full_path = os.path.join(path, file)
+                        if is_valid_python(full_path):
+                            path_list.add(full_path)
+                           
+            except PermissionError:
+                # skip folders without permission
+                pass
+
+    return sorted(path_list)
 
 def delete_env(name, log_callback=None):
     """
@@ -287,78 +382,41 @@ def get_env_python(env_name):
     """
     return os.path.join(VENV_DIR, env_name, "Scripts" if os.name == "nt" else "bin", "python")
 
+import os
+import subprocess
+import logging
+import shutil
+
+from .integration import detect_tools
+
 def activate_env(env_name, directory=None, open_with=None, log_callback=None):
-    """
-    Activate the specified environment in a new CMD window (Windows only), or open the environment directory with an IDE.
-    Optionally open the environment at a specific directory or with a supported IDE (VSCode, PyCharm).
-    """
-    venv_activate_path = os.path.join(VENV_DIR, env_name, "Scripts" if os.name == "nt" else "bin", "activate")
-    env_dir = os.path.join(VENV_DIR, env_name)
-    target_dir = directory if directory else env_dir
+    venv_dir = os.path.join(VENV_DIR, env_name)
+    target_dir = directory or venv_dir
 
-    # Save recent location and update size
-    try:
-        env_path = os.path.join(VENV_DIR, env_name)
-        size_mb = calculate_env_size_mb(env_path)
-        set_env_data(env_name, recent_location=target_dir, size=size_mb)
-    except Exception as e:
-        logging.warning(f"Could not save recent location/size for {env_name}: {e}")
+    tools = detect_tools()
+    tool_entry = next((t for t in tools if t["name"].lower() == (open_with or "").lower()), None)
 
-    if not os.path.exists(venv_activate_path):
-        print(f"Environment '{env_name}' not found.")
+    if not tool_entry:
+        logging.error(f"Tool {open_with} not detected.")
         return
 
-    # If open_with is specified, open the directory with the selected IDE
-    if open_with and target_dir and os.path.isdir(target_dir):
-        if open_with.lower() == "vs-code":
-            vscode_dir = os.path.join(target_dir, ".vscode")
-            os.makedirs(vscode_dir, exist_ok=True)
-            settings_path = os.path.join(vscode_dir, "settings.json")
-            python_path = get_env_python(env_name)
-            settings = {}
-            if os.path.exists(settings_path):
-                try:
-                    with open(settings_path, "r", encoding="utf-8") as f:
-                        settings = json.load(f)
-                except Exception:
-                    settings = {}
-            settings["python.defaultInterpreterPath"] = python_path
-            if os.name == "nt":
-                scripts_dir = os.path.join(VENV_DIR, env_name, "Scripts")
-                command = f'cd /d {scripts_dir} && activate && cd /d {target_dir}'
-                shell_args = ["/K", command]
-                settings["terminal.integrated.defaultProfile.windows"] = "Command Prompt"
-                settings["terminal.integrated.profiles.windows"] = settings.get("terminal.integrated.profiles.windows", {})
-                settings["terminal.integrated.profiles.windows"]["Command Prompt"] = {
-                    "path": "cmd.exe",
-                    "args": shell_args
-                }
-                settings["terminal.integrated.cwd"] = scripts_dir
-            with open(settings_path, "w", encoding="utf-8") as f:
-                json.dump(settings, f, indent=4)
-            subprocess.Popen(["code", target_dir], shell=True)
-            if log_callback:
-                    log_callback(f"Opened VSCode in {target_dir} with interpreter {python_path} and auto-activation")
-            return
-        elif open_with.lower() == "pycharm":
-            try:
-                subprocess.Popen(["charm", target_dir], text=True)
-                return
-            except Exception as e:
-                err_msg = f"Failed to activate environment: {e}"
-                logging.error(err_msg)
-                if log_callback:
-                    log_callback(err_msg)
-                raise
+    tool_name = tool_entry["name"].lower()
+    tool_path = tool_entry["path"]
 
+    handler = TOOL_HANDLERS.get(tool_name)
+    if not handler:
+        logging.error(f"No handler defined for {tool_name}.")
+        return
 
-    # Default: open CMD and activate environment
-    if os.name == "nt":
-        command = f'start cmd /K "cd /d {target_dir} && {venv_activate_path}"'
-    else:
-        command = f'cd "{target_dir}" && source "{venv_activate_path}"'
-    subprocess.Popen(command, shell=True)
-
+    try:
+        handler(tool_path, venv_dir, target_dir)
+        if log_callback:
+            log_callback(f"Opened {tool_name} with environment {env_name}")
+    except Exception as e:
+        logging.error(f"Failed to activate env {env_name} with {tool_name}: {e}")
+        if log_callback:
+            log_callback(f"Failed to activate env {env_name} with {tool_name}: {e}")
+            
 def is_exact_env_active(python_exe_path):
     """
     Check if the current Python executable matches the given path (case-insensitive).

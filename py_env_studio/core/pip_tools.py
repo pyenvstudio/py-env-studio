@@ -1,4 +1,5 @@
 #pip_tools.py
+import json
 import subprocess
 import os
 import logging
@@ -135,6 +136,40 @@ def update_package(env_name, package, log_callback=None):
         logging.error(err_msg)
         raise
 
+def check_outdated_packages(env_name, log_callback=None):
+    """
+    Check for outdated packages in the specified environment.
+
+    Args:
+        env_name (str): Name of the environment.
+
+    Returns:
+        list: List of tuples containing (package_name, current_version, latest_version).
+    """
+    python_path = get_env_python(env_name)
+    try:
+        if log_callback:
+            log_callback(f"Checking for outdated packages in {env_name}")
+        result = subprocess.run([python_path, "-m", "pip", "list", "--outdated","--format=json"], capture_output=True, text=True, check=True)
+    
+        logging.info(f"Checked for outdated packages in {env_name}")
+        if log_callback:
+            log_callback(f"Checked for outdated packages successfully")
+            return result.stdout
+
+
+    except subprocess.CalledProcessError as e:
+        err_msg = f"Failed to check for updates in {env_name}: {e}"
+        if log_callback:
+            log_callback(err_msg)
+        logging.error(err_msg)
+        raise
+    except Exception as e:
+        err_msg = f"Unexpected error checking for updates in {env_name}: {e}"
+        if log_callback:
+            log_callback(err_msg)
+        logging.error(err_msg)
+        raise
 def export_requirements(env_name, file_path):
     """
     Export installed packages to a requirements.txt file.

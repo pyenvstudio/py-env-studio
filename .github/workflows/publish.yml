@@ -26,11 +26,13 @@ jobs:
           TAG_NAME=${GITHUB_REF#refs/tags/}
           echo "version=${TAG_NAME#v}" >> $GITHUB_OUTPUT
 
-      - name: Update pyproject.toml version
+      - name: Update pyproject.toml version and config.ini
         run: |
           VERSION=${{ steps.get_version.outputs.version }}
           sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" pyproject.toml
           echo "Updated pyproject.toml to version $VERSION"
+          sed -i "/^\[project\]/,/^\[/{s/^version *= *.*/version = ${VERSION}/}" py_env_studio/config.ini
+          echo "✅ Updated config.ini to version $VERSION"
 
       - name: Install build tools
         run: pip install build
