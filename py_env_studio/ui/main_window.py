@@ -6,6 +6,8 @@ import os
 from PIL import Image, ImageTk
 import importlib.resources as pkg_resources
 from datetime import datetime as DT
+import webbrowser
+
 
 from py_env_studio.core.env_manager import (
     create_env,rename_env , list_envs, delete_env, activate_env, get_env_data, search_envs,set_env_data,
@@ -292,6 +294,8 @@ class PyEnvStudio(ctk.CTk):
 
         # === Help Menu ===
         help_menu = tkinter.Menu(menubar, tearoff=0)
+        # read the docs link
+        help_menu.add_command(label="Documentation", command=self.open_documentation)
         help_menu.add_command(label="About", command=self.show_about_dialog)
         # help_menu.add_command(label="Check for Updates", command=self.check_outdated_packages)
 
@@ -764,7 +768,10 @@ class PyEnvStudio(ctk.CTk):
                 pkg_name = tree.item(row)["values"][0]
                 self.update_installed_package(self.selected_env_var.get().strip(), pkg_name)
 
+        # select desired
         tree.bind("<Button-1>", on_pkg_click)
+        # select all
+        tree.bind("<Control-a>", lambda event: tree.selection_set(tree.get_children()))
 
         def update_selected_packages():
             selected_items = tree.selection()
@@ -1070,6 +1077,9 @@ class PyEnvStudio(ctk.CTk):
     def show_about_dialog(self):
         show_info(f"PyEnvStudio: Manage Python virtual environments and packages.\n\n"
                   f"Created by: Wasim Shaikh\nVersion: {self.version}\n\nVisit: https://github.com/pyenvstudio")
+
+    def open_documentation(self):
+        webbrowser.open("https://py-env-studio.readthedocs.io/en/latest/")
 
     def show_preferences_dialog(self):
         """Show a dialog to set preferences"""

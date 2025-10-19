@@ -87,6 +87,8 @@ If you find **Py Env Studio** helpful, consider supporting me:
 
     py-env-studio
 
+Refer usage documentation here: https://py-env-studio.readthedocs.io/en/latest/
+
 <p align="center">
   <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/1.environment-screen.PNG?raw=true" alt="Environment Screen" width="400">
   <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/2.0.package-screen.PNG?raw=true" alt="Package Screen" width="400"><br>
