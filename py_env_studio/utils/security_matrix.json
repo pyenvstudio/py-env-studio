@@ -272,9 +272,9 @@
           }
         }
       },
-      "3": {
+      {"vulnerability_insights": {
         "metadata": {
-          "timestamp": "2025-08-17T09:51:55.078619+05:30",
+          "timestamp": "2025-08-31T21:04:54.722545+05:30",
           "package": "tensorflow",
           "version": "2.6.0",
           "ecosystem": "PyPI",
@@ -11893,7 +11893,7 @@
           },
           "trend_data": [
             {
-              "timestamp": "2025-08-17T09:51:55.078619+05:30",
+              "timestamp": "2025-08-31T21:04:54.722545+05:30",
               "total_vulnerabilities": 257,
               "fixed_vulnerabilities": 0
             }
@@ -11910,7 +11910,7 @@
           "centralized_management": {
             "tool": "Not specified",
             "integration_status": "Not integrated",
-            "last_scan": "2025-08-17T09:51:55.078619+05:30"
+            "last_scan": "2025-08-31T21:04:54.722545+05:30"
           },
           "compliance": [
             {
@@ -11937,11 +11937,11 @@
             "stakeholder_communication": "Not established"
           }
         }
-      },
+      }},
       
         "114": {
           "metadata": {
-            "timestamp": "2025-08-27T19:42:46.484580+05:30",
+            "timestamp": "2025-08-31T21:04:54.722545+05:30",
             "package": "certifi",
             "version": "latest",
             "ecosystem": "PyPI",
