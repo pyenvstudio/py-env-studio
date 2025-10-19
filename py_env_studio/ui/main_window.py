@@ -271,7 +271,7 @@ class PyEnvStudio(ctk.CTk):
 
         file_menu.add_command(label="Install Requirements", command=self.install_requirements)
         file_menu.add_command(label="Export Packages", command=self.export_packages)
-        file_menu.add_command(label="Preferences", command=self.show_preferences_dialog)
+        # file_menu.add_command(label="Preferences", command=self.show_preferences_dialog)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.quit)
 
