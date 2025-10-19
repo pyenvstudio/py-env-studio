@@ -162,15 +162,30 @@ Linux/macOS:
 
 **🚀 Roadmap**
 
-🏙️ Multiple Python based Environements 
+<del>🏙️ Multiple Python based Environements 
 
 🔍 Global package search
 
-⬆️ One-click upgrade of all packages
+<del>⬆️ One-click upgrade of all packages
 
 📝 Package version locking
 
 🐳 Dockerized version
+
+## 🌐 References & Network Access
+
+This project uses public APIs for core features:
+
+| Service | Purpose | URL |
+|----------|----------|-----|
+| PyPI | Package metadata | [pypi.org](https://pypi.org) |
+| deps.dev | Dependency data | [deps.dev](https://deps.dev) |
+| OSV.dev | Vulnerability info | [osv.dev](https://osv.dev) |
+
+Ensure HTTPS access to these domains.  
+APIs are public, read-only, no auth required.  
+
+**Terms:** [PSF](https://policies.python.org/pypi.org/Terms-of-Service/) · [Google](https://developers.google.com/terms) · [OSV](https://google.github.io/osv.dev/api/)
 
 
 **🤝 Contributing**

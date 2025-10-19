@@ -271,6 +271,7 @@ class PyEnvStudio(ctk.CTk):
 
         file_menu.add_command(label="Install Requirements", command=self.install_requirements)
         file_menu.add_command(label="Export Packages", command=self.export_packages)
+        file_menu.add_command(label="Preferences", command=self.show_preferences_dialog)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.quit)
 
@@ -1069,6 +1070,11 @@ class PyEnvStudio(ctk.CTk):
     def show_about_dialog(self):
         show_info(f"PyEnvStudio: Manage Python virtual environments and packages.\n\n"
                   f"Created by: Wasim Shaikh\nVersion: {self.version}\n\nVisit: https://github.com/pyenvstudio")
+
+    def show_preferences_dialog(self):
+        """Show a dialog to set preferences"""
+        # Load current preferences
+        pass
 
     def show_install_package_dialog(self):
         """Show a dialog to install a package in the selected environment."""
