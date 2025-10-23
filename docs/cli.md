@@ -1,41 +1,36 @@
 # ⌨️ CLI Reference
 
 ## Create environment
-```bash
-py-env-studio --create <<env_name>>
-```
+    py-env-studio --create <<env_name>>
 
 ## Create & upgrade pip
-```bash
-py-env-studio --create <<env_name>> --upgrade-pip
-```
+    py-env-studio --create <<env_name>> --upgrade-pip
 
 ## Delete environment
-```bash
-py-env-studio --delete <<env_name>>
-```
+    py-env-studio --delete <<env_name>>
 
 ## List all environments
-```bash
-py-env-studio --list
-```
+    py-env-studio --list
 
 ## Install package
-```bash
-py-env-studio --install <<env_name>>,numpy
-```
+    py-env-studio --install <<env_name>>,numpy
 
 ## Uninstall package
-```bash
-py-env-studio --uninstall <<env_name>>,numpy
-```
+    py-env-studio --uninstall <<env_name>>,numpy
 
 ## Export requirements
-```bash
-py-env-studio --export <<env_name>>,requirements.txt
-```
+    py-env-studio --export <<env_name>>,requirements.txt
 
 ## Import requirements
-```bash
-py-env-studio --import-reqs <<env_name>>,requirements.txt
-```
+    py-env-studio --import-reqs <<env_name>>,requirements.txt
+
+## Activating Environments
+Manually activate your environment after creation:
+
+Windows:
+
+    .\envs\<environment name>\Scripts\activate
+
+Linux/macOS:
+
+    source envs/<environment name>/bin/activate
