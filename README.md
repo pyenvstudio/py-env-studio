@@ -96,47 +96,6 @@ Refer usage documentation here: https://py-env-studio.readthedocs.io/en/latest/
   <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/1.2.2_vulneribility_scan_report.PNG?raw=true" alt="Package Screen" width="400">
 </p>
 
-### Command-Line Options (For Advanced Users)
-###### Create environment
-    py-env-studio --create <environment name>
-
-###### Create environment and upgrade pip
-    py-env-studio --create <environment name> --upgrade-pip
-
-###### Delete environment
-    py-env-studio --delete <environment name>
-
-###### List all environments
-    py-env-studio --list
-
-###### Activate environment (prints activation command)
-    py-env-studio --activate <environment name>
-
-###### Install package
-    py-env-studio --install <environment name>,numpy
-
-###### Uninstall package
-    py-env-studio --uninstall <environment name>,numpy
-
-###### Export requirements to file
-    py-env-studio --export <environment name>,requirements.txt
-
-###### Import requirements from file
-py-env-studio --import-reqs <environment name>,requirements.txt
-
-
-🔑 Activating Environments
-Manually activate your environment after creation:
-
-Windows:
-
-    .\envs\<environment name>\Scripts\activate
-
-Linux/macOS:
-
-    source envs/<environment name>/bin/activate
-
-
 **📁 Project Structure**
 
     py-env-studio/
