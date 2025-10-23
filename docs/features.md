@@ -1,8 +1,3 @@
-
----
-
-## 📝 `docs/features.md`
-```markdown
 # 🌟 Features
 
 - ➕ Create and delete environments

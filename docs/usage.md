@@ -6,11 +6,18 @@ This manual provides a comprehensive guide for using the Py Env Studio (PES) app
 
 ## Main Screen Overview
 
-The main screen consists of two primary tabs:
+The main screen consists:
+- **Side Bar** - Customize UI of PES tool 
 - **Environment Tab** - Manage Python virtual environments
 - **Package Tab** - Handle package installation and management
 
 ---
+## Side Bar - UI Customization
+### Appearance Mode
+Customize the theme mode with Light mode, Dark mode, or System mode.
+
+### UI Scaling
+As per your screen size and your needs you can modify the font and view size. 
 
 ## Environment Tab
 
@@ -21,29 +28,23 @@ To create a new Python virtual environment:
 1. Navigate to the **Environment Tab**
 2. Locate the **Create Environment** section
 3. **New Environment Name:** Enter a name for your environment in the input field
-4. **Python Path:** Select a Python installation from the dropdown (automatically detects all available Python installations on your system) or manually specify a Python path
+4. **Python Path:** Optionally select a Python installation from the dropdown (automatically detects all available Python installations on your system) or manually specify a Python path
 5. **Upgrade pip during creation:** Check this option to automatically upgrade pip to the latest version when creating the environment
 6. Click the **Create Environment** button to initialize the new environment
 
 ---
 
-### Activating an Environment
+### Configuring and Activating an Environment
 
-There are multiple ways to activate an environment:
+**Configuration and Activation**
 
-**Method 1: Using the Activate Environment Section**
+1. **Open at:** Enter the directory path where you want to activate the environment, or click **Browse** to select a folder from the file manager
+2. **Open with:** Select a tool to open alongside the activated environment (e.g., VSCode). You can add new tools to this list
+3. Now you can Actovates the environment using  **Activate Environment** button or using described other options below.
+4. **Shortcuts for Activating Environemnts using the Available Environments Table**
+Double-click on any of these columns row to activate the environment:
+**ENVIRONMENT | PYTHON VERSION | SIZE | LAST SCANNED**
 
-1. Locate the **Activate Environment** section in the Environment Tab
-2. **Open at:** Enter the directory path where you want to activate the environment, or click **Browse** to select a folder from the file manager
-3. **Open with:** Select a tool to open alongside the activated environment (e.g., VSCode). You can add new tools to this list
-4. Click the **Activate Environment** button
-
-**Method 2: From the Available Environments Table**
-
-Double-click on any of these columns to activate the environment:
-- **ENVIRONMENT** column
-- **PYTHON_VERSION** column
-- **LAST_SCANNED** column
 
 ---
 
@@ -60,12 +61,12 @@ All created environments are displayed in an interactive table with the followin
 | Column | Description | Action |
 |--------|-------------|--------|
 | **ENVIRONMENT** | Environment name | Double-click to activate the environment |
-| **PYTHON_VERSION** | Python version used | Double-click to activate the environment |
-| **LAST_LOCATION** | Last used directory path | Double-click to copy the path to clipboard |
-| **SIZE** | Environment folder size | Display only |
+| **PYTHON VERSION** | Python version used | Double-click to activate the environment |
+| **RECENT LOCATION** | Last used directory path | Click to copy the path to clipboard |
+| **SIZE** | Environment folder size | Double-click to activate the environment |
 | **RENAME** | Rename option | Click to rename the environment |
 | **DELETE** | Delete option | Click to delete the environment |
-| **LAST_SCANNED** | Last vulnerability scan date | Double-click to activate the environment |
+| **LAST SCANNED** | Last vulnerability scan date | Double-click to activate the environment |
 | **MORE** | Additional actions | Click to access vulnerability report and scan now options |
 
 ---
@@ -74,19 +75,21 @@ All created environments are displayed in an interactive table with the followin
 
 The Package Tab provides comprehensive package management capabilities for selected environments.
 
+**📌 Important Note:**
+><span style="color: red;">All package operations require selecting an environment from the environment table first.<span>
+
 ### Installing Packages
 
 **Single Package Installation:**
 
-1. Select the desired environment from the **Available Environments** table
-2. Go to **Menu → File → Install Packages**
-3. Enter the package name in the input field
-4. Click **OK** to install the package
+1. Go to **Packages Tab → Install Package Section**
+2. Enter the package name in the Package name field
+3. Click **Install Package** to install the package
 
 **Multiple Packages Installation (Requirements File):**
 
-1. Select the desired environment from the **Available Environments** table
-2. Go to **Menu → File → Install Requirements**
+1. Go to **Packages Tab → Install Package Section**
+2. Click **Install Requirements**
 3. Browse and select a text file containing package names (e.g., `requirements.txt`)
 4. The application reads the file and installs all listed packages automatically
 
@@ -96,10 +99,9 @@ The Package Tab provides comprehensive package management capabilities for selec
 
 To export installed packages to a requirements file:
 
-1. Select the desired environment from the **Available Environments** table
-2. Go to **Menu → File → Export Packages**
-3. Provide a filename in text format (e.g., `requirements.txt`)
-4. The application saves all installed packages to the specified file
+1. Go to **Packages Tab → Export Packages**
+2. Provide a filename in text format (e.g., `requirements.txt`).
+3. The application automatically exports all installed packages of selected environments.
 
 ---
 
@@ -107,15 +109,17 @@ To export installed packages to a requirements file:
 
 To view and manage packages in an environment:
 
-1. Select the desired environment from the **Available Environments** table
-2. Click the **Manage Packages** button
-3. A table view displays all installed packages with options to:
+1. Click the **Manage Packages** button
+2. A table view displays all installed packages with options to:
    - **Delete** individual packages
    - **Update** packages to their latest version
 
 ---
 
 ## Menu Options
+
+**📌 Important Note:**
+><span style="color: red;">All menu operations require selecting an environment from the environment table first.<span>
 
 ### File Menu
 
@@ -125,31 +129,27 @@ The File menu provides package installation and export operations:
 - **Install Requirements** - Install multiple packages from a requirements file
 - **Export Packages** - Export installed packages to a requirements file
 
-**Note:** All File menu operations require selecting an environment from the table first.
 
 ---
 
 ### View Menu
 
 **Refresh Environments:**
-
-1. Select the desired environment from the **Available Environments** table
-2. Go to **Menu → View → Refresh Environments**
-3. This refreshes the environment list and updates status if any changes were made outside the PES tool
+1. Go to **Menu → View → Refresh Environments**
+2. This refreshes the environment list and updates status if any changes were made outside the PES tool
 
 ---
 
 ### Tools Menu
 
-The Tools menu provides advanced features for environment analysis and maintenance. **Select an environment from the table before accessing Tools menu options.**
+The Tools menu provides advanced features for environment analysis and maintenance. 
 
 #### Scan Now
 
 Generates a comprehensive dependency and vulnerability report for the selected environment's packages.
 
-1. Select the desired environment from the table
-2. Go to **Menu → Tools → Scan Now**
-3. The tool analyzes dependencies and security vulnerabilities
+1. Go to **Menu → Tools → Scan Now**
+2. The tool analyzes dependencies and security vulnerabilities
 
 ---
 
@@ -157,13 +157,12 @@ Generates a comprehensive dependency and vulnerability report for the selected e
 
 Displays detailed vulnerability and dependency information for packages:
 
-1. Select the desired environment from the table
-2. Go to **Menu → Tools → Vulnerability Report**
-3. Select a package from the list
-4. View information across three tabs:
+1. Go to **Menu → Tools → Vulnerability Report**
+2. Select a package from the list
+3. View information across three tabs:
    - **Dependencies** - Shows the dependency tree and relationships
    - **Basic Details** - Displays package metadata and basic information
-   - **Scan Details** - *(Currently not implemented)*
+   - **Scan Details** - *(enterprise level external tool integration option [Compliance/ Training/ Incident Response]Currently not implemented)*
 5. An interactive graph visualizes dependencies and vulnerabilities
 
 ---
@@ -181,7 +180,7 @@ Identifies outdated packages and enables batch updating:
 4. Select packages to update:
    - **Ctrl + Click** to select multiple specific packages
    - **Ctrl + A** to select all packages
-5. Click **Update Selected** to upgrade the chosen packages to their latest versions
+5. Click **Update Selected** to upgrade the chosen packages to their latest versions.
 
 ---
 
