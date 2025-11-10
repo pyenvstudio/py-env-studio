@@ -75,7 +75,7 @@ If you find **Py Env Studio** helpful, consider supporting me:
 [![GitHub Sponsors](https://img.shields.io/badge/Sponsor%20on-GitHub-24292e?logo=github&style=for-the-badge)](https://github.com/sponsors/contactshaikhwasim)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-yellow?logo=buymeacoffee&style=for-the-badge)](https://buymeacoffee.com/contactshaikhwasim)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20me-ff5e5b?logo=ko-fi&logoColor=white&style=for-the-badge)](https://ko-fi.com/contactshaikhwasim)
-
+[![PayPal](https://img.shields.io/badge/Donate-PayPal-blue?logo=paypal&style=for-the-badge)](https://www.paypal.me/paypalwasimshaikh)
 
 
 ---
