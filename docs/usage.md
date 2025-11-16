@@ -171,16 +171,15 @@ Displays detailed vulnerability and dependency information for packages:
 
 Identifies outdated packages and enables batch updating:
 
-1. Select the desired environment from the table
-2. Go to **Menu → Tools → Check for Package Updates**
-3. A popup table displays:
+1. Go to **Menu → Tools → Check for Package Updates**
+2. A popup table displays:
    - Package name
    - Current version
    - New version available
-4. Select packages to update:
+3. Select packages to update:
    - **Ctrl + Click** to select multiple specific packages
    - **Ctrl + A** to select all packages
-5. Click **Update Selected** to upgrade the chosen packages to their latest versions.
+4. Click **Update Selected** to upgrade the chosen packages to their latest versions.
 
 ---
 
