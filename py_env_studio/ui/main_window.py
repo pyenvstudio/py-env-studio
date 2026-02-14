@@ -22,7 +22,7 @@ from py_env_studio.core.env_manager import (
     list_pythons, is_valid_python_version_detected,
     get_available_tools, add_tool
 )
-from py_env_studio.core.pip_tools import (
+from py_env_studio.core.package_manager import (
     list_packages, install_package, uninstall_package, update_package,
     export_requirements, import_requirements, check_outdated_packages)
 from py_env_studio.core.py_tonic import (
@@ -222,6 +222,7 @@ class PyEnvStudio(ctk.CTk):
 
 
     def _setup_logging(self):
+        # Initialize console logger with queue for UI display
         self.env_search_var.trace_add('write', lambda *_: self.refresh_env_list())
         self.after(100, self.process_log_queues)
 
@@ -335,7 +336,7 @@ class PyEnvStudio(ctk.CTk):
         tools_menu.add_command(label="Scan Now", command=lambda: self.scan_environment_now(self.selected_env_var.get()))
         tools_menu.add_command(label="Vulnerability Report", command=lambda: self.show_vulnerability_report(self.selected_env_var.get()))
         tools_menu.add_command(label="Check for Package Updates", command=lambda: self.check_for_package_updates(self.selected_env_var.get()))
-        tools_menu.add_command(label="Py-Tonic Advisor", command=self.show_py_tonic_advisor)
+        # tools_menu.add_command(label="Py-Tonic Advisor", command=self.show_py_tonic_advisor)
         tools_menu.add_separator()
         tools_menu.add_command(label="Plugins", command=self.show_plugins_dialog)
 
@@ -431,13 +432,25 @@ class PyEnvStudio(ctk.CTk):
         self.checkbox_upgrade_pip.select()
         self.checkbox_upgrade_pip.grid(row=2, column=0, columnspan=5, padx=10, pady=5, sticky="w")
 
+        # Package manager selection
+        self.lbl(f, "Package Manager:").grid(row=3, column=0, padx=(10, 5), pady=5, sticky="w")
+        self.create_env_pkg_mgr = self.optmenu(
+            f,
+            ["pip", "uv"],
+            var=None,
+            width=150
+        )
+        self.create_env_pkg_mgr.grid(row=3, column=1, padx=(0, 5), pady=5, sticky="w")
+        from py_env_studio.core.env_manager import get_preferred_package_manager
+        self.create_env_pkg_mgr.set(get_preferred_package_manager())
+
         # show python version information label below checkbox
         self.python_version_info = self.lbl(f, "USING PYTHON: Default", font=self.theme.FONT_BOLD, text_color=self.theme.HIGHLIGHT_COLOR)
-        self.python_version_info.grid(row=3, column=0, columnspan=5, padx=10, pady=5, sticky="w")
+        self.python_version_info.grid(row=4, column=0, columnspan=5, padx=10, pady=5, sticky="w")
 
         # Create environment button below
         self.btn_create_env = self.btn(f, "Create Environment", self.create_env, self.icons.get("create-env"))
-        self.btn_create_env.grid(row=4, column=0, columnspan=5, padx=10, pady=5)
+        self.btn_create_env.grid(row=5, column=0, columnspan=5, padx=10, pady=5)
 
     def _env_activate_section(self, parent):
         p = self.frame(parent, corner_radius=12, border_width=1, border_color=self.theme.BORDER_COLOR)
@@ -870,14 +883,15 @@ class PyEnvStudio(ctk.CTk):
         for widget in self.env_scrollable_frame.winfo_children():
             widget.destroy()
         envs = search_envs(self.env_search_var.get())
-        # Updated columns - replaced SCAN_NOW with MORE
-        columns = ("ENVIRONMENT", "PYTHON_VERSION", "LAST_LOCATION", "SIZE", "RENAME", "DELETE", "LAST_SCANNED", "MORE")
+        # Updated columns - added VM_TOOL after PYTHON_VERSION
+        columns = ("ENVIRONMENT", "PYTHON_VERSION", "VM_TOOL", "LAST_LOCATION", "SIZE", "RENAME", "DELETE", "LAST_SCANNED", "MORE")
         self.env_tree = ttk.Treeview(
             self.env_scrollable_frame, columns=columns, show="headings", height=8, selectmode="browse"
         )
         for col, text, width, anchor in [
-            ("ENVIRONMENT", "Environment", 220, "w"),
-            ("PYTHON_VERSION", "Python Version", 120, "center"),
+            ("ENVIRONMENT", "Environment", 200, "w"),
+            ("PYTHON_VERSION", "Python Version", 110, "center"),
+            ("VM_TOOL", "VM Tool", 100, "center"),
             ("LAST_LOCATION", "Recent Location", 160, "center"),
             ("SIZE", "Size", 100, "center"),
             ("RENAME", "Rename", 80, "center"),
@@ -892,10 +906,17 @@ class PyEnvStudio(ctk.CTk):
 
         for env in envs:
             data = get_env_data(env)
+            # Get the VM tool display - use get_env_package_manager to get the correct manager
+            from py_env_studio.core.env_manager import get_package_manager_display
+            from py_env_studio.core.package_manager import get_env_package_manager
+            manager = get_env_package_manager(env)
+            vm_tool = get_package_manager_display(manager)
+            
             self.env_tree.insert("", "end", values=(
                 env,
                 data.get("python_version", "-"),
-                data.get("recent_location", "-"),
+                vm_tool,
+                data.get("recent_location", "heh"),
                 data.get("size", "-"),
                 "🖊",
                 "🗑️",
@@ -906,12 +927,13 @@ class PyEnvStudio(ctk.CTk):
         def on_tree_click(event):
             col = self.env_tree.identify_column(event.x)
             row = self.env_tree.identify_row(event.y)
+            recent_location = self.env_tree.item(row)['values'][3]
             if not row:
                 return
             env = self.env_tree.item(row)['values'][0]
 
-            if col == "#1" or col == "#2"  or col == "#4" or col == "#7":  # Name| Version | Size | Last Scanned
-                recent_location = self.env_tree.item(row)['values'][2]
+            # 1.Environment| 2.Version | 3.VM Tool | 4.Recent Location | 5.Size | 8.Last Scanned 
+            if col in ("#1","#2", "#3", "#5", "#8"):
                 if recent_location and recent_location != "-":
                     try:
                         self.env_tree.selection_set(row)
@@ -922,8 +944,7 @@ class PyEnvStudio(ctk.CTk):
                     self.dir_var.set(recent_location)
                 return
             
-            if col == "#3":  # Recent Location
-                recent_location = self.env_tree.item(row)['values'][2]
+            if col == "#4":  # Recent Location
                 if recent_location and recent_location != "-":
                     try:
                         self.env_tree.selection_set(row)
@@ -941,7 +962,7 @@ class PyEnvStudio(ctk.CTk):
                     self.env_log_queue.put(f"Path:'{recent_location}' copied to clipboard!")
                 return
 
-            if col == "#5":  # Rename
+            if col == "#6":  # Rename
                 dialog = ctk.CTkInputDialog(
                     text=f"Enter new name for '{env}':",
                     title="Environment Rename"
@@ -959,7 +980,7 @@ class PyEnvStudio(ctk.CTk):
                         callback=self.refresh_env_list,
                         py_tonic_action="rename_env",
                     )
-            elif col == "#6":  # Delete
+            elif col == "#7":  # Delete
                 if messagebox.askyesno("Confirm", f"Delete environment '{env}'?"):
                     self.run_async(
                         lambda: delete_env(env, log_callback=lambda msg: self.env_log_queue.put(msg)),
@@ -968,7 +989,7 @@ class PyEnvStudio(ctk.CTk):
                         callback=self.refresh_env_list,
                         py_tonic_action="delete_env",
                     )
-            elif col == "#8":  # More (... column)
+            elif col == "#9":  # More
                 self.show_more_actions_dialog(env)
 
         def on_tree_double_click(event):
@@ -977,8 +998,8 @@ class PyEnvStudio(ctk.CTk):
             if not row:
                 return
 
-            # Double click on name,recent,size,more -> trigger Activate button
-            if col in ("#1","#3","#4","#7"):
+            # Double click to trigger Activate button
+            if col in ("#1","#2", "#3", "#5", "#8"):
                 self.activate_button.invoke()
 
         self.env_tree.bind("<Button-1>", on_tree_click)
@@ -1395,6 +1416,14 @@ class PyEnvStudio(ctk.CTk):
         if is_valid_env_selected(env_name):
             messagebox.showerror("Error", f"Environment '{env_name}' already exists.")
             return
+        
+        # Get selected package manager from create env section
+        selected_pkg_mgr = self.create_env_pkg_mgr.get()
+        
+        # Temporarily set the preference to use in create_env function
+        from py_env_studio.core.env_manager import set_preferred_package_manager
+        set_preferred_package_manager(selected_pkg_mgr)
+        
         self.btn_create_env.configure(state="disabled")
         self.run_async(
             lambda: create_env(env_name, python_path, bool(self.checkbox_upgrade_pip.get()),

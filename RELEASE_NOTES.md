@@ -7,6 +7,19 @@ February 14, 2026
 
 ## 🎉 Major Features
 
+### 🛠️ Self-Healing Install System (AutoResolver)
+
+PES now includes **AutoResolver**, a self-healing install system for pip/uv workflows. On dependency resolution failure, it automatically:
+
+- Detects common resolution errors (`ResolutionImpossible`, etc.)
+- Strips version constraints (e.g. `click==8.3.1` → `click`)
+- Retries installs up to 3 times without modifying your requirement files
+- No other major Python tool (pip, uv, poetry, hatch, pixi) does this natively
+
+### ⚙️ UV Support
+
+PES now supports **uv** as an environment creation and package management backend, in addition to pip. All features, including AutoResolver, work seamlessly with uv-based workflows.
+
 ### ✨ **New Plugin System**
 A comprehensive plugin framework has been added to PyEnvStudio, enabling extensibility without modifying core code.
 
@@ -179,35 +192,25 @@ cp -r examples/sample_plugin/ ~/.py_env_studio/plugins/my_first_plugin/
   ]
 }
 ```
-
----
-
-## 🛠️ Py-Tonic Notifications Fix
-
-Fixed notification system to display action advice consistently:
-- Py-Tonic advice now shows on every action (when not in "manual" mode)
-- Proper lambda variable capture in async operations
-- Simplified notification logic for better maintainability
-
 ---
 
 ## ✅ Testing Recommendations
 
-1. **Plugin Loading**
-   - Enable/disable sample plugin
-   - Verify it loads on app restart
-   - Check that it unloads when disabled
+1. **Plugin Loading****Plugin Loading**
+   - Enable/disable sample plugin   - Enable/disable sample plugin
+   - Verify it loads on app restartpp restart
+   - Check that it unloads when disabled   - Check that it unloads when disabled
 
-2. **State Persistence**
+2. **State Persistence****
    - Enable a plugin
    - Close app
    - Reopen app
    - Verify plugin is still enabled
 
-3. **Hook Execution**
-   - Enable sample plugin
-   - Create/delete/rename environments
-   - Check `~/.py_env_studio/plugins/sample_plugin/events.log` for events
+3. **Hook Execution**3. **Hook Execution**
+   - Enable sample plugin- Enable sample plugin
+   - Create/delete/rename environments   - Create/delete/rename environments
+   - Check `~/.py_env_studio/plugins/sample_plugin/events.log` for eventsnv_studio/plugins/sample_plugin/events.log` for events
 
 4. **Error Handling**
    - Disable sample plugin
@@ -219,74 +222,83 @@ Fixed notification system to display action advice consistently:
 
 ## 📚 Documentation Links
 
-| Document | Purpose |
-|----------|---------|
-| [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) | Complete plugin creation guide |
-| [PLUGINS_ARCHITECTURE.md](docs/PLUGINS_ARCHITECTURE.md) | Technical architecture deep-dive |
-| [PLUGIN_QUICK_REFERENCE.md](docs/PLUGIN_QUICK_REFERENCE.md) | Quick lookup tables and templates |
-| [PLUGIN_DOCUMENTATION_INDEX.md](docs/PLUGIN_DOCUMENTATION_INDEX.md) | Navigation and index |
-| [Module README](py_env_studio/core/plugins/README.md) | API reference |
+| Document | Purpose || Document | Purpose |
+|----------|---------|--------|---------|
+| [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) | Complete plugin creation guide || [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) | Complete plugin creation guide |
+| [PLUGINS_ARCHITECTURE.md](docs/PLUGINS_ARCHITECTURE.md) | Technical architecture deep-dive |RE.md](docs/PLUGINS_ARCHITECTURE.md) | Technical architecture deep-dive |
+| [PLUGIN_QUICK_REFERENCE.md](docs/PLUGIN_QUICK_REFERENCE.md) | Quick lookup tables and templates || [PLUGIN_QUICK_REFERENCE.md](docs/PLUGIN_QUICK_REFERENCE.md) | Quick lookup tables and templates |
+| [PLUGIN_DOCUMENTATION_INDEX.md](docs/PLUGIN_DOCUMENTATION_INDEX.md) | Navigation and index |ATION_INDEX.md](docs/PLUGIN_DOCUMENTATION_INDEX.md) | Navigation and index |
+| [Module README](py_env_studio/core/plugins/README.md) | API reference |ins/README.md) | API reference |
 
 ---
 
-## 🎓 Learning Path
+## 🎓 Learning Path## 🎓 Learning Path
 
 **For First-Time Plugin Developers:**
-1. Read [PLUGIN_QUICK_REFERENCE.md](docs/PLUGIN_QUICK_REFERENCE.md) (5 min)
-2. Study [examples/sample_plugin/](examples/sample_plugin/) (10 min)
-3. Create your first plugin following the template (15 min)
-4. Refer to [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) for detailed questions
+1. Read [PLUGIN_QUICK_REFERENCE.md](docs/PLUGIN_QUICK_REFERENCE.md) (5 min)1. Read [PLUGIN_QUICK_REFERENCE.md](docs/PLUGIN_QUICK_REFERENCE.md) (5 min)
+2. Study [examples/sample_plugin/](examples/sample_plugin/) (10 min)[examples/sample_plugin/](examples/sample_plugin/) (10 min)
+3. Create your first plugin following the template (15 min)he template (15 min)
+4. Refer to [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) for detailed questionsPMENT.md) for detailed questions
 
-**For Contributors Extending Plugin System:**
-1. Review [PLUGINS_ARCHITECTURE.md](docs/PLUGINS_ARCHITECTURE.md) (20 min)
-2. Study `py_env_studio/core/plugins/` source code (30 min)
-3. Review design patterns used (15 min)
+**For Contributors Extending Plugin System:** Plugin System:**
+1. Review [PLUGINS_ARCHITECTURE.md](docs/PLUGINS_ARCHITECTURE.md) (20 min) Review [PLUGINS_ARCHITECTURE.md](docs/PLUGINS_ARCHITECTURE.md) (20 min)
+2. Study `py_env_studio/core/plugins/` source code (30 min)Study `py_env_studio/core/plugins/` source code (30 min)
+3. Review design patterns used (15 min)Review design patterns used (15 min)
 
----
+------
 
 ## 🔄 Migration Guide
 
 ### Existing Users
-No action required! The plugin system is:
-- ✅ Backward compatible
-- ✅ Opt-in (no plugins enabled by default)
+No action required! The plugin system is:tem is:
+- ✅ Backward compatible- ✅ Backward compatible
+- ✅ Opt-in (no plugins enabled by default)d by default)
 - ✅ Non-intrusive (doesn't affect existing functionality)
 
 ### Developers Integrating Plugins
-If you're adding plugin hooks to your own operations:
+If you're adding plugin hooks to your own operations:to your own operations:
 
-```python
-# Trigger a hook when something happens
-self.plugin_manager.execute_hook("after_create_env", {
-    "env_name": "my_env",
+```pythonpython
+# Trigger a hook when something happens# Trigger a hook when something happens
+self.plugin_manager.execute_hook("after_create_env", {anager.execute_hook("after_create_env", {
+    "env_name": "my_env",    "env_name": "my_env",
     "python_version": "3.11"
-})
+})})
 ```
-
----
-
-## 🐛 Known Issues & Limitations
-
-### Current Limitations
-- Plugins run in the same process as the app (no sandboxing)
-- No built-in plugin versioning system
-- No plugin marketplace integration
-- Limited inter-plugin communication
-
-
-
----
+------
 ## 🙏 Contributing
 
 To create a plugin:
-1. Follow the [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) guide
-2. Use the [sample_plugin](examples/sample_plugin/) as reference
-3. Test thoroughly with the plugin dialog
-4. Check event logs for any issues
+1. Follow the [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) guide1. Follow the [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) guide
+2. Use the [sample_plugin](examples/sample_plugin/) as referenceUse the [sample_plugin](examples/sample_plugin/) as reference
+3. Test thoroughly with the plugin dialog3. Test thoroughly with the plugin dialog
+4. Check event logs for any issuesfor any issues
 
 To improve the plugin system:
-1. Review [PLUGINS_ARCHITECTURE.md](docs/PLUGINS_ARCHITECTURE.md)
-2. Add new hooks as needed
+1. Review [PLUGINS_ARCHITECTURE.md](docs/PLUGINS_ARCHITECTURE.md)1. Review [PLUGINS_ARCHITECTURE.md](docs/PLUGINS_ARCHITECTURE.md)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+**Status:** Production Ready ✅**Release Date:** February 14, 2026  **Version:** 1.1.0  ---Thanks to all contributors and testers who provided feedback on the plugin system design and implementation.## 🎉 Acknowledgments---Plugin system follows the same license as PyEnvStudio.## 📝 License---4. Keep backward compatibility3. Enhance state management if required2. Add new hooks as needed2. Add new hooks as needed
 3. Enhance state management if required
 4. Keep backward compatibility
 

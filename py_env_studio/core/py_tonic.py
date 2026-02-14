@@ -4,6 +4,8 @@ import json
 import random
 from datetime import datetime, timedelta
 from pathlib import Path
+import queue
+import sys
 
 
 MOST_USED_BEST_PRACTICES = [
@@ -48,11 +50,14 @@ _ACTION_ADVICE = {
         "notification": "Prefer pinned package versions for stable installs.",
         "bad_example": "Using unbounded installs like requests without version constraints.",
         "recommended": "Install specific versions and update requirements after changes.",
+        "commond to remember": "python -m venv <venv-name>"
+
     },
     "uninstall_package": {
         "notification": "Review dependency impact before uninstalling a package.",
         "bad_example": "Removing shared dependencies blindly and breaking runtime.",
         "recommended": "Uninstall, then verify imports/tests and refresh dependency files.",
+
     },
     "update_package": {
         "notification": "Update packages in small batches and verify compatibility.",

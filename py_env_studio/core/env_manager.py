@@ -115,7 +115,7 @@ def _save_env_data(data):
         logging.error("Failed to save env data: %s", exc)
 
 
-def set_env_data(env_name, recent_location=None, size=None, last_scanned=None, python_version=None):
+def set_env_data(env_name, recent_location=None, size=None, last_scanned=None, python_version=None, package_manager=None):
     data = _load_env_data()
     entry = data.get(env_name, {})
 
@@ -127,6 +127,8 @@ def set_env_data(env_name, recent_location=None, size=None, last_scanned=None, p
         entry["last_scanned"] = last_scanned
     if python_version is not None:
         entry["python_version"] = python_version
+    if package_manager is not None:
+        entry["package_manager"] = package_manager
 
     data[env_name] = entry
     _save_env_data(data)
@@ -166,6 +168,72 @@ def is_valid_env_selected(env_name):
     return True
 
 
+def get_preferred_package_manager() -> str:
+    """Get the user's preferred package manager (pip or uv).
+    
+    Returns:
+        "pip" or "uv", defaults to "pip" if not configured
+    """
+    try:
+        app_config = AppConfig()
+        manager = app_config.get_param("settings", "preferred_package_manager", fallback="pip")
+        # Only return valid managers
+        return "uv" if manager.lower() == "uv" else "pip"
+    except Exception:
+        return "pip"
+
+
+def set_preferred_package_manager(manager: str) -> None:
+    """Set the user's preferred package manager.
+    
+    Args:
+        manager: "pip" or "uv"
+    """
+    if manager not in ("pip", "uv"):
+        raise ValueError(f"Invalid package manager: {manager}. Must be 'pip' or 'uv'")
+    
+    try:
+        app_config = AppConfig()
+        app_config.set_param("settings", "preferred_package_manager", manager)
+    except Exception as e:
+        logging.error(f"Failed to set preferred package manager: {e}")
+
+
+def get_package_manager_display(manager: str = None) -> str:
+    """Get a display string for the package manager with version.
+    
+    Args:
+        manager: "pip" or "uv", or None to use preferred
+    
+    Returns:
+        Display string like "pip v25.5" or "uv 0.9.0"
+    """
+    if manager is None:
+        manager = get_preferred_package_manager()
+    
+    # Validate the manager
+    if manager not in ("pip", "uv"):
+        manager = "pip"
+    
+    try:
+        if manager == "uv":
+            from . import uv_tools
+            if uv_tools.is_uv_installed():
+                version = uv_tools.get_uv_version()
+                if version:
+                    return f"uv {version}"
+            return "pip (uv unavailable)"
+        else:
+            from . import pip_tools
+            version = pip_tools.get_pip_version()
+            if version:
+                return f"pip {version}"
+    except Exception as e:
+        logging.warning(f"Error getting package manager version: {e}")
+    
+    return "pip"
+
+
 def _is_valid_env_name(name: str) -> bool:
     allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")
     if not name or len(name) > 50 or any(ch not in allowed for ch in name):
@@ -177,11 +245,16 @@ def create_env(name, python_path=None, upgrade_pip=False, log_callback=None):
     env_path = os.path.join(VENV_DIR, name)
     python_path = python_path or PYTHON_PATH or "python"
     python_version = _extract_python_version(python_path) or "default"
+    
+    # Get the preferred package manager at creation time
+    package_manager = get_preferred_package_manager()
+    use_uv = package_manager == "uv"
 
     try:
         if log_callback:
+            tool_name = "uv" if use_uv else "venv"
             log_callback(
-                f"Creating virtual environment '{name}' at {env_path} with Python: {python_version}"
+                f"Creating virtual environment '{name}' at {env_path} with Python: {python_version} using {tool_name}"
             )
 
         os.makedirs(VENV_DIR, exist_ok=True)
@@ -194,18 +267,59 @@ def create_env(name, python_path=None, upgrade_pip=False, log_callback=None):
         if os.path.exists(env_path):
             raise FileExistsError(f"Target environment '{name}' already exists")
 
-        process = subprocess.Popen(
-            [python_path, "-m", "venv", env_path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        for line in process.stdout:
+        # Use uv if selected and available, otherwise fallback to venv
+        if use_uv:
+            try:
+                from . import uv_tools
+                if not uv_tools.is_uv_installed():
+                    if log_callback:
+                        log_callback("uv not installed, falling back to venv")
+                    use_uv = False
+            except Exception:
+                use_uv = False
+        
+        if use_uv:
+            # Create venv using uv
             if log_callback:
-                log_callback(line.strip())
-        process.wait()
-        if process.returncode != 0:
-            raise subprocess.CalledProcessError(process.returncode, process.args)
+                log_callback("Creating virtual environment with uv...")
+            # Build uv command with python version if specified
+            uv_cmd = ["uv", "venv"]
+            if python_path and python_path not in ("python", "python3"):
+                # Add python version specification if a custom path was provided
+                uv_cmd.extend(["--python", python_path])
+            uv_cmd.append(env_path)
+            process = subprocess.Popen(
+                uv_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            for line in process.stdout:
+                if log_callback:
+                    log_callback(line.strip())
+            process.wait()
+            if process.returncode != 0:
+                if log_callback:
+                    log_callback("uv venv creation failed, falling back to python venv")
+                use_uv = False
+        
+        if not use_uv:
+            # Fallback to standard python venv
+            if log_callback:
+                log_callback("Creating virtual environment with python -m venv...")
+            process = subprocess.Popen(
+                [python_path, "-m", "venv", env_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            for line in process.stdout:
+                if log_callback:
+                    log_callback(line.strip())
+            process.wait()
+            if process.returncode != 0:
+                raise subprocess.CalledProcessError(process.returncode, process.args)
+            package_manager = "pip"  # If uv failed, we used pip
 
         venv_python = os.path.join(env_path, "Scripts" if os.name == "nt" else "bin", "python")
 
@@ -242,11 +356,12 @@ def create_env(name, python_path=None, upgrade_pip=False, log_callback=None):
 
         size_mb = calculate_env_size_mb(env_path)
         detected_version = _extract_python_version(venv_python)
-        set_env_data(name, recent_location=env_path, size=size_mb, python_version=detected_version)
+        # Store which package manager was actually used to create this environment
+        set_env_data(name, recent_location=env_path, size=size_mb, python_version=detected_version, package_manager=package_manager)
 
-        logging.info("Created environment at: %s with Python: %s", env_path, python_path)
+        logging.info("Created environment at: %s with Python: %s using %s", env_path, python_path, package_manager)
         if log_callback:
-            log_callback(f"Environment '{name}' created successfully")
+            log_callback(f"Environment '{name}' created successfully with {package_manager}")
     except subprocess.CalledProcessError as exc:
         err_msg = f"Failed to create environment '{name}': {exc}"
         logging.error(err_msg)

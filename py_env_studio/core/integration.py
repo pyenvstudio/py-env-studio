@@ -15,5 +15,7 @@ def detect_tools():
             if exe_path:
                 detected.append({"name": name, "path": exe_path, "strategy": meta["strategy"]})
                 break
+    if not detected:
+        print("No tools detected. Please check the configuration.")
     return detected
 
