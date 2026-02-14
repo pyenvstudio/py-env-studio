@@ -1,0 +1,15 @@
+{
+  "name": "sample_plugin",
+  "version": "1.0.0",
+  "author": "PyEnvStudio",
+  "description": "Sample plugin demonstrating best practices and common hooks",
+  "entry_point": "sample_plugin:SamplePlugin",
+  "required_version": "1.0.0",
+  "dependencies": [],
+  "hooks": [
+    "on_app_start",
+    "after_create_env",
+    "after_install_package",
+    "on_scan_complete"
+  ]
+}

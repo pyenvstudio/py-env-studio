@@ -1,9 +1,19 @@
 import argparse
-from  py_env_studio.ui.main_window import PyEnvStudio
-from  py_env_studio.core.env_manager import create_env, list_envs, delete_env, activate_env
-from  py_env_studio.core.pip_tools import install_package, uninstall_package, export_requirements, import_requirements
+
+from py_env_studio.core.bootstrap import initialize_app_runtime
+from py_env_studio.core.env_manager import activate_env, create_env, delete_env, list_envs
+from py_env_studio.core.pip_tools import (
+    export_requirements,
+    import_requirements,
+    install_package,
+    uninstall_package,
+)
+from py_env_studio.ui.main_window import PyEnvStudio
+
 
 def main():
+    initialize_app_runtime()
+
     parser = argparse.ArgumentParser(description="Virtual Environment Manager")
     parser.add_argument("--create", help="Create a new virtual environment")
     parser.add_argument("--upgrade-pip", action="store_true", help="Upgrade pip when creating a new environment")
@@ -41,6 +51,7 @@ def main():
     else:
         app = PyEnvStudio()
         app.mainloop()
+
 
 if __name__ == "__main__":
     main()

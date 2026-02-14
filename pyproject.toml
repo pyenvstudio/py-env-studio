@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "py-env-studio"
-version = "2.0.2"
-description = "A cross-platform GUI and CLI tool for managing Python virtual environments and packages. Features include environment creation, activation, package installation, requirements management, updates, deletion, and export."
+version = "2.0.7"
+description = "A comprehensive cross-platform GUI and CLI tool for managing Python virtual environments and packages with advanced features including environment lifecycle management, package operations, vulnerability scanning, security insights, Py-Tonic interactive learning mode, and an extensible plugin system for custom functionality."
 requires-python = ">=3.7"
 authors = [
     { name = "Py Env Studio Team", email = "contact.shaikh.wasim@gmail.com" }
@@ -64,7 +64,8 @@ dependencies = [
     "Requests",
     "pip",
     "setuptools",
-    "wheel"
+    "wheel",
+    "platformdirs>=4.2.0"
 ]
 
 
@@ -107,3 +108,4 @@ py-env-studio = "py_env_studio.main:main"
 [project.urls]
 Homepage = "https://github.com/pyenvstudio/py-env-studio"
 Issues = "https://github.com/pyenvstudio/py-env-studio/issues"
+

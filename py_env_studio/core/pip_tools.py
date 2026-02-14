@@ -1,7 +1,5 @@
 #pip_tools.py
-import json
 import subprocess
-import os
 import logging
 from .env_manager import get_env_python
 
@@ -170,6 +168,7 @@ def check_outdated_packages(env_name, log_callback=None):
             log_callback(err_msg)
         logging.error(err_msg)
         raise
+
 def export_requirements(env_name, file_path):
     """
     Export installed packages to a requirements.txt file.

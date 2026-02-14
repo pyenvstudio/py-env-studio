@@ -18,13 +18,14 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/pyenvstudio/py-env-studio/pulls)
 [![Telegram](https://img.shields.io/badge/Join%20Community-Telegram-2CA5E0?logo=telegram&logoColor=white)](https://t.me/pyenvstudio)
 
-**Py Env Studio** is a cross-platform **Graphical Environment & Package Manager for Python** that makes managing virtual environments and packages effortless without using the command line.
+**Py Env Studio** is a comprehensive cross-platform **Graphical Environment & Package Manager for Python** with advanced features including vulnerability scanning, interactive learning, and an extensible plugin system for custom functionality.
 
 Perfect for:  
 - ✅ Python beginners who want simplicity  
 - ✅ Data scientists setting up ML/DL stacks  
 - ✅ Developers managing Django, Flask, FastAPI projects  
-- ✅ Teams who need **secure, isolated environments**  
+- ✅ Teams who need **secure, isolated environments**
+- ✅ Power users wanting **plugin extensibility**
 
 ---
 
@@ -39,7 +40,7 @@ Perfect for:
 - 📁 Open environment at a specific location (choose working directory)
 > Launch the environment’s working directory in your file explorer to quickly access project files and scripts.
 
-- 🔷 Integrated launch: CMD, VSCode, PyCharm (Beta)
+- 🔷 Integrated launch: CMD, VSCode, PyCharm
 > Open your environment directly in your preferred editor or terminal, streamlining your workflow.
 
 - 🛡️ Environment Vulnerability Scanner with Insights Dashboard
@@ -67,6 +68,23 @@ Perfect for:
 
 - 🚚📄 Export or import requirements
 > Import dependencies from a requirements file or export your current setup with just a click.
+
+- 🔌 **Extensible Plugin System**
+> Create custom plugins to extend PyEnvStudio functionality without modifying core code. Hook into environment operations, package management, app lifecycle, and vulnerability scanning.
+
+- 🎓 **Py-Tonic Interactive Learning Mode**
+> Learn Python best practices with interactive challenges and code insights integrated into the application.
+
+## 🔌 Plugin System
+
+PyEnvStudio now features a powerful plugin system that allows developers to extend functionality:
+
+- **17 Available Hooks** - Respond to environment and package operations
+- **State Management** - Plugins persist across application restarts
+- **Easy Development** - Simple plugin API with lifecycle management
+- **Examples Included** - Full working sample plugin with documentation
+
+See [RELEASE_NOTES.md](RELEASE_NOTES.md) for plugin system details and [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) for creating your own plugins.
 
 ## ☕ Support  
 
