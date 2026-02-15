@@ -1,12 +1,11 @@
 name: Publish to PyPI
-
 # on:
 #   release:
 #     types: [published]  # Trigger when you create a GitHub Release
-  on:
-    push:
-      tags:
-        - "v*"
+on:
+  push:
+    tags:
+      - "v*"
 
 permissions:
   id-token: write
