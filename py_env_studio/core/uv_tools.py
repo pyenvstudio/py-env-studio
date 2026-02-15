@@ -350,7 +350,7 @@ def check_outdated_packages_uv(venv_path: str) -> Tuple[bool, List[dict]]:
             if len(parts) >= 3:
                 outdated.append({
                     "name": parts[0],
-                    "current_version": parts[1],
+                    "version": parts[1],
                     "latest_version": parts[2]
                 })
         

@@ -199,8 +199,9 @@ def check_outdated_packages(env_name, log_callback=None):
         log_callback: Optional callback for log messages
     
     Returns:
-        List of outdated packages
+        JSON string of outdated packages list
     """
+    import json
     manager = get_env_package_manager(env_name)
     
     if manager == "uv":
@@ -209,7 +210,8 @@ def check_outdated_packages(env_name, log_callback=None):
             success, outdated = uv_tools.check_outdated_packages_uv(venv_python)
             if not success:
                 raise Exception("Failed to check outdated packages with uv")
-            return outdated
+            # Convert list to JSON string to match pip_tools format
+            return json.dumps(outdated)
         except Exception as e:
             logger.error(f"uv check_outdated_packages failed, falling back to pip: {e}")
             return pip_tools.check_outdated_packages(env_name, log_callback)

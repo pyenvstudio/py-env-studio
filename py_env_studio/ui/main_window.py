@@ -1110,18 +1110,7 @@ class PyEnvStudio(ctk.CTk):
         for pkg_name, current_version, new_version, _ in updatable_packages:
             tree.insert("", "end", values=(pkg_name, current_version, new_version))
 
-        def on_pkg_click(event):
-            col = tree.identify_column(event.x)
-            row = tree.identify_row(event.y)
-            if not row:
-                return
-            if col == "#5":  # Action column
-                pkg_name = tree.item(row)["values"][0]
-                self.update_installed_package(self.selected_env_var.get().strip(), pkg_name)
-
         # select desired
-        tree.bind("<Button-1>", on_pkg_click)
-        # select all
         tree.bind("<Control-a>", lambda event: tree.selection_set(tree.get_children()))
 
         def update_selected_packages():
@@ -1129,17 +1118,35 @@ class PyEnvStudio(ctk.CTk):
             if not selected_items:
                 show_info("No packages selected for update.")
                 return
-            for item in selected_items:
-                pkg_name = tree.item(item)["values"][0]
-                self.update_installed_package(self.selected_env_var.get().strip(), pkg_name)
+            
+            pkg_names = [tree.item(item)["values"][0] for item in selected_items]
+            env_name = self.selected_env_var.get().strip()
+            self.batch_update_packages(env_name, pkg_names, top)
+
+        def update_all_packages():
+            """Update all packages in the list"""
+            pkg_names = [tree.item(item)["values"][0] for item in tree.get_children()]
+            env_name = self.selected_env_var.get().strip()
+            self.batch_update_packages(env_name, pkg_names, top)
+
+        # Button frame
+        btn_frame = ctk.CTkFrame(top, fg_color="transparent")
+        btn_frame.grid(row=1, column=0, pady=(0, 10), sticky="ew", padx=10)
+        btn_frame.grid_columnconfigure(0, weight=1)
+        btn_frame.grid_columnconfigure(1, weight=1)
+        btn_frame.grid_columnconfigure(2, weight=1)
 
         # Update Selected button
-        btn_update = self.btn(top, "Update Selected", update_selected_packages)
-        btn_update.grid(row=1, column=0, pady=(0, 10))
+        btn_update = self.btn(btn_frame, "Update Selected", update_selected_packages)
+        btn_update.grid(row=0, column=0, padx=5)
+
+        # Update All button
+        btn_update_all = self.btn(btn_frame, "Update All", update_all_packages)
+        btn_update_all.grid(row=0, column=1, padx=5)
 
         # Close button
-        btn_close = self.btn(top, "Close", top.destroy)
-        btn_close.grid(row=2, column=0, pady=(0, 10))
+        btn_close = self.btn(btn_frame, "Close", top.destroy)
+        btn_close.grid(row=0, column=2, padx=5)
 
     def check_for_package_updates(self, env_name):
         """Check for package updates in the selected environment."""
@@ -1287,6 +1294,69 @@ class PyEnvStudio(ctk.CTk):
             error_msg="Failed to update package",
             callback=lambda: self.view_installed_packages(),
             py_tonic_action="update_package",
+        )
+
+    def batch_update_packages(self, env_name, package_names, parent_window=None):
+        """Update multiple packages and show a summary of results.
+        
+        Args:
+            env_name: Name of the environment
+            package_names: List of package names to update
+            parent_window: Parent window to close after update
+        """
+        if not package_names:
+            show_error("No packages to update.")
+            return
+
+        def task():
+            """Execute updates and collect results"""
+            successful = []
+            failed = []
+            
+            for pkg_name in package_names:
+                try:
+                    update_package(env_name, pkg_name,
+                                 log_callback=lambda msg: self.env_log_queue.put(msg))
+                    successful.append(pkg_name)
+                except Exception as e:
+                    failed.append((pkg_name, str(e)))
+                    logging.error(f"Failed to update {pkg_name}: {e}")
+            
+            return successful, failed
+
+        def on_complete(result):
+            """Show summary after all updates complete"""
+            if result:
+                successful, failed = result
+                
+                # Build summary message
+                summary = "Update Summary:\n\n"
+                
+                if successful:
+                    summary += f"✓ Updated Successfully ({len(successful)}):\n"
+                    for pkg in successful:
+                        summary += f"  • {pkg}\n"
+                
+                if failed:
+                    summary += f"\n✗ Failed ({len(failed)}):\n"
+                    for pkg, error in failed:
+                        summary += f"  • {pkg}\n"
+                
+                # Close parent window if provided
+                if parent_window:
+                    parent_window.destroy()
+                
+                # Show summary
+                messagebox.showinfo("Update Summary", summary)
+                
+                # Refresh package list
+                self.view_installed_packages()
+
+        self.run_async(
+            task,
+            success_msg=None,
+            error_msg=None,
+            callback=on_complete
         )
 
     # ===== BULK OPS =====

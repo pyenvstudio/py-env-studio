@@ -72,8 +72,6 @@ Perfect for:
 - 🔌 **Extensible Plugin System**
 > Create custom plugins to extend PyEnvStudio functionality without modifying core code. Hook into environment operations, package management, app lifecycle, and vulnerability scanning.
 
-- 🎓 **Py-Tonic Interactive Learning Mode**
-> Learn Python best practices with interactive challenges and code insights integrated into the application.
 
 ## 🔌 Plugin System
 
@@ -85,6 +83,17 @@ PyEnvStudio now features a powerful plugin system that allows developers to exte
 - **Examples Included** - Full working sample plugin with documentation
 
 See [RELEASE_NOTES.md](RELEASE_NOTES.md) for plugin system details and [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) for creating your own plugins.
+
+### 🛠️ Self-Healing Install System (AutoResolver)
+
+PES now includes **AutoResolver**, a self-healing install system for pip/uv workflows. On dependency resolution failure, it automatically:
+
+- Detects common resolution errors (`ResolutionImpossible`, etc.)
+- Strips version constraints (e.g. `click==8.3.1` → `click`)
+- Retries installs up to 3 times without modifying your requirement files
+- No other major Python tool (pip, uv, poetry, hatch, pixi) does this natively
+
+Because when installs stop breaking, **PES finally means peace.🤗**
 
 ## ☕ Support  
 
