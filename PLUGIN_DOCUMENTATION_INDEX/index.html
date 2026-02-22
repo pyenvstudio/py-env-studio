@@ -1,0 +1,974 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://py-env-studio.readthedocs.io/PLUGIN_DOCUMENTATION_INDEX/">
+      
+      
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.18">
+    
+    
+      
+        <title>Plugin System Documentation Index - Py Env Studio</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.7e37652d.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="cyan">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#plugin-system-documentation-index" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Py Env Studio" class="md-header__button md-logo" aria-label="Py Env Studio" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Py Env Studio
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Plugin System Documentation Index
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="cyan"  aria-hidden="true"  type="radio" name="__palette" id="__palette_0">
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="blue" data-md-color-accent="cyan"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/pyenvstudio/py-env-studio" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.0.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pyenvstudio/py-env-studio
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../install/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Installation
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../usage/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Usage
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../features/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Features
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../cli/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  CLI Reference
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../roadmap.md" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Roadmap
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../contributing/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Contributing
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Py Env Studio" class="md-nav__button md-logo" aria-label="Py Env Studio" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Py Env Studio
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/pyenvstudio/py-env-studio" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.0.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pyenvstudio/py-env-studio
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Installation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../usage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Usage
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Features
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    CLI Reference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../roadmap.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Roadmap
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Contributing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="plugin-system-documentation-index">Plugin System Documentation Index</h1>
+<h2 id="documentation-map">📚 Documentation Map</h2>
+<p>This index helps you navigate the PyEnvStudio Plugin System documentation and code.</p>
+<h3 id="quick-navigation">Quick Navigation</h3>
+<table>
+<thead>
+<tr>
+<th>Need</th>
+<th>Document</th>
+<th>Time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Just want to use plugins?</strong></td>
+<td><a href="../PLUGIN_QUICK_REFERENCE/">Plugin Quick Reference</a></td>
+<td>5 min</td>
+</tr>
+<tr>
+<td><strong>Creating your first plugin?</strong></td>
+<td><a href="../PLUGIN_DEVELOPMENT/">Plugin Development Guide</a></td>
+<td>30 min</td>
+</tr>
+<tr>
+<td><strong>Understanding the system?</strong></td>
+<td><a href="../PLUGINS_ARCHITECTURE/">Architecture Document</a></td>
+<td>20 min</td>
+</tr>
+<tr>
+<td><strong>Seeing an example?</strong></td>
+<td><a href="../examples/sample_plugin/">Sample Plugin Code</a></td>
+<td>10 min</td>
+</tr>
+<tr>
+<td><strong>Quick lookup?</strong></td>
+<td><a href="#documentation-map">This Index</a></td>
+<td>2 min</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="complete-documentation-guide">📖 Complete Documentation Guide</h2>
+<h3 id="1-for-plugin-users">1. For Plugin Users</h3>
+<p><strong>Goal</strong>: Enable and use existing plugins</p>
+<h4 id="start-here">Start Here</h4>
+<ul>
+<li><a href="../PLUGIN_QUICK_REFERENCE/">Plugin Quick Reference</a></li>
+<li>How to enable plugins</li>
+<li>Available hooks</li>
+<li>Common issues</li>
+</ul>
+<h4 id="then-read">Then Read</h4>
+<ul>
+<li><a href="../docs/features.md">Main Feature Guide</a> (mentions plugin system)</li>
+<li><a href="../docs/install.md">Installation Guide</a></li>
+</ul>
+<h3 id="2-for-plugin-developers">2. For Plugin Developers</h3>
+<p><strong>Goal</strong>: Create new plugins</p>
+<h4 id="phase-1-understand">Phase 1: Understand</h4>
+<ol>
+<li><a href="../PLUGIN_DEVELOPMENT/">Plugin Development Guide</a> - START HERE</li>
+<li>What are plugins</li>
+<li>Architecture overview</li>
+<li>
+<p>Creating your first plugin</p>
+</li>
+<li>
+<p><a href="../PLUGINS_ARCHITECTURE/">Architecture Deep Dive</a></p>
+</li>
+<li>Design patterns explained</li>
+<li>Lifecycle details</li>
+<li>Performance characteristics</li>
+</ol>
+<h4 id="phase-2-learn-by-example">Phase 2: Learn by Example</h4>
+<ul>
+<li><a href="../examples/sample_plugin/sample_plugin.py">Sample Plugin</a></li>
+<li>Working, documented code</li>
+<li>Handler pattern</li>
+<li>Error handling</li>
+<li>Event logging</li>
+</ul>
+<h4 id="phase-3-create">Phase 3: Create</h4>
+<ol>
+<li>Copy sample plugin template</li>
+<li>Follow <a href="../PLUGIN_DEVELOPMENT/">Plugin Development Guide</a> step-by-step</li>
+<li>Test with included examples</li>
+</ol>
+<h4 id="phase-4-reference">Phase 4: Reference</h4>
+<ul>
+<li><a href="../PLUGIN_QUICK_REFERENCE/">Quick Reference</a> - Templates and patterns</li>
+<li><a href="#api-reference-section">API Reference</a> below</li>
+</ul>
+<h3 id="3-for-system-maintainers">3. For System Maintainers</h3>
+<p><strong>Goal</strong>: Understand and extend the plugin system</p>
+<h4 id="core-understanding">Core Understanding</h4>
+<ol>
+<li><a href="../PLUGINS_ARCHITECTURE/">Architecture Document</a></li>
+<li>Component responsibilities</li>
+<li>Design patterns</li>
+<li>
+<p>Lifecycle management</p>
+</li>
+<li>
+<p><a href="../py_env_studio/core/plugins/">Core Code</a></p>
+</li>
+<li><code>base.py</code> - Plugin interface</li>
+<li><code>manager.py</code> - Factory and orchestration</li>
+<li><code>exceptions.py</code> - Error types</li>
+</ol>
+<h4 id="adding-features">Adding Features</h4>
+<ul>
+<li><a href="#hook-system-section">How Hooks Work</a></li>
+<li><a href="#plugin-lifecycle-section">Plugin Lifecycle</a></li>
+<li><a href="#extending-the-system">Adding New Hooks</a></li>
+</ul>
+<hr />
+<h2 id="file-structure-reference">📂 File Structure Reference</h2>
+<h3 id="documentation-files">Documentation Files</h3>
+<pre><code>docs/
+├── PLUGIN_DEVELOPMENT.md       # ⭐ Start here for plugin creation
+├── PLUGINS_ARCHITECTURE.md     # Technical deep-dive
+├── PLUGIN_QUICK_REFERENCE.md   # Quick lookup tables
+├── PLUGIN_SYSTEM_SUMMARY.md    # Implementation overview
+└── PLUGIN_DOCUMENTATION_INDEX.md (this file)
+
+examples/
+└── sample_plugin/
+    ├── plugin.json             # Example manifest
+    ├── sample_plugin.py        # Working plugin code
+    └── README.md               # How to use example
+</code></pre>
+<h3 id="code-files">Code Files</h3>
+<pre><code>py_env_studio/core/plugins/
+├── __init__.py                 # Public API exports
+├── base.py                     # BasePlugin class
+├── manager.py                  # PluginManager class
+└── exceptions.py               # Exception types
+
+py_env_studio/ui/
+└── main_window.py              # Plugin UI (see show_plugins_dialog)
+</code></pre>
+<h3 id="configuration">Configuration</h3>
+<pre><code>~/.py_env_studio/plugins/
+├── sample_plugin/
+│   ├── plugin.json             # Manifest
+│   └── sample_plugin.py        # Code
+├── my_plugin/
+│   ├── plugin.json
+│   ├── my_plugin.py
+│   └── config.json             # Optional
+└── ...
+</code></pre>
+<hr />
+<h2 id="common-tasks">🎯 Common Tasks</h2>
+<h3 id="i-want-to-enable-a-plugin">I want to... Enable a plugin</h3>
+<p>→ <a href="../PLUGIN_QUICK_REFERENCE/#installation-steps">Quick Reference - Installation Steps</a></p>
+<h3 id="i-want-to-create-a-plugin">I want to... Create a plugin</h3>
+<p>→ <a href="../PLUGIN_DEVELOPMENT/#step-3-implement-plugin-class">Development Guide - Creating a Plugin</a></p>
+<h3 id="i-want-to-understand-hooks">I want to... Understand hooks</h3>
+<p>→ <a href="../PLUGINS_ARCHITECTURE/#hook-system">Architecture - Hook System</a></p>
+<h3 id="i-want-to-debug-a-plugin">I want to... Debug a plugin</h3>
+<p>→ <a href="../PLUGIN_QUICK_REFERENCE/#debugging">Quick Reference - Debugging</a></p>
+<h3 id="i-want-to-see-working-code">I want to... See working code</h3>
+<p>→ <a href="../examples/sample_plugin/sample_plugin.py">Sample Plugin - sample_plugin.py</a></p>
+<h3 id="i-want-to-understand-design-patterns">I want to... Understand design patterns</h3>
+<p>→ <a href="../PLUGINS_ARCHITECTURE/#design-patterns">Architecture - Design Patterns</a></p>
+<hr />
+<h2 id="key-concepts">🔑 Key Concepts</h2>
+<h3 id="plugin">Plugin</h3>
+<p>Self-contained module that extends PyEnvStudio functionality</p>
+<h3 id="hook">Hook</h3>
+<p>Event that plugins can subscribe to and react to</p>
+<h3 id="pluginmanager">PluginManager</h3>
+<p>Factory pattern class managing plugin lifecycle</p>
+<h3 id="plugin-metadata">Plugin Metadata</h3>
+<p>JSON manifest describing plugin (name, version, hooks, etc.)</p>
+<h3 id="plugin-context">Plugin Context</h3>
+<p>Application references passed to plugins at initialization</p>
+<hr />
+<h2 id="api-reference-section">📋 API Reference Section</h2>
+<h3 id="baseplugin-interface">BasePlugin Interface</h3>
+<p><strong>File</strong>: <code>py_env_studio/core/plugins/base.py</code></p>
+<pre><code class="language-python">class BasePlugin(ABC):
+    @abstractmethod
+    def get_metadata(self) -&gt; PluginMetadata: ...
+
+    @abstractmethod
+    def initialize(self, app_context: Dict[str, Any]) -&gt; None: ...
+
+    @abstractmethod
+    def execute(self, hook: str, context: Dict[str, Any]) -&gt; Any: ...
+
+    def validate(self) -&gt; bool: ...
+    def cleanup(self) -&gt; None: ...
+</code></pre>
+<h3 id="pluginmanager-api">PluginManager API</h3>
+<p><strong>File</strong>: <code>py_env_studio/core/plugins/manager.py</code></p>
+<pre><code class="language-python">class PluginManager:
+    def discover_plugins(self) -&gt; List[str]: ...
+    def load_plugin(self, plugin_name: str) -&gt; BasePlugin: ...
+    def unload_plugin(self, plugin_name: str) -&gt; None: ...
+    def execute_hook(self, hook: str, context: Dict[str, Any]) -&gt; List[Any]: ...
+    def get_plugin(self, plugin_name: str) -&gt; Optional[BasePlugin]: ...
+    def is_plugin_enabled(self, plugin_name: str) -&gt; bool: ...
+</code></pre>
+<hr />
+<h2 id="hook-system-section">🔗 Hook System Section</h2>
+<h3 id="environment-hooks">Environment Hooks</h3>
+<ul>
+<li><code>before_create_env</code> / <code>after_create_env</code></li>
+<li><code>before_delete_env</code> / <code>after_delete_env</code></li>
+<li><code>before_activate_env</code> / <code>after_activate_env</code></li>
+<li><code>before_rename_env</code> / <code>after_rename_env</code></li>
+</ul>
+<h3 id="package-hooks">Package Hooks</h3>
+<ul>
+<li><code>before_install_package</code> / <code>after_install_package</code></li>
+<li><code>before_uninstall_package</code> / <code>after_uninstall_package</code></li>
+<li><code>before_update_package</code> / <code>after_update_package</code></li>
+</ul>
+<h3 id="application-hooks">Application Hooks</h3>
+<ul>
+<li><code>on_app_start</code></li>
+<li><code>on_app_shutdown</code></li>
+<li><code>on_scan_complete</code></li>
+</ul>
+<p><strong>See</strong>: <a href="../PLUGINS_ARCHITECTURE/#hook-system">Architecture - Hook System</a></p>
+<hr />
+<h2 id="plugin-lifecycle-section">🔄 Plugin Lifecycle Section</h2>
+<ol>
+<li><strong>Discovery</strong> - PluginManager finds plugins in <code>~/.py_env_studio/plugins/</code></li>
+<li><strong>Loading</strong> - User enables plugin via UI</li>
+<li><strong>Initialization</strong> - Plugin's <code>initialize()</code> method called with app context</li>
+<li><strong>Execution</strong> - Plugin's <code>execute()</code> called when hooks fire</li>
+<li><strong>Unloading</strong> - User disables or app shuts down</li>
+<li><strong>Cleanup</strong> - Plugin's <code>cleanup()</code> method called</li>
+</ol>
+<p><strong>See</strong>: <a href="../PLUGINS_ARCHITECTURE/#plugin-lifecycle">Architecture - Plugin Lifecycle</a></p>
+<hr />
+<h2 id="extending-the-system">🛠️ Extending the System</h2>
+<h3 id="adding-a-new-hook">Adding a New Hook</h3>
+<ol>
+<li>
+<p>Add hook to <code>PluginHook</code> enum:
+   <code>python
+   # py_env_studio/core/plugins/base.py
+   class PluginHook(str, Enum):
+       MY_NEW_HOOK = "my_new_hook"</code></p>
+</li>
+<li>
+<p>Fire hook from application:
+   <code>python
+   # py_env_studio/ui/main_window.py
+   self.plugin_manager.execute_hook("my_new_hook", {
+       "data": "value"
+   })</code></p>
+</li>
+<li>
+<p>Plugin can subscribe:
+   <code>json
+   {
+     "hooks": ["my_new_hook"]
+   }</code></p>
+</li>
+</ol>
+<h3 id="adding-plugin-features">Adding Plugin Features</h3>
+<p>See <a href="../PLUGINS_ARCHITECTURE/#future-enhancements">Architecture - Future Enhancements</a></p>
+<hr />
+<h2 id="documentation-checklist">📝 Documentation Checklist</h2>
+<ul>
+<li>[x] Plugin Development Guide (30 min read)</li>
+<li>[x] Architecture Document (20 min read)</li>
+<li>[x] Quick Reference (5 min lookup)</li>
+<li>[x] Sample Plugin Code (working example)</li>
+<li>[x] API Reference (inline)</li>
+<li>[x] Hook Documentation (complete)</li>
+<li>[x] Lifecycle Diagrams (clear)</li>
+<li>[x] Design Patterns Explained (detailed)</li>
+<li>[x] DRY Principles Applied (documented)</li>
+<li>[x] SRE Principles (covered)</li>
+<li>[x] Security Considerations (noted)</li>
+<li>[x] Performance Characteristics (analyzed)</li>
+<li>[x] Testing Guide (included)</li>
+<li>[x] Troubleshooting (comprehensive)</li>
+</ul>
+<hr />
+<h2 id="getting-started-path">🚀 Getting Started Path</h2>
+<h3 id="path-1-just-use-plugins-5-min">Path 1: Just Use Plugins (5 min)</h3>
+<ol>
+<li>Read: <a href="../PLUGIN_QUICK_REFERENCE/">Quick Reference</a></li>
+<li>Do: Enable sample plugin via Tools &gt; Plugins</li>
+<li>Done!</li>
+</ol>
+<h3 id="path-2-create-first-plugin-45-min">Path 2: Create First Plugin (45 min)</h3>
+<ol>
+<li>Read: <a href="../PLUGIN_DEVELOPMENT/">Development Guide</a> introduction</li>
+<li>Study: <a href="../examples/sample_plugin/sample_plugin.py">Sample Plugin</a></li>
+<li>Copy: Sample plugin to new directory</li>
+<li>Modify: For your use case</li>
+<li>Test: Via plugin manager</li>
+<li>Done!</li>
+</ol>
+<h3 id="path-3-understand-system-60-min">Path 3: Understand System (60 min)</h3>
+<ol>
+<li>Read: <a href="../PLUGINS_ARCHITECTURE/">Architecture Document</a></li>
+<li>Study: <a href="../py_env_studio/core/plugins/">Core Plugin Code</a></li>
+<li>Review: <a href="../PLUGINS_ARCHITECTURE/#design-patterns">Design Patterns</a></li>
+<li>Understand: <a href="../PLUGINS_ARCHITECTURE/#plugin-lifecycle">Plugin Lifecycle</a></li>
+<li>Done!</li>
+</ol>
+<hr />
+<h2 id="faq">❓ FAQ</h2>
+<p><strong>Q: Where do I put my plugin?</strong>
+A: <code>~/.py_env_studio/plugins/my_plugin/</code></p>
+<p><strong>Q: What's required in plugin.json?</strong>
+A: name, version, author, description, entry_point, hooks</p>
+<p><strong>Q: Can plugins access the UI?</strong>
+A: Yes, via <code>app_context.get("app")</code></p>
+<p><strong>Q: Do plugins need dependencies?</strong>
+A: No, but list them in <code>dependencies</code> field</p>
+<p><strong>Q: Can plugins communicate?</strong>
+A: Not directly (future enhancement)</p>
+<p><strong>Q: Are plugins sandboxed?</strong>
+A: No, they run in main process (security consideration)</p>
+<hr />
+<h2 id="support">📞 Support</h2>
+<ul>
+<li><strong>Questions?</strong> Check <a href="../PLUGIN_QUICK_REFERENCE/">Quick Reference FAQ</a></li>
+<li><strong>Stuck?</strong> Review <a href="../PLUGIN_DEVELOPMENT/#troubleshooting">Development Guide - Troubleshooting</a></li>
+<li><strong>Code Issue?</strong> See <a href="../PLUGINS_ARCHITECTURE/#troubleshooting">Architecture - Troubleshooting</a></li>
+<li><strong>Example?</strong> Study <a href="../examples/sample_plugin/sample_plugin.py">Sample Plugin</a></li>
+</ul>
+<hr />
+<h2 id="summary">📌 Summary</h2>
+<p>The PyEnvStudio Plugin System provides:</p>
+<p>✅ <strong>Complete Framework</strong> - Base classes, manager, exceptions<br />
+✅ <strong>User Interface</strong> - Tools &gt; Plugins menu for management<br />
+✅ <strong>17 Hooks</strong> - Cover all major operations<br />
+✅ <strong>Example Plugin</strong> - Working code to learn from<br />
+✅ <strong>Comprehensive Docs</strong> - 3 documents + quick reference<br />
+✅ <strong>Design Patterns</strong> - Factory, Observer, Strategy, Template Method<br />
+✅ <strong>DRY Principles</strong> - Handler pattern, metadata reuse<br />
+✅ <strong>SRE Ready</strong> - Reliability, observability, scalability, simplicity, automation  </p>
+<p><strong>Get started</strong>: Read <a href="../PLUGIN_QUICK_REFERENCE/">Plugin Quick Reference</a> or <a href="../PLUGIN_DEVELOPMENT/">Plugin Development Guide</a></p>
+<hr />
+<p><strong>Version</strong>: 1.0.0<br />
+<strong>Last Updated</strong>: February 14, 2026<br />
+<strong>Status</strong>: Production Ready ✅</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": "..", "features": ["navigation.tabs", "navigation.top", "content.code.copy", "toc.integrate", "search.suggest", "search.highlight"], "search": "../assets/javascripts/workers/search.973d3a69.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.92b07e13.min.js"></script>
+      
+    
+  </body>
+</html>
