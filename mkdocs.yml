@@ -31,6 +31,11 @@ nav:
   - CLI Reference: cli.md
   - Roadmap: roadmap.md
   - Contributing: contributing.md
+  - Plugins:
+      - Architecture: PLUGINS_ARCHITECTURE.md
+      - Development Guide: PLUGIN_DEVELOPMENT.md
+      - Documentation Index: PLUGIN_DOCUMENTATION_INDEX.md
+      - Quick Reference: PLUGIN_QUICK_REFERENCE.md
 
 plugins:
   - search
