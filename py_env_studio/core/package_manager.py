@@ -161,9 +161,9 @@ def export_requirements(env_name, output_file, log_callback=None):
                 raise Exception(msg)
         except Exception as e:
             logger.error(f"uv export_requirements failed, falling back to pip: {e}")
-            return pip_tools.export_requirements(env_name, output_file, log_callback)
+            return pip_tools.export_requirements(env_name, output_file)
     else:
-        return pip_tools.export_requirements(env_name, output_file, log_callback)
+        return pip_tools.export_requirements(env_name, output_file)
 
 
 def import_requirements(env_name, requirements_file, log_callback=None):
