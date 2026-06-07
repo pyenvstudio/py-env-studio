@@ -216,3 +216,6 @@ changelogs/
 notes/
 prompts/
 tests/
+
+# javascript
+node_modules/

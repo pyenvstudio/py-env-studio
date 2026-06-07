@@ -1,4 +1,4 @@
-# PyEnvStudio Release Notes - v2.0.7
+# PyEnvStudio Release Notes - v2.0.8
 
 ## Release Date
 February 14, 2026
