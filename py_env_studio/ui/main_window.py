@@ -916,7 +916,7 @@ class PyEnvStudio(ctk.CTk):
                 env,
                 data.get("python_version", "-"),
                 vm_tool,
-                data.get("recent_location", "heh"),
+                data.get("recent_location", "-"),
                 data.get("size", "-"),
                 "🖊",
                 "🗑️",

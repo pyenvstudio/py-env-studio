@@ -92,6 +92,8 @@ include-package-data = true
     "update.png",
     "pes-icon-default.png",
     "pes-default-transparrent.png",
+    "pes-icon-default.ico",
+    "pes-transparrent-icon-default.ico",
 ]
 
 [tool.setuptools.packages.find]

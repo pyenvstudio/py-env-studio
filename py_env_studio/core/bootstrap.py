@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import shutil
+import logging
 
 from .database import DatabaseManager
 from .runtime import get_runtime_config
 from .setup_state import SetupStateManager
+from .windows_apps import ensure_windows_apps_shortcut
+
+LOGGER = logging.getLogger(__name__)
 
 
 def initialize_app_runtime() -> str:
@@ -26,6 +30,10 @@ def initialize_app_runtime() -> str:
     try:
         db = DatabaseManager(runtime.db_path)
         db.initialize_database()
+        try:
+            ensure_windows_apps_shortcut()
+        except Exception as shortcut_exc:
+            LOGGER.warning("Windows Apps shortcut setup skipped: %s", shortcut_exc)
         if should_repair or health == "complete":
             state.mark_setup_complete()
     except Exception as exc:
