@@ -1,7 +1,5 @@
 name: Publish to PyPI
-# on:
-#   release:
-#     types: [published]  # Trigger when you create a GitHub Release
+
 on:
   push:
     tags:
@@ -9,11 +7,12 @@ on:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -32,16 +31,24 @@ jobs:
       - name: Update pyproject.toml version and config.ini
         run: |
           VERSION=${{ steps.get_version.outputs.version }}
+
           sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" pyproject.toml
-          echo "Updated pyproject.toml to version $VERSION"
+
           sed -i "/^\[project\]/,/^\[/{s/^version *= *.*/version = ${VERSION}/}" py_env_studio/config.ini
-          echo "✅ Updated config.ini to version $VERSION"
 
       - name: Install build tools
         run: pip install build
 
-      - name: Build the package
+      - name: Build package
         run: python -m build
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
