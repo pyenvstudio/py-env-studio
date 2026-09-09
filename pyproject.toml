@@ -105,7 +105,9 @@ dev = ["pytest", "black", "isort"]
 gui = ["Pillow"]
 
 [project.scripts]
-py-env-studio = "py_env_studio.main:main"
+py-env-studio = "py_env_studio.commands:main"
+pyenvstudio = "py_env_studio.commands:main"
+pes = "py_env_studio.commands:main"
 
 [project.urls]
 Homepage = "https://github.com/pyenvstudio/py-env-studio"

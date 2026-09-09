@@ -28,6 +28,8 @@ nav:
   - Installation: install.md
   - Usage: usage.md
   - Features: features.md
+  - Templates (Phase 1): FEATURE/TEMPLATES_PHASE1.md
+  - Templates (Phase 1.2): FEATURE/TEMPLATES_PHASE1_2.md
   - CLI Reference: cli.md
   - Roadmap: roadmap.md
   - Contributing: contributing.md

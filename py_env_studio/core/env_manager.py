@@ -19,12 +19,34 @@ from .strategies import run_strategy
 
 runtime = get_runtime_config()
 
-VENV_DIR = str(runtime.venv_dir)
-PYTHON_PATH = runtime.python_path
-LOG_FILE = str(runtime.log_path)
-DB_FILE = str(runtime.db_path)
-MATRIX_FILE = str(runtime.matrix_path)
-ENV_DATA_FILE = str(runtime.venv_dir / "env_data.json")
+VENV_DIR = ""
+PYTHON_PATH = None
+LOG_FILE = ""
+DB_FILE = ""
+MATRIX_FILE = ""
+ENV_DATA_FILE = ""
+
+
+def refresh_runtime_paths() -> None:
+    """Refresh module-level paths from current runtime configuration."""
+    global runtime
+    global VENV_DIR
+    global PYTHON_PATH
+    global LOG_FILE
+    global DB_FILE
+    global MATRIX_FILE
+    global ENV_DATA_FILE
+
+    runtime = get_runtime_config()
+    VENV_DIR = str(runtime.venv_dir)
+    PYTHON_PATH = runtime.python_path
+    LOG_FILE = str(runtime.log_path)
+    DB_FILE = str(runtime.db_path)
+    MATRIX_FILE = str(runtime.matrix_path)
+    ENV_DATA_FILE = str(runtime.venv_dir / "env_data.json")
+
+
+refresh_runtime_paths()
 
 logging.basicConfig(
     filename=LOG_FILE,

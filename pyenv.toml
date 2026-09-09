@@ -1,0 +1,4 @@
+project_name = "py_env_studio"
+environment_id = "py_env_studio-1f101dff"
+python_version = "3.12"
+runtime_enabled = true

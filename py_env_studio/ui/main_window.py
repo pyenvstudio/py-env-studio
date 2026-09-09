@@ -14,13 +14,16 @@ import threading
 import queue
 import datetime
 import tkinter.ttk as ttk
+from pathlib import Path
+import tempfile
+import shutil
 
 # project modules --------------------------------
 from py_env_studio.core.env_manager import (
     create_env, rename_env, delete_env, activate_env, search_envs,
     get_env_data, set_env_data, is_valid_env_selected,
     list_pythons, is_valid_python_version_detected,
-    get_available_tools, add_tool
+    get_available_tools, add_tool, refresh_runtime_paths
 )
 from py_env_studio.core.package_manager import (
     list_packages, install_package, uninstall_package, update_package,
@@ -40,6 +43,30 @@ from py_env_studio.core.py_tonic import (
 from py_env_studio.utils.vulneribility_scanner import DBHelper, SecurityMatrix
 from  py_env_studio.utils.vulneribility_insights  import VulnerabilityInsightsApp
 from py_env_studio.core.plugins import PluginManager
+from py_env_studio.core.templates import TemplateEngine, TemplateCreationRequest
+from py_env_studio.core.templates import TemplateCreationWorkflow, ProjectCreationStatus
+from py_env_studio.core.templates.validator import sanitize_module_name
+from py_env_studio.core.templates import (
+    UserTemplateError,
+    UserTemplateStore,
+    generate_template_id,
+    refresh_default_registry,
+    extract_github_repository_name,
+    validate_github_repository_url,
+    clone_github_repository,
+)
+from py_env_studio.core.project_launcher import (
+    discover_project_open_tools,
+    find_tool_by_id,
+    open_project_with_tool,
+)
+from py_env_studio.core.configuration import (
+    AppConfig,
+    AppPreferences,
+    ConfigurationError,
+    ConfigurationService,
+)
+from py_env_studio.core.runtime import refresh_runtime_config
 # ===== THEME & CONSTANTS =====
 class Theme:
     PADDING = 10
@@ -156,6 +183,9 @@ class PyEnvStudio(ctk.CTk):
         self._setup_window()
         self.icons = self._load_icons()
         self._setup_plugins()
+        self.template_engine = TemplateEngine()
+        self.template_creation_workflow = TemplateCreationWorkflow(self.template_engine)
+        self.user_template_store = UserTemplateStore()
         self._setup_ui()
         self._setup_logging()
 
@@ -165,6 +195,8 @@ class PyEnvStudio(ctk.CTk):
         self.version = self.app_config.get('project', 'version', fallback='1.0.0')
 
     def _setup_vars(self):
+        self.configuration_service = ConfigurationService()
+        self.preferences = self.configuration_service.load_preferences()
         self.env_search_var = tkinter.StringVar()
         self.selected_env_var = tkinter.StringVar()
         self.dir_var = tkinter.StringVar()
@@ -172,7 +204,6 @@ class PyEnvStudio(ctk.CTk):
         self.open_with_tools = self._load_open_with_tools()
         self.open_with_var = tkinter.StringVar(value=self.open_with_tools[0] if self.open_with_tools else "CMD")
         self.choosen_python_var = tkinter.StringVar()
-        self.env_log_queue = queue.Queue()
         self.env_log_queue = queue.Queue()
         self.py_tonic_profile = load_py_tonic_profile()
         self.py_tonic_profile = save_py_tonic_profile(self.py_tonic_profile)
@@ -200,7 +231,10 @@ class PyEnvStudio(ctk.CTk):
             except Exception as e:
                 logging.warning(f"Could not set Windows AppUserModelID: {e}")
         
-        ctk.set_appearance_mode("System")
+        appearance_mode = self.preferences.appearance_mode if self.preferences.appearance_mode else "System"
+        ctk.set_appearance_mode(appearance_mode)
+        scaling = self.preferences.ui_scaling if self.preferences.ui_scaling else "100%"
+        ctk.set_widget_scaling(int(scaling.replace("%", "")) / 100)
         ctk.set_default_color_theme("blue")
         self.title("PyEnvStudio")
         self.geometry('1100x700')
@@ -337,8 +371,19 @@ class PyEnvStudio(ctk.CTk):
         tools_menu.add_command(label="Vulnerability Report", command=lambda: self.show_vulnerability_report(self.selected_env_var.get()))
         tools_menu.add_command(label="Check for Package Updates", command=lambda: self.check_for_package_updates(self.selected_env_var.get()))
         # tools_menu.add_command(label="Py-Tonic Advisor", command=self.show_py_tonic_advisor)
+        tools_menu.add_command(label="Configuration", command=self.show_preferences_dialog)
         tools_menu.add_separator()
         tools_menu.add_command(label="Plugins", command=self.show_plugins_dialog)
+
+        # === Templates Menu ===
+        templates_menu = tkinter.Menu(menubar, tearoff=0)
+        for template in self.template_engine.list_templates():
+            templates_menu.add_command(
+                label=template.name,
+                command=lambda template_id=template.id: self.open_template_wizard(template_id),
+            )
+        templates_menu.add_separator()
+        templates_menu.add_command(label="Manage Templates", command=self.show_manage_templates_dialog)
 
         # === Help Menu ===
         help_menu = tkinter.Menu(menubar, tearoff=0)
@@ -352,6 +397,7 @@ class PyEnvStudio(ctk.CTk):
         # menubar.add_cascade(label="Edit", menu=edit_menu)
         menubar.add_cascade(label="View", menu=view_menu)
         menubar.add_cascade(label="Tools", menu=tools_menu)
+        menubar.add_cascade(label="Templates", menu=templates_menu)
         menubar.add_cascade(label="Help", menu=help_menu)
         self.config(menu=menubar)
 
@@ -366,14 +412,6 @@ class PyEnvStudio(ctk.CTk):
             img = None
         self.lbl(sb, text="", image=img).grid(row=0, column=0, padx=10, pady=(10, 20))
         # self.btn(sb, "About", self.show_about_dialog, self.icons.get("about"), width=150).grid(row=4, column=0, padx=10, pady=(10, 20), sticky="ew")
-        self.lbl(sb, "Appearance Mode:", anchor="w").grid(row=5, column=0, padx=10, pady=(10, 0), sticky="w")
-        opt = self.optmenu(sb, ["Light", "Dark", "System"], self.change_appearance_mode_event, width=150)
-        opt.grid(row=6, column=0, padx=10, pady=5)
-        opt.set("System")
-        self.lbl(sb, "UI Scaling:", anchor="w").grid(row=7, column=0, padx=10, pady=(10, 0), sticky="w")
-        scl = self.optmenu(sb, ["80%", "90%", "100%", "110%", "120%"], self.change_scaling_event, width=150)
-        scl.grid(row=8, column=0, padx=10, pady=5)
-        scl.set("100%")
 
     def _setup_tabview(self):
         self.tabview = ctk.CTkTabview(self, command=self.on_tab_changed)
@@ -410,6 +448,9 @@ class PyEnvStudio(ctk.CTk):
         # Smaller width for python path entry to fit button and option menu on same row
         self.entry_python_path = self.entry(f, "Enter Python interpreter path", width=180)
         self.entry_python_path.grid(row=1, column=1, padx=(0, 5), pady=5, sticky="ew")
+        default_python_path = (self.preferences.default_python_path or "").strip()
+        if default_python_path:
+            self.entry_python_path.insert(0, default_python_path)
 
         self.btn(f, "Browse", self.browse_python_path, width=80).grid(row=1, column=2, padx=(5, 5), pady=5)
 
@@ -1454,11 +1495,21 @@ class PyEnvStudio(ctk.CTk):
 
     def change_appearance_mode_event(self, new_appearance_mode: str):
         ctk.set_appearance_mode(new_appearance_mode)
+        try:
+            self.app_config.set_param("settings", "appearance_mode", new_appearance_mode)
+            self.preferences = self.configuration_service.load_preferences()
+        except Exception as exc:
+            logging.warning(f"Failed to save appearance mode: {exc}")
         self.update_treeview_style()
         self.refresh_env_list()
 
     def change_scaling_event(self, new_scaling: str):
         ctk.set_widget_scaling(int(new_scaling.replace("%", "")) / 100)
+        try:
+            self.app_config.set_param("settings", "ui_scaling", new_scaling)
+            self.preferences = self.configuration_service.load_preferences()
+        except Exception as exc:
+            logging.warning(f"Failed to save UI scaling: {exc}")
 
     def on_tab_changed(self):
         if self.tabview.get() == "Packages":
@@ -1514,9 +1565,189 @@ class PyEnvStudio(ctk.CTk):
                   f"Created by: Wasim Shaikh\nVersion: {self.version}\n\nVisit: https://github.com/contactshaikhwasim")
 
     def show_preferences_dialog(self):
-        """Show a dialog to set preferences"""
-        # Load current preferences
-        pass
+        """Show configuration dialog for PES defaults."""
+        from py_env_studio.core import uv_tools
+
+        current = self.configuration_service.load_preferences()
+
+        top = ctk.CTkToplevel(self)
+        top.title("Configuration")
+        top.geometry("880x640")
+        top.transient(self)
+        top.grab_set()
+        top.grid_columnconfigure(0, weight=1)
+        top.grid_rowconfigure(1, weight=1)
+        top.geometry(f"+{self.winfo_rootx() + 230}+{self.winfo_rooty() + 90}")
+
+        header = ctk.CTkLabel(top, text="Configuration", font=("Segoe UI", 18, "bold"))
+        header.grid(row=0, column=0, padx=16, pady=(16, 8), sticky="w")
+
+        body = ctk.CTkScrollableFrame(top)
+        body.grid(row=1, column=0, padx=16, pady=8, sticky="nsew")
+        body.grid_columnconfigure(1, weight=1)
+
+        default_venv_var = tkinter.StringVar(value=current.default_venv_path)
+        package_manager_var = tkinter.StringVar(value=current.default_package_manager)
+        project_tool_var = tkinter.StringVar(value=current.default_project_tool or "Default")
+        create_venv_var = tkinter.IntVar(value=1 if current.template_create_venv_default else 0)
+        init_git_var = tkinter.IntVar(value=1 if current.template_initialize_git_default else 0)
+        appearance_var = tkinter.StringVar(value=current.appearance_mode)
+        scaling_var = tkinter.StringVar(value=current.ui_scaling)
+
+        python_map: dict[str, tuple[str, str]] = {"System Default": ("", "")}
+        python_labels = ["System Default"]
+        for interpreter in list_pythons():
+            detected_version = is_valid_python_version_detected(interpreter)
+            version = ""
+            if detected_version and detected_version.startswith("Python "):
+                version = detected_version.split(" ", 1)[1]
+            label = f"{detected_version or 'Python (unknown)'} - {interpreter}"
+            python_labels.append(label)
+            python_map[label] = (interpreter, version)
+
+        default_python_label = "System Default"
+        for label, (path_value, version_value) in python_map.items():
+            if current.default_python_path and path_value == current.default_python_path:
+                default_python_label = label
+                break
+            if not current.default_python_path and current.default_python_version and version_value.startswith(current.default_python_version):
+                default_python_label = label
+
+        default_python_var = tkinter.StringVar(value=default_python_label)
+
+        available_tools = discover_project_open_tools(self.open_with_tools, include_default=True)
+        tool_display_to_id = {tool["display_name"]: tool["tool_id"] for tool in available_tools}
+        tool_id_to_display = {tool["tool_id"]: tool["display_name"] for tool in available_tools}
+        tool_labels = list(tool_display_to_id.keys())
+
+        if current.default_project_tool in tool_id_to_display:
+            project_tool_var.set(tool_id_to_display[current.default_project_tool])
+        elif tool_labels:
+            project_tool_var.set(tool_labels[0])
+
+        self.lbl(body, "General", font=("Segoe UI", 14, "bold")).grid(row=0, column=0, columnspan=2, padx=8, pady=(6, 4), sticky="w")
+        self.lbl(body, "Appearance Mode:", font=self.theme.FONT_BOLD).grid(row=1, column=0, padx=8, pady=6, sticky="w")
+        self.optmenu(body, ["Light", "Dark", "System"], var=appearance_var).grid(row=1, column=1, padx=8, pady=6, sticky="w")
+        self.lbl(body, "UI Scaling:", font=self.theme.FONT_BOLD).grid(row=2, column=0, padx=8, pady=6, sticky="w")
+        self.optmenu(body, ["80%", "90%", "100%", "110%", "120%"], var=scaling_var).grid(row=2, column=1, padx=8, pady=6, sticky="w")
+
+        self.lbl(body, "Environment", font=("Segoe UI", 14, "bold")).grid(row=3, column=0, columnspan=2, padx=8, pady=(14, 4), sticky="w")
+        self.lbl(body, "Default Virtual Environment Location:", font=self.theme.FONT_BOLD).grid(row=4, column=0, padx=8, pady=6, sticky="w")
+        venv_row = ctk.CTkFrame(body, fg_color="transparent")
+        venv_row.grid(row=4, column=1, padx=8, pady=6, sticky="ew")
+        venv_row.grid_columnconfigure(0, weight=1)
+        self.entry(venv_row, var=default_venv_var, width=420).grid(row=0, column=0, padx=(0, 6), sticky="ew")
+        self.btn(
+            venv_row,
+            "Browse",
+            lambda: default_venv_var.set(filedialog.askdirectory() or default_venv_var.get()),
+            width=90,
+        ).grid(row=0, column=1, padx=0, pady=0)
+
+        self.lbl(body, "Python", font=("Segoe UI", 14, "bold")).grid(row=5, column=0, columnspan=2, padx=8, pady=(14, 4), sticky="w")
+        self.lbl(body, "Default Python Version:", font=self.theme.FONT_BOLD).grid(row=6, column=0, padx=8, pady=6, sticky="w")
+        self.optmenu(body, python_labels, var=default_python_var, width=620).grid(row=6, column=1, padx=8, pady=6, sticky="ew")
+
+        self.lbl(body, "Package Manager", font=("Segoe UI", 14, "bold")).grid(row=7, column=0, columnspan=2, padx=8, pady=(14, 4), sticky="w")
+        pm_row = ctk.CTkFrame(body, fg_color="transparent")
+        pm_row.grid(row=8, column=0, columnspan=2, padx=8, pady=6, sticky="w")
+        pip_radio = ctk.CTkRadioButton(pm_row, text="pip", variable=package_manager_var, value="pip")
+        pip_radio.grid(row=0, column=0, padx=(0, 18), pady=4, sticky="w")
+        uv_text = "uv" if uv_tools.is_uv_installed() else "uv (Not Installed)"
+        uv_radio = ctk.CTkRadioButton(pm_row, text=uv_text, variable=package_manager_var, value="uv")
+        uv_radio.grid(row=0, column=1, padx=0, pady=4, sticky="w")
+
+        self.lbl(body, "Project / Templates", font=("Segoe UI", 14, "bold")).grid(row=9, column=0, columnspan=2, padx=8, pady=(14, 4), sticky="w")
+        self.lbl(body, "Default Project Tool:", font=self.theme.FONT_BOLD).grid(row=10, column=0, padx=8, pady=6, sticky="w")
+        self.optmenu(body, tool_labels, var=project_tool_var, width=320).grid(row=10, column=1, padx=8, pady=6, sticky="w")
+        self.chk(body, "Create virtual environment automatically", variable=create_venv_var).grid(row=11, column=0, columnspan=2, padx=8, pady=6, sticky="w")
+        self.chk(body, "Initialize Git repository", variable=init_git_var).grid(row=12, column=0, columnspan=2, padx=8, pady=6, sticky="w")
+
+        status_label = self.lbl(body, "", text_color=self.theme.HIGHLIGHT_COLOR)
+        status_label.grid(row=13, column=0, columnspan=2, padx=8, pady=(4, 8), sticky="w")
+
+        def collect_preferences() -> AppPreferences:
+            selected_python_label = default_python_var.get().strip() or "System Default"
+            python_path, python_version = python_map.get(selected_python_label, ("", ""))
+            selected_tool_display = project_tool_var.get().strip()
+            selected_tool_id = tool_display_to_id.get(selected_tool_display, "default")
+            return AppPreferences(
+                default_venv_path=default_venv_var.get().strip(),
+                default_python_path=python_path,
+                default_python_version=python_version,
+                default_package_manager=package_manager_var.get().strip().lower(),
+                default_project_tool=selected_tool_id,
+                open_with_tools=current.open_with_tools,
+                template_create_venv_default=bool(create_venv_var.get()),
+                template_initialize_git_default=bool(init_git_var.get()),
+                appearance_mode=appearance_var.get().strip() or "System",
+                ui_scaling=scaling_var.get().strip() or "100%",
+            )
+
+        def apply_runtime_preferences(saved: AppPreferences) -> None:
+            refresh_runtime_config()
+            refresh_runtime_paths()
+            self.preferences = saved
+            self.open_with_tools = self._load_open_with_tools()
+            self.open_with_dropdown.configure(values=self.open_with_tools)
+            if self.open_with_var.get() not in self.open_with_tools:
+                self.open_with_var.set(self.open_with_tools[0])
+
+            ctk.set_appearance_mode(saved.appearance_mode)
+            ctk.set_widget_scaling(int(saved.ui_scaling.replace("%", "")) / 100)
+            self.create_env_pkg_mgr.set(saved.default_package_manager)
+
+            self.entry_python_path.delete(0, tkinter.END)
+            if saved.default_python_path:
+                self.entry_python_path.insert(0, saved.default_python_path)
+
+            self.refresh_env_list()
+            self.env_log_queue.put("[Configuration] Settings updated")
+
+        def persist(close_after_save: bool) -> None:
+            try:
+                new_preferences = collect_preferences()
+                valid_tool_ids = [tool["tool_id"] for tool in available_tools]
+                self.configuration_service.validate_preferences(
+                    new_preferences,
+                    available_project_tools=valid_tool_ids,
+                )
+                self.configuration_service.save_preferences(new_preferences)
+                apply_runtime_preferences(new_preferences)
+                status_label.configure(
+                    text="Configuration saved successfully.",
+                    text_color=self.theme.HIGHLIGHT_COLOR,
+                )
+                if close_after_save:
+                    top.destroy()
+            except ConfigurationError as exc:
+                status_label.configure(text=str(exc), text_color=self.theme.ERROR_COLOR)
+                show_error(str(exc))
+            except Exception as exc:
+                status_label.configure(text="Failed to save configuration.", text_color=self.theme.ERROR_COLOR)
+                show_error(f"Failed to save configuration: {exc}")
+
+        def reset_defaults() -> None:
+            if not messagebox.askyesno(
+                "Reset Configuration?",
+                "This will restore Py Env Studio defaults.\n\nContinue?",
+            ):
+                return
+            try:
+                defaults = self.configuration_service.reset_to_defaults()
+                apply_runtime_preferences(defaults)
+                status_label.configure(text="Configuration reset to defaults.", text_color=self.theme.HIGHLIGHT_COLOR)
+                show_info("Configuration reset to defaults.")
+                top.destroy()
+            except Exception as exc:
+                show_error(f"Failed to reset configuration: {exc}")
+
+        footer = ctk.CTkFrame(top)
+        footer.grid(row=2, column=0, padx=16, pady=(8, 16), sticky="ew")
+        self.btn(footer, "Reset to Defaults", reset_defaults, width=150).pack(side="left", padx=8, pady=8)
+        self.btn(footer, "Cancel", top.destroy, width=100).pack(side="right", padx=8, pady=8)
+        self.btn(footer, "Save", lambda: persist(close_after_save=True), width=100).pack(side="right", padx=8, pady=8)
+        self.btn(footer, "Apply", lambda: persist(close_after_save=False), width=100).pack(side="right", padx=8, pady=8)
 
     def show_install_package_dialog(self):
         """Show a dialog to install a package in the selected environment."""
@@ -1612,6 +1843,808 @@ class PyEnvStudio(ctk.CTk):
         close_btn = self.btn(footer, "Close", top.destroy, width=120)
         close_btn.grid(row=0, column=2, padx=4, sticky="e")
 
+    def _reload_template_registry(self) -> None:
+        registry = refresh_default_registry()
+        self.template_engine.registry = registry
+        self.template_creation_workflow.engine = self.template_engine
+        self._setup_menubar()
+
+    def show_manage_templates_dialog(self):
+        """Manage built-in and user-created templates."""
+        top = ctk.CTkToplevel(self)
+        top.title("Manage Templates")
+        top.geometry("900x640")
+        top.transient(self)
+        top.grab_set()
+        top.grid_columnconfigure(0, weight=1)
+        top.grid_rowconfigure(1, weight=1)
+        top.geometry(f"+{self.winfo_rootx() + 250}+{self.winfo_rooty() + 120}")
+
+        title = ctk.CTkLabel(top, text="Manage Templates", font=("Segoe UI", 18, "bold"))
+        title.grid(row=0, column=0, padx=16, pady=(16, 8), sticky="w")
+
+        list_frame = ctk.CTkScrollableFrame(top)
+        list_frame.grid(row=1, column=0, padx=16, pady=8, sticky="nsew")
+        list_frame.grid_columnconfigure(0, weight=1)
+
+        def refresh_sections():
+            for child in list_frame.winfo_children():
+                child.destroy()
+
+            templates = self.template_engine.list_templates()
+            builtins = [template for template in templates if template.source == "built-in"]
+            users = [template for template in templates if template.source == "user"]
+
+            ctk.CTkLabel(list_frame, text="Built-in Templates", font=("Segoe UI", 14, "bold")).pack(anchor="w", padx=8, pady=(6, 2))
+            for template in builtins:
+                card = ctk.CTkFrame(list_frame, corner_radius=8, border_width=1, border_color=self.theme.BORDER_COLOR)
+                card.pack(fill="x", padx=4, pady=4)
+                ctk.CTkLabel(card, text=template.name, font=("Segoe UI", 12, "bold")).grid(row=0, column=0, padx=10, pady=(8, 2), sticky="w")
+                ctk.CTkLabel(card, text=template.description, justify="left", wraplength=620).grid(row=1, column=0, padx=10, pady=(0, 8), sticky="w")
+                self.btn(card, "Use", lambda template_id=template.id: [top.destroy(), self.open_template_wizard(template_id)], width=90).grid(row=0, column=1, rowspan=2, padx=10, pady=8)
+
+            ctk.CTkLabel(list_frame, text="My Templates", font=("Segoe UI", 14, "bold")).pack(anchor="w", padx=8, pady=(14, 2))
+            if not users:
+                ctk.CTkLabel(list_frame, text="No user templates yet.", text_color=self.theme.TEXT_COLOR_LIGHT).pack(anchor="w", padx=10, pady=6)
+            for template in users:
+                card = ctk.CTkFrame(list_frame, corner_radius=8, border_width=1, border_color=self.theme.BORDER_COLOR)
+                card.pack(fill="x", padx=4, pady=4)
+                ctk.CTkLabel(card, text=template.name, font=("Segoe UI", 12, "bold")).grid(row=0, column=0, padx=10, pady=(8, 2), sticky="w")
+                ctk.CTkLabel(card, text=f"{template.description}\nCategory: {template.category}", justify="left", wraplength=620).grid(row=1, column=0, padx=10, pady=(0, 8), sticky="w")
+                actions = ctk.CTkFrame(card, fg_color="transparent")
+                actions.grid(row=0, column=1, rowspan=2, padx=10, pady=8)
+                self.btn(actions, "Use", lambda template_id=template.id: [top.destroy(), self.open_template_wizard(template_id)], width=90).grid(row=0, column=0, padx=4)
+                self.btn(actions, "Delete", lambda template_id=template.id: self._delete_user_template(template_id, refresh_sections), width=90).grid(row=0, column=1, padx=4)
+
+        refresh_sections()
+
+        footer = ctk.CTkFrame(top)
+        footer.grid(row=2, column=0, padx=16, pady=(8, 16), sticky="ew")
+        self.btn(footer, "+ Add Template", lambda: self._show_add_template_dialog(refresh_sections), width=140).pack(side="left", padx=8, pady=8)
+        self.btn(footer, "Refresh", refresh_sections, width=100).pack(side="left", padx=8, pady=8)
+        self.btn(footer, "Close", top.destroy, width=110).pack(side="right", padx=8, pady=8)
+
+    def _show_add_template_dialog(self, refresh_callback) -> None:
+        top = ctk.CTkToplevel(self)
+        top.title("Add Template")
+        top.geometry("520x280")
+        top.transient(self)
+        top.grab_set()
+        top.grid_columnconfigure(0, weight=1)
+        top.geometry(f"+{self.winfo_rootx() + 330}+{self.winfo_rooty() + 180}")
+
+        ctk.CTkLabel(top, text="How would you like to add it?", font=("Segoe UI", 14, "bold")).grid(row=0, column=0, padx=16, pady=(18, 10), sticky="w")
+
+        body = ctk.CTkFrame(top)
+        body.grid(row=1, column=0, padx=16, pady=8, sticky="nsew")
+        body.grid_columnconfigure((0, 1), weight=1)
+
+        self.btn(
+            body,
+            "Local Project",
+            lambda: [top.destroy(), self._import_template_from_local(refresh_callback)],
+            width=200,
+            height=40,
+        ).grid(row=0, column=0, padx=8, pady=12)
+
+        self.btn(
+            body,
+            "GitHub Repository",
+            lambda: [top.destroy(), self._import_template_from_github(refresh_callback)],
+            width=200,
+            height=40,
+        ).grid(row=0, column=1, padx=8, pady=12)
+
+        self.btn(top, "Cancel", top.destroy, width=100).grid(row=2, column=0, padx=16, pady=(8, 16), sticky="e")
+
+    def _import_template_from_local(self, refresh_callback) -> None:
+        source = filedialog.askdirectory(title="Select project directory")
+        if not source:
+            return
+        self._show_template_metadata_dialog(
+            source_dir=Path(source),
+            source_type="local",
+            origin=source,
+            cleanup_dir=None,
+            refresh_callback=refresh_callback,
+            suggested_template_name=Path(source).name,
+        )
+
+    def _import_template_from_github(self, refresh_callback) -> None:
+        dialog = ctk.CTkInputDialog(
+            text="Enter GitHub repository URL:\nExample: https://github.com/user/project",
+            title="Import from GitHub",
+        )
+        dialog.geometry("+%d+%d" % (self.winfo_rootx() + 580, self.winfo_rooty() + 260))
+        repo_url = dialog.get_input()
+        if not repo_url:
+            return
+
+        progress = ctk.CTkToplevel(self)
+        progress.title("Importing Repository")
+        progress.geometry("520x190")
+        progress.transient(self)
+        progress.grab_set()
+        progress.grid_columnconfigure(0, weight=1)
+        progress.geometry(f"+{self.winfo_rootx() + 340}+{self.winfo_rooty() + 190}")
+
+        title = ctk.CTkLabel(progress, text="Importing repository...", font=("Segoe UI", 14, "bold"))
+        title.grid(row=0, column=0, padx=16, pady=(18, 8), sticky="w")
+        status_label = ctk.CTkLabel(progress, text="Validating repository URL...", justify="left", wraplength=480)
+        status_label.grid(row=1, column=0, padx=16, pady=(0, 12), sticky="w")
+
+        state = {"error": None, "source_dir": None, "cleanup_dir": None, "origin": None, "repo_name": None}
+
+        def set_status(message: str) -> None:
+            self.after(0, lambda: status_label.configure(text=message))
+
+        def task():
+            try:
+                set_status("Validating repository URL...")
+                normalized_url = validate_github_repository_url(repo_url)
+                state["origin"] = normalized_url
+                state["repo_name"] = extract_github_repository_name(repo_url)
+
+                temp_root = Path(tempfile.mkdtemp(prefix="pes-template-import-"))
+                source_dir = temp_root / "repo"
+                state["cleanup_dir"] = temp_root
+
+                set_status("Cloning repository...")
+                clone_github_repository(
+                    normalized_url,
+                    source_dir,
+                    timeout_seconds=240,
+                    log_callback=lambda msg: self.env_log_queue.put(f"[Templates] {msg}"),
+                )
+                set_status("Inspecting project...")
+                self.user_template_store.inspect_source(source_dir)
+                state["source_dir"] = source_dir
+                set_status("Template ready.")
+            except Exception as exc:
+                state["error"] = exc
+                if state.get("cleanup_dir"):
+                    shutil.rmtree(state["cleanup_dir"], ignore_errors=True)
+                raise
+
+        def on_complete():
+            progress.destroy()
+            if state["error"]:
+                show_error(f"GitHub import failed: {state['error']}")
+                return
+            self._show_template_metadata_dialog(
+                source_dir=state["source_dir"],
+                source_type="github",
+                origin=state["origin"],
+                cleanup_dir=state["cleanup_dir"],
+                refresh_callback=refresh_callback,
+                suggested_template_name=state["repo_name"],
+            )
+
+        self.run_async(task, success_msg=None, error_msg=None, callback=on_complete)
+
+    def _show_template_metadata_dialog(self, source_dir: Path, source_type: str, origin: str, cleanup_dir: Path | None, refresh_callback, suggested_template_name: str | None = None) -> None:
+        try:
+            inspection = self.user_template_store.inspect_source(source_dir)
+        except Exception as exc:
+            if cleanup_dir:
+                shutil.rmtree(cleanup_dir, ignore_errors=True)
+            show_error(f"Unable to inspect template source: {exc}")
+            return
+
+        top = ctk.CTkToplevel(self)
+        top.title("Create Template")
+        top.geometry("880x700")
+        top.transient(self)
+        top.grab_set()
+        top.grid_columnconfigure(0, weight=1)
+        top.grid_rowconfigure(1, weight=1)
+        top.geometry(f"+{self.winfo_rootx() + 220}+{self.winfo_rooty() + 80}")
+
+        default_name = (suggested_template_name or source_dir.name).strip()
+        name_var = tkinter.StringVar(value=default_name)
+        generated_id = generate_template_id(name_var.get())
+        template_id_var = tkinter.StringVar(value=generated_id)
+        desc_var = tkinter.StringVar(value="User-created template")
+        author_var = tkinter.StringVar(value="")
+        version_var = tkinter.StringVar(value="1.0.0")
+        category_var = tkinter.StringVar(value="General")
+        python_var = tkinter.StringVar(value="3.11")
+        replace_name_var = tkinter.IntVar(value=0)
+        state = {"last_generated": generated_id}
+
+        header = ctk.CTkLabel(top, text="Create Template", font=("Segoe UI", 16, "bold"))
+        header.grid(row=0, column=0, padx=16, pady=(16, 8), sticky="w")
+
+        body = ctk.CTkScrollableFrame(top)
+        body.grid(row=1, column=0, padx=16, pady=8, sticky="nsew")
+        body.grid_columnconfigure(1, weight=1)
+
+        self.lbl(body, "Template Name:", font=self.theme.FONT_BOLD).grid(row=0, column=0, padx=8, pady=6, sticky="w")
+        self.entry(body, var=name_var, width=320).grid(row=0, column=1, padx=8, pady=6, sticky="ew")
+
+        self.lbl(body, "Template ID:", font=self.theme.FONT_BOLD).grid(row=1, column=0, padx=8, pady=6, sticky="w")
+        self.entry(body, var=template_id_var, width=320).grid(row=1, column=1, padx=8, pady=6, sticky="ew")
+
+        self.lbl(body, "Description:", font=self.theme.FONT_BOLD).grid(row=2, column=0, padx=8, pady=6, sticky="w")
+        self.entry(body, var=desc_var, width=520).grid(row=2, column=1, padx=8, pady=6, sticky="ew")
+
+        self.lbl(body, "Author:", font=self.theme.FONT_BOLD).grid(row=3, column=0, padx=8, pady=6, sticky="w")
+        self.entry(body, var=author_var, width=260).grid(row=3, column=1, padx=8, pady=6, sticky="w")
+
+        self.lbl(body, "Version:", font=self.theme.FONT_BOLD).grid(row=4, column=0, padx=8, pady=6, sticky="w")
+        self.entry(body, var=version_var, width=200).grid(row=4, column=1, padx=8, pady=6, sticky="w")
+
+        self.lbl(body, "Category:", font=self.theme.FONT_BOLD).grid(row=5, column=0, padx=8, pady=6, sticky="w")
+        self.optmenu(body, ["General", "Web/API", "CLI", "Package", "Data Science", "Custom"], var=category_var).grid(row=5, column=1, padx=8, pady=6, sticky="w")
+
+        self.lbl(body, "Python Version:", font=self.theme.FONT_BOLD).grid(row=6, column=0, padx=8, pady=6, sticky="w")
+        self.optmenu(body, ["3.10", "3.11", "3.12", "3.13"], var=python_var).grid(row=6, column=1, padx=8, pady=6, sticky="w")
+
+        self.chk(body, "Replace source project-name occurrences with {{ project_name }}", variable=replace_name_var).grid(row=7, column=0, columnspan=2, padx=8, pady=6, sticky="w")
+
+        if inspection.sensitive_files:
+            names = "\n".join(str(path) for path in inspection.sensitive_files[:10])
+            warn = ctk.CTkLabel(
+                body,
+                text=(
+                    "Potential sensitive files detected. They will be excluded:\n"
+                    f"{names}"
+                ),
+                justify="left",
+                text_color=self.theme.ERROR_COLOR,
+            )
+            warn.grid(row=8, column=0, columnspan=2, padx=8, pady=(4, 10), sticky="w")
+            preview_row = 9
+        else:
+            preview_row = 8
+
+        preview_label = ctk.CTkLabel(body, text="Template Preview", font=("Segoe UI", 13, "bold"))
+        preview_label.grid(row=preview_row, column=0, columnspan=2, padx=8, pady=(8, 4), sticky="w")
+        preview = ctk.CTkTextbox(body, height=260)
+        preview.grid(row=preview_row + 1, column=0, columnspan=2, padx=8, pady=(0, 8), sticky="nsew")
+
+        lines = [
+            f"Source: {source_type}",
+            f"Origin: {origin}",
+            "",
+            "Included files:",
+        ]
+        lines.extend([f"- {path.as_posix()}" for path in inspection.included_files[:200]])
+        if len(inspection.included_files) > 200:
+            lines.append(f"... and {len(inspection.included_files) - 200} more files")
+        preview.insert("1.0", "\n".join(lines))
+        preview.configure(state="disabled")
+
+        def on_name_change(*_):
+            current_id = template_id_var.get().strip()
+            if current_id == state["last_generated"] or not current_id:
+                new_value = generate_template_id(name_var.get())
+                state["last_generated"] = new_value
+                template_id_var.set(new_value)
+
+        name_var.trace_add("write", on_name_change)
+
+        def close_dialog():
+            if cleanup_dir:
+                shutil.rmtree(cleanup_dir, ignore_errors=True)
+            top.destroy()
+
+        def save_template_action():
+            all_ids = [template.id for template in self.template_engine.list_templates()]
+            try:
+                self.user_template_store.save_template(
+                    source_dir=source_dir,
+                    template_name=name_var.get().strip(),
+                    template_id=template_id_var.get().strip(),
+                    description=desc_var.get().strip(),
+                    author=author_var.get().strip(),
+                    version=version_var.get().strip(),
+                    category=category_var.get().strip(),
+                    python_version=python_var.get().strip(),
+                    source_type=source_type,
+                    origin=origin,
+                    reserved_template_ids=all_ids,
+                    replace_project_name=bool(replace_name_var.get()),
+                )
+                self._reload_template_registry()
+                refresh_callback()
+                show_info("Template saved successfully.")
+                close_dialog()
+            except UserTemplateError as exc:
+                show_error(str(exc))
+            except Exception as exc:
+                show_error(f"Template save failed: {exc}")
+
+        footer = ctk.CTkFrame(top)
+        footer.grid(row=2, column=0, padx=16, pady=(8, 16), sticky="ew")
+        self.btn(footer, "Save Template", save_template_action, width=140).pack(side="right", padx=8, pady=8)
+        self.btn(footer, "Cancel", close_dialog, width=100).pack(side="right", padx=8, pady=8)
+
+        top.protocol("WM_DELETE_WINDOW", close_dialog)
+
+    def _delete_user_template(self, template_id: str, refresh_callback) -> None:
+        if not messagebox.askyesno(
+            "Delete Template?",
+            f"'{template_id}' will be removed from your templates.\n\n"
+            "Existing projects created from this template will NOT be affected.",
+        ):
+            return
+        try:
+            self.user_template_store.delete_template(template_id)
+            self._reload_template_registry()
+            refresh_callback()
+            show_info("Template deleted successfully.")
+        except Exception as exc:
+            show_error(f"Failed to delete template: {exc}")
+
+    def show_templates_dialog(self):
+        """Show templates landing page with metadata and create actions."""
+        top = ctk.CTkToplevel(self)
+        top.title("Project Templates")
+        top.geometry("900x620")
+        top.transient(self)
+        top.grab_set()
+        top.grid_columnconfigure(0, weight=1)
+        top.grid_rowconfigure(1, weight=1)
+        top.geometry(f"+{self.winfo_rootx() + 260}+{self.winfo_rooty() + 120}")
+
+        title = ctk.CTkLabel(top, text="Templates", font=("Segoe UI", 18, "bold"))
+        title.grid(row=0, column=0, padx=16, pady=(16, 10), sticky="w")
+
+        list_frame = ctk.CTkScrollableFrame(top)
+        list_frame.grid(row=1, column=0, padx=16, pady=8, sticky="nsew")
+        list_frame.grid_columnconfigure(0, weight=1)
+
+        for spec in self.template_engine.list_templates():
+            item = ctk.CTkFrame(list_frame, corner_radius=8, border_width=1, border_color=self.theme.BORDER_COLOR)
+            item.pack(fill="x", pady=8)
+            item.grid_columnconfigure(0, weight=1)
+
+            header = ctk.CTkLabel(item, text=f"{spec.name} ({spec.id})", font=("Segoe UI", 13, "bold"))
+            header.grid(row=0, column=0, padx=12, pady=(10, 4), sticky="w")
+
+            desc = ctk.CTkLabel(item, text=spec.description, wraplength=640, justify="left")
+            desc.grid(row=1, column=0, padx=12, pady=(0, 6), sticky="w")
+
+            meta_text = (
+                f"Python: {', '.join(spec.supported_python_versions)}\n"
+                f"Architecture: {spec.architecture} ({spec.style})\n"
+                f"Tooling: {', '.join(spec.included_tooling)}"
+            )
+            meta = ctk.CTkLabel(item, text=meta_text, justify="left", text_color=self.theme.HIGHLIGHT_COLOR)
+            meta.grid(row=2, column=0, padx=12, pady=(0, 8), sticky="w")
+
+            preview_title = ctk.CTkLabel(item, text="Structure Preview", font=("Segoe UI", 11, "bold"))
+            preview_title.grid(row=3, column=0, padx=12, pady=(0, 2), sticky="w")
+
+            preview = ctk.CTkTextbox(item, height=90, width=760)
+            preview.grid(row=4, column=0, padx=12, pady=(0, 10), sticky="ew")
+            preview.insert("1.0", "\n".join(spec.structure_preview))
+            preview.configure(state="disabled")
+
+            create_btn = self.btn(item, "Create Project", lambda template_id=spec.id: [top.destroy(), self.open_template_wizard(template_id)], width=150)
+            create_btn.grid(row=0, column=1, rowspan=2, padx=12, pady=10, sticky="ne")
+
+        footer = ctk.CTkFrame(top)
+        footer.grid(row=2, column=0, padx=16, pady=(8, 16), sticky="ew")
+        close_btn = self.btn(footer, "Close", top.destroy, width=120)
+        close_btn.pack(side="right", padx=8, pady=8)
+
+    def open_template_wizard(self, template_id: str):
+        """Open configuration and preview dialog for selected template."""
+        spec = self.template_engine.get_template(template_id)
+
+        top = ctk.CTkToplevel(self)
+        top.title(f"Create Project - {spec.name}")
+        top.geometry("860x720")
+        top.transient(self)
+        top.grab_set()
+        top.grid_columnconfigure(0, weight=1)
+        top.grid_rowconfigure(1, weight=1)
+        top.geometry(f"+{self.winfo_rootx() + 220}+{self.winfo_rooty() + 90}")
+
+        title = ctk.CTkLabel(top, text=f"{spec.name} Template", font=("Segoe UI", 17, "bold"))
+        title.grid(row=0, column=0, padx=16, pady=(16, 8), sticky="w")
+
+        body = ctk.CTkScrollableFrame(top)
+        body.grid(row=1, column=0, padx=16, pady=8, sticky="nsew")
+        body.grid_columnconfigure(1, weight=1)
+
+        project_name_var = tkinter.StringVar(value="my-project")
+        project_location_var = tkinter.StringVar(value=os.path.expanduser("~"))
+        default_python_version = (self.preferences.default_python_version or "").strip()
+        if default_python_version and default_python_version in spec.supported_python_versions:
+            initial_python_version = default_python_version
+        else:
+            initial_python_version = spec.supported_python_versions[0]
+        python_version_var = tkinter.StringVar(value=initial_python_version)
+        create_venv_var = tkinter.IntVar(value=1 if self.preferences.template_create_venv_default else 0)
+        init_git_var = tkinter.IntVar(value=1 if self.preferences.template_initialize_git_default else 0)
+        package_name_var = tkinter.StringVar(value="")
+        cli_command_name_var = tkinter.StringVar(value="")
+        author_var = tkinter.StringVar(value="")
+        license_var = tkinter.StringVar(value=spec.default_license)
+
+        self.lbl(body, "Project Name:", font=self.theme.FONT_BOLD).grid(row=0, column=0, padx=8, pady=6, sticky="w")
+        self.entry(body, var=project_name_var, width=300).grid(row=0, column=1, padx=8, pady=6, sticky="ew")
+
+        self.lbl(body, "Project Location:", font=self.theme.FONT_BOLD).grid(row=1, column=0, padx=8, pady=6, sticky="w")
+        location_row = ctk.CTkFrame(body, fg_color="transparent")
+        location_row.grid(row=1, column=1, padx=8, pady=6, sticky="ew")
+        location_row.grid_columnconfigure(0, weight=1)
+        self.entry(location_row, var=project_location_var, width=420).grid(row=0, column=0, padx=(0, 6), pady=0, sticky="ew")
+        self.btn(
+            location_row,
+            "Browse",
+            lambda: project_location_var.set(filedialog.askdirectory() or project_location_var.get()),
+            width=90,
+        ).grid(row=0, column=1, padx=0, pady=0)
+
+        self.lbl(body, "Python Version:", font=self.theme.FONT_BOLD).grid(row=2, column=0, padx=8, pady=6, sticky="w")
+        self.optmenu(body, spec.supported_python_versions, var=python_version_var).grid(row=2, column=1, padx=8, pady=6, sticky="w")
+
+        self.lbl(body, "Package Name (optional):", font=self.theme.FONT_BOLD).grid(row=3, column=0, padx=8, pady=6, sticky="w")
+        self.entry(body, var=package_name_var, width=300).grid(row=3, column=1, padx=8, pady=6, sticky="ew")
+
+        self.lbl(body, "CLI Command Name (optional):", font=self.theme.FONT_BOLD).grid(row=4, column=0, padx=8, pady=6, sticky="w")
+        self.entry(body, var=cli_command_name_var, width=300).grid(row=4, column=1, padx=8, pady=6, sticky="ew")
+
+        self.lbl(body, "Author (optional):", font=self.theme.FONT_BOLD).grid(row=5, column=0, padx=8, pady=6, sticky="w")
+        self.entry(body, var=author_var, width=300).grid(row=5, column=1, padx=8, pady=6, sticky="ew")
+
+        self.lbl(body, "License:", font=self.theme.FONT_BOLD).grid(row=6, column=0, padx=8, pady=6, sticky="w")
+        self.entry(body, var=license_var, width=200).grid(row=6, column=1, padx=8, pady=6, sticky="w")
+
+        self.chk(body, "Create Virtual Environment", variable=create_venv_var).grid(row=7, column=0, columnspan=2, padx=8, pady=6, sticky="w")
+        self.chk(body, "Initialize Git", variable=init_git_var).grid(row=8, column=0, columnspan=2, padx=8, pady=6, sticky="w")
+
+        preview_label = self.lbl(body, "Template Preview", font=("Segoe UI", 13, "bold"))
+        preview_label.grid(row=9, column=0, columnspan=2, padx=8, pady=(12, 4), sticky="w")
+        preview_box = ctk.CTkTextbox(body, height=230)
+        preview_box.grid(row=10, column=0, columnspan=2, padx=8, pady=(0, 8), sticky="nsew")
+
+        status_label = self.lbl(body, "", text_color=self.theme.HIGHLIGHT_COLOR)
+        status_label.grid(row=11, column=0, columnspan=2, padx=8, pady=6, sticky="w")
+        request_state = {"result": None, "error": None, "busy": False}
+
+        def build_request() -> TemplateCreationRequest:
+            package_name = package_name_var.get().strip() or sanitize_module_name(project_name_var.get().strip() or "my-project")
+            cli_cmd = cli_command_name_var.get().strip() or package_name
+            return TemplateCreationRequest(
+                template_id=template_id,
+                project_name=project_name_var.get().strip(),
+                project_location=project_location_var.get().strip(),
+                python_version=python_version_var.get().strip(),
+                create_virtual_environment=bool(create_venv_var.get()),
+                initialize_git=bool(init_git_var.get()),
+                package_name=package_name,
+                cli_command_name=cli_cmd,
+                author=author_var.get().strip() or None,
+                license_name=license_var.get().strip() or None,
+                install_dev_dependencies=True,
+            )
+
+        def refresh_preview(*_):
+            preview_box.configure(state="normal")
+            preview_box.delete("1.0", "end")
+            try:
+                req = build_request()
+                data = self.template_engine.preview(template_id, req)
+                lines = [
+                    f"Template: {data['name']} ({data['template_id']})",
+                    "",
+                    f"Description: {data['description']}",
+                    f"Architecture: {data['architecture']} ({data['style']})",
+                    f"Python: {', '.join(data['supported_python_versions'])}",
+                    "",
+                    "Included tooling:",
+                ]
+                lines.extend([f"  - {item}" for item in data["included_tooling"]])
+                lines.append("")
+                lines.append("Runtime dependencies:")
+                if data["runtime_dependencies"]:
+                    lines.extend([f"  - {item}" for item in data["runtime_dependencies"]])
+                else:
+                    lines.append("  - none")
+                lines.append("")
+                lines.append("Dev dependencies:")
+                lines.extend([f"  - {item}" for item in data["dev_dependencies"]])
+                lines.append("")
+                lines.append("Structure:")
+                lines.extend([f"  - {item}" for item in data["structure_preview"]])
+                preview_box.insert("1.0", "\n".join(lines))
+                status_label.configure(text="Preview updated")
+            except Exception as exc:
+                preview_box.insert("1.0", f"Preview unavailable: {exc}")
+                status_label.configure(text="")
+            preview_box.configure(state="disabled")
+
+        for var in [project_name_var, project_location_var, python_version_var, package_name_var, cli_command_name_var, author_var, license_var]:
+            var.trace_add("write", refresh_preview)
+
+        def create_project_action():
+            if request_state["busy"]:
+                return
+
+            if not messagebox.askyesno("Confirm", "Create project from this template?"):
+                return
+
+            try:
+                req = build_request()
+            except Exception as exc:
+                show_error(f"Invalid template configuration: {exc}")
+                return
+
+            status_label.configure(text="Creating project...")
+            request_state["result"] = None
+            request_state["error"] = None
+            request_state["busy"] = True
+            create_project_btn.configure(state="disabled")
+
+            project_status = (
+                f"Project: {req.project_name}\n"
+                "Status: Creating project...\n"
+                f"Template: {spec.name}\n"
+                f"Location: {Path(req.project_location) / req.project_name}"
+            )
+            status_label.configure(text=project_status)
+            self.env_log_queue.put(f"[Templates] Project creation started: {req.project_name}")
+
+            try:
+                top.iconify()
+                self.env_log_queue.put("[Templates] Project creation minimized UI")
+            except Exception:
+                pass
+
+            def task():
+                try:
+                    request_state["result"] = self.template_creation_workflow.create_project(
+                        req,
+                        log_callback=lambda msg: self.env_log_queue.put(f"[Templates] {msg}"),
+                    )
+                except Exception as exc:
+                    request_state["error"] = exc
+                    raise
+
+            def on_complete():
+                request_state["busy"] = False
+                create_project_btn.configure(state="normal")
+
+                state = self.template_creation_workflow.state
+                if state.status == ProjectCreationStatus.FAILED or request_state["error"]:
+                    self.env_log_queue.put("[Templates] Project creation failed")
+                    try:
+                        top.deiconify()
+                        top.lift()
+                    except Exception:
+                        pass
+                    status_label.configure(
+                        text=(
+                            f"Project: {state.project_name}\n"
+                            "Status: Project creation failed"
+                        ),
+                        text_color=self.theme.ERROR_COLOR,
+                    )
+                    self._show_project_creation_failed_dialog(state.project_name, request_state["error"])
+                    return
+
+                result = request_state["result"]
+                if result is None:
+                    return
+
+                status_label.configure(text="Project created successfully.", text_color=self.theme.SUCCESS_COLOR)
+                self.env_log_queue.put("[Templates] Project creation completed")
+                try:
+                    self.plugin_manager.execute_hook(
+                        "after_template_created",
+                        {
+                            "template_id": result.template_id,
+                            "project_path": str(result.project_path),
+                            "created_environment": result.created_environment_name,
+                            "dependencies": result.installed_dependencies,
+                        },
+                    )
+                except Exception as hook_error:
+                    self.env_log_queue.put(f"[Templates] Plugin hook error: {hook_error}")
+
+                action = self._show_project_created_prompt(result.project_path.name, result.project_path)
+                if action == "open":
+                    self._open_created_project_workflow(result.project_path)
+                top.destroy()
+
+            self.run_async(
+                task,
+                success_msg=None,
+                error_msg=None,
+                callback=on_complete,
+            )
+
+        actions = ctk.CTkFrame(top)
+        actions.grid(row=2, column=0, padx=16, pady=(8, 16), sticky="ew")
+        actions.grid_columnconfigure(0, weight=1)
+        self.btn(actions, "Refresh Preview", refresh_preview, width=140).grid(row=0, column=0, padx=6, pady=8, sticky="w")
+        create_project_btn = self.btn(actions, "Create Project", create_project_action, width=150)
+        create_project_btn.grid(row=0, column=1, padx=6, pady=8, sticky="e")
+        self.btn(actions, "Cancel", top.destroy, width=120).grid(row=0, column=2, padx=6, pady=8, sticky="e")
+
+        refresh_preview()
+
+    def _show_project_created_prompt(self, project_name: str, project_path: Path) -> str:
+        """Show completion prompt and ask whether to open the new project."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Project Created Successfully")
+        dialog.geometry("520x260")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.grid_columnconfigure(0, weight=1)
+        dialog.geometry(f"+{self.winfo_rootx() + 350}+{self.winfo_rooty() + 180}")
+
+        message = (
+            f"{project_name} has been created successfully.\n\n"
+            f"Location:\n{project_path}\n\n"
+            "Would you like to open the project?"
+        )
+        ctk.CTkLabel(dialog, text=message, justify="left", wraplength=480).grid(
+            row=0, column=0, padx=16, pady=(20, 12), sticky="w"
+        )
+
+        response = {"action": "not_now"}
+
+        row = ctk.CTkFrame(dialog)
+        row.grid(row=1, column=0, padx=16, pady=(4, 16), sticky="e")
+        self.btn(row, "Open Project", lambda: [response.update({"action": "open"}), dialog.destroy()], width=130).grid(row=0, column=0, padx=6)
+        self.btn(row, "Not Now", dialog.destroy, width=110).grid(row=0, column=1, padx=6)
+
+        self.wait_window(dialog)
+        return response["action"]
+
+    def _show_open_with_dialog(self, project_path: Path, tools) -> str | None:
+        """Show tool selection dialog and return selected tool id."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Open Project With")
+        dialog.geometry("500x380")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.grid_columnconfigure(0, weight=1)
+        dialog.grid_rowconfigure(1, weight=1)
+        dialog.geometry(f"+{self.winfo_rootx() + 360}+{self.winfo_rooty() + 170}")
+
+        ctk.CTkLabel(dialog, text="Detected applications", font=("Segoe UI", 14, "bold")).grid(
+            row=0, column=0, padx=16, pady=(16, 8), sticky="w"
+        )
+
+        preferred = self._get_preferred_project_editor()
+        available_ids = {tool["tool_id"] for tool in tools}
+        if preferred in available_ids:
+            default_selection = preferred
+        elif len(tools) == 1:
+            default_selection = tools[0]["tool_id"]
+        elif "vscode" in available_ids:
+            default_selection = "vscode"
+        else:
+            default_selection = tools[0]["tool_id"]
+
+        selected_tool = tkinter.StringVar(value=default_selection)
+
+        list_frame = ctk.CTkScrollableFrame(dialog)
+        list_frame.grid(row=1, column=0, padx=16, pady=8, sticky="nsew")
+        list_frame.grid_columnconfigure(0, weight=1)
+
+        for tool in tools:
+            radio = ctk.CTkRadioButton(
+                list_frame,
+                text=tool["display_name"],
+                variable=selected_tool,
+                value=tool["tool_id"],
+            )
+            radio.pack(anchor="w", padx=8, pady=6)
+
+        result = {"tool_id": None}
+
+        footer = ctk.CTkFrame(dialog)
+        footer.grid(row=2, column=0, padx=16, pady=(6, 16), sticky="e")
+        self.btn(
+            footer,
+            "Open",
+            lambda: [result.update({"tool_id": selected_tool.get()}), dialog.destroy()],
+            width=100,
+        ).grid(row=0, column=0, padx=6)
+        self.btn(footer, "Cancel", dialog.destroy, width=100).grid(row=0, column=1, padx=6)
+
+        self.wait_window(dialog)
+        return result["tool_id"]
+
+    def _show_project_open_failed_prompt(self, tool_name: str, error_text: str) -> str:
+        """Return one of: try_again, choose_another, done."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Unable to Open Project")
+        dialog.geometry("520x280")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.grid_columnconfigure(0, weight=1)
+        dialog.geometry(f"+{self.winfo_rootx() + 340}+{self.winfo_rooty() + 170}")
+
+        text = (
+            "Project created successfully, but the selected application could not be opened.\n\n"
+            f"Application: {tool_name}\n\n"
+            f"Reason: {error_text}"
+        )
+        ctk.CTkLabel(dialog, text=text, justify="left", wraplength=480).grid(
+            row=0, column=0, padx=16, pady=(20, 12), sticky="w"
+        )
+
+        response = {"action": "done"}
+        row = ctk.CTkFrame(dialog)
+        row.grid(row=1, column=0, padx=16, pady=(6, 16), sticky="e")
+        self.btn(row, "Try Again", lambda: [response.update({"action": "try_again"}), dialog.destroy()], width=110).grid(row=0, column=0, padx=5)
+        self.btn(row, "Choose Another", lambda: [response.update({"action": "choose_another"}), dialog.destroy()], width=130).grid(row=0, column=1, padx=5)
+        self.btn(row, "Done", dialog.destroy, width=90).grid(row=0, column=2, padx=5)
+
+        self.wait_window(dialog)
+        return response["action"]
+
+    def _show_project_creation_failed_dialog(self, project_name: str, error: Exception | None) -> None:
+        message = (
+            "Unable to create the project.\n\n"
+            f"Project: {project_name}\n"
+            "Use 'View Details' for technical information."
+        )
+        if messagebox.askyesno("Project Creation Failed", f"{message}\n\nView details?"):
+            show_error(f"Project creation failed:\n{error}")
+
+    def _get_preferred_project_editor(self) -> str | None:
+        try:
+            cfg = AppConfig()
+            value = cfg.get_param("settings", "preferred_project_editor", fallback="") or ""
+            return value.strip() or None
+        except Exception:
+            return None
+
+    def _set_preferred_project_editor(self, tool_id: str) -> None:
+        try:
+            cfg = AppConfig()
+            cfg.set_param("settings", "preferred_project_editor", tool_id)
+        except Exception as exc:
+            logging.warning(f"Failed to save preferred project editor: {exc}")
+
+    def _open_created_project_workflow(self, project_path: Path) -> None:
+        tools = discover_project_open_tools(self.open_with_tools, include_default=True)
+        tool_names = [tool["display_name"] for tool in tools]
+        self.env_log_queue.put(f"[Templates] Detected project tools: {tool_names}")
+
+        if not tools:
+            show_error("No supported applications were detected to open this project.")
+            return
+
+        selected_tool_id = self._show_open_with_dialog(project_path, tools)
+        if not selected_tool_id:
+            self.env_log_queue.put("[Templates] Project open canceled by user")
+            return
+
+        while selected_tool_id:
+            selected = find_tool_by_id(selected_tool_id, tools)
+            if selected is None:
+                show_error("Selected tool is no longer available.")
+                return
+
+            self.env_log_queue.put(f"[Templates] Selected project tool: {selected['display_name']}")
+            logging.info("Project opening requested with tool: %s", selected["display_name"])
+            try:
+                open_project_with_tool(selected, project_path)
+                self._set_preferred_project_editor(selected["tool_id"])
+                self.env_log_queue.put("[Templates] Project opened successfully")
+                show_info(f"Project opened with {selected['display_name']}.")
+                return
+            except Exception as exc:
+                self.env_log_queue.put(f"[Templates] Project opening failed: {exc}")
+                action = self._show_project_open_failed_prompt(selected["display_name"], str(exc))
+                if action == "try_again":
+                    continue
+                if action == "choose_another":
+                    selected_tool_id = self._show_open_with_dialog(project_path, tools)
+                    continue
+                return
+
     def _create_plugin_item(self, parent, plugin_name, plugin, is_loaded):
         """Create a plugin list item.
         
@@ -1628,7 +2661,6 @@ class PyEnvStudio(ctk.CTk):
             status_color = self.theme.SUCCESS_COLOR
         else:
             # Try to load metadata from manifest
-            from pathlib import Path
             manifest_file = Path.home() / ".py_env_studio" / "plugins" / plugin_name / "plugin.json"
             if manifest_file.exists():
                 try:

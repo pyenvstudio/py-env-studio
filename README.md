@@ -116,6 +116,11 @@ If you find **Py Env Studio** helpful, consider supporting me:
 
     py-env-studio
 
+You can also launch the same utility with these aliases:
+
+    pyenvstudio
+    pes
+
 Refer usage documentation here: https://py-env-studio.readthedocs.io/en/latest/
 
 <p align="center">

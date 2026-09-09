@@ -9,8 +9,7 @@ from pathlib import Path
 
 from platformdirs import PlatformDirs
 
-APP_NAME = "PyEnvStudio"
-APP_AUTHOR = "PyEnvStudio"
+from .configuration import APP_AUTHOR, APP_NAME
 
 
 @dataclass(frozen=True)
@@ -30,9 +29,15 @@ class RuntimeConfig:
 
 
 def _load_package_config() -> ConfigParser:
-    parser = ConfigParser()
+    parser = ConfigParser(interpolation=None)
     config_path = Path(__file__).resolve().parents[1] / "config.ini"
     parser.read(config_path, encoding="utf-8")
+    return parser
+
+
+def _load_user_config(user_data_dir: Path) -> ConfigParser:
+    parser = ConfigParser(interpolation=None)
+    parser.read(user_data_dir / "config.ini", encoding="utf-8")
     return parser
 
 
@@ -51,17 +56,30 @@ def get_runtime_config() -> RuntimeConfig:
     dirs = PlatformDirs(APP_NAME, appauthor=APP_AUTHOR)
 
     user_data_dir = Path(dirs.user_data_dir).resolve()
+    user_parser = _load_user_config(user_data_dir)
     state_dir = user_data_dir / "state"
     data_dir = user_data_dir / "data"
     log_dir = user_data_dir / "logs"
 
     app_version = parser.get("project", "version", fallback="stable")
-    python_path = parser.get("settings", "python_path", fallback=None)
+    python_path = user_parser.get(
+        "settings",
+        "python_path",
+        fallback=parser.get("settings", "python_path", fallback=None),
+    )
 
-    configured_venv = parser.get("settings", "venv_dir", fallback=None)
-    configured_db = parser.get("settings", "db_file", fallback=None)
-    configured_matrix = parser.get("settings", "matrix_file", fallback=None)
-    configured_log = parser.get("settings", "log_file", fallback=None)
+    configured_venv = user_parser.get(
+        "settings", "venv_dir", fallback=parser.get("settings", "venv_dir", fallback=None)
+    )
+    configured_db = user_parser.get(
+        "settings", "db_file", fallback=parser.get("settings", "db_file", fallback=None)
+    )
+    configured_matrix = user_parser.get(
+        "settings", "matrix_file", fallback=parser.get("settings", "matrix_file", fallback=None)
+    )
+    configured_log = user_parser.get(
+        "settings", "log_file", fallback=parser.get("settings", "log_file", fallback=None)
+    )
 
     venv_dir = _resolve_data_path(configured_venv, "venvs", user_data_dir)
     db_path = _resolve_data_path(configured_db, "py_env_studio.db", user_data_dir)
@@ -91,3 +109,9 @@ def get_runtime_config() -> RuntimeConfig:
         python_path=python_path,
         legacy_db_path=legacy_db_path,
     )
+
+
+def refresh_runtime_config() -> RuntimeConfig:
+    """Clear runtime cache and return a fresh configuration snapshot."""
+    get_runtime_config.cache_clear()
+    return get_runtime_config()
