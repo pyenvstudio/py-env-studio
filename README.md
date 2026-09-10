@@ -82,7 +82,18 @@ PyEnvStudio now features a powerful plugin system that allows developers to exte
 - **Easy Development** - Simple plugin API with lifecycle management
 - **Examples Included** - Full working sample plugin with documentation
 
-See [RELEASE_NOTES.md](RELEASE_NOTES.md) for plugin system details and [docs/PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) for creating your own plugins.
+See the [v2.0.8 release notes](docs/releases/v2.0.8.md) and the [plugin development guide](docs/plugins/development.md).
+
+### Additional implemented capabilities
+
+- Selectable `pip` or `uv` package backends, with automatic `pip` fallback
+- Dependency-impact preview and AutoResolver install recovery
+- Project templates, reusable local/GitHub templates, and guided project creation
+- Runtime-managed projects through `pes init`, `pes on`, `pes off`, and `pes run`
+- Persisted configuration for default paths, interpreters, tools, themes, scaling, and template defaults
+- Py-Tonic learning challenges and profile-based notifications
+
+See [the complete feature reference](docs/reference/features.md) and [the architecture overview](docs/reference/architecture.md).
 
 ### 🛠️ Self-Healing Install System (AutoResolver)
 

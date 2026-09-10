@@ -195,8 +195,8 @@ result = plugin.execute("after_create_env", {"env_name": "test"})
 
 ## Resources
 
-- **Developer Guide**: `docs/PLUGIN_DEVELOPMENT.md`
-- **Architecture**: `docs/PLUGINS_ARCHITECTURE.md`
+- **Developer Guide**: `docs/development.md`
+- **Architecture**: `docs/architecture.md`
 - **Example Plugin**: `examples/sample_plugin/`
 - **API Reference**: `py_env_studio.core.plugins`
 

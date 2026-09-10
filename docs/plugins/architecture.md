@@ -91,8 +91,8 @@ PyEnvStudio/
 │       ├── sample_plugin.py
 │       └── README.md
 └── docs/
-    ├── PLUGIN_DEVELOPMENT.md     # Developer guide
-    └── PLUGINS_ARCHITECTURE.md   # This file
+    ├── development.md     # Developer guide
+    └── architecture.md   # This file
 ```
 
 ## Component Responsibilities

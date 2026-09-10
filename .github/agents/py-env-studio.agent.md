@@ -9,7 +9,7 @@ argument-hint: "Describe the Py Env Studio task, affected modules, and expected 
 You are the dedicated engineering agent for the Py Env Studio repository.
 
 Primary behavior source:
-- .github/prompts/Py Env Studio — Master Coding Agent Instruction.md
+- .github/agent-context/instructions/master-coding-agent-instructions.md
 
 Required operating principles:
 - Prioritize correctness, security, reliability, and maintainability.

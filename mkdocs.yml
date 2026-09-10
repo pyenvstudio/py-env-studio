@@ -25,19 +25,25 @@ theme:
 
 nav:
   - Home: index.md
-  - Installation: install.md
-  - Usage: usage.md
-  - Features: features.md
-  - Templates (Phase 1): FEATURE/TEMPLATES_PHASE1.md
-  - Templates (Phase 1.2): FEATURE/TEMPLATES_PHASE1_2.md
-  - CLI Reference: cli.md
-  - Roadmap: roadmap.md
-  - Contributing: contributing.md
+  - Getting Started:
+      - Installation: getting-started/install.md
+      - Usage: getting-started/usage.md
+      - CLI Reference: getting-started/cli.md
+  - Reference:
+      - Features: reference/features.md
+      - Architecture: reference/architecture.md
+  - Templates:
+      - Phase 1: project-templates/phase-1.md
+      - Phase 1.2: project-templates/phase-1-2.md
+  - Development:
+      - Contributing: development/contributing.md
   - Plugins:
-      - Architecture: PLUGINS_ARCHITECTURE.md
-      - Development Guide: PLUGIN_DEVELOPMENT.md
-      - Documentation Index: PLUGIN_DOCUMENTATION_INDEX.md
-      - Quick Reference: PLUGIN_QUICK_REFERENCE.md
+      - Overview: plugins/index.md
+      - Architecture: plugins/architecture.md
+      - Development Guide: plugins/development.md
+      - Quick Reference: plugins/quick-reference.md
+  - Releases:
+      - v2.0.8: releases/v2.0.8.md
 
 plugins:
   - search

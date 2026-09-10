@@ -8,10 +8,10 @@ This index helps you navigate the PyEnvStudio Plugin System documentation and co
 
 | Need | Document | Time |
 |------|----------|------|
-| **Just want to use plugins?** | [Plugin Quick Reference](PLUGIN_QUICK_REFERENCE.md) | 5 min |
-| **Creating your first plugin?** | [Plugin Development Guide](PLUGIN_DEVELOPMENT.md) | 30 min |
-| **Understanding the system?** | [Architecture Document](PLUGINS_ARCHITECTURE.md) | 20 min |
-| **Seeing an example?** | [Sample Plugin Code](../examples/sample_plugin/) | 10 min |
+| **Just want to use plugins?** | [Plugin Quick Reference](quick-reference.md) | 5 min |
+| **Creating your first plugin?** | [Plugin Development Guide](development.md) | 30 min |
+| **Understanding the system?** | [Architecture Document](architecture.md) | 20 min |
+| **Seeing an example?** | [Sample Plugin Code](https://github.com/pyenvstudio/py-env-studio/tree/main/examples/sample_plugin) | 10 min |
 | **Quick lookup?** | [This Index](#documentation-map) | 2 min |
 
 ---
@@ -22,31 +22,31 @@ This index helps you navigate the PyEnvStudio Plugin System documentation and co
 **Goal**: Enable and use existing plugins
 
 #### Start Here
-- [Plugin Quick Reference](PLUGIN_QUICK_REFERENCE.md)
+- [Plugin Quick Reference](quick-reference.md)
   - How to enable plugins
   - Available hooks
   - Common issues
 
 #### Then Read
-- [Main Feature Guide](../docs/features.md) (mentions plugin system)
-- [Installation Guide](../docs/install.md)
+- [Main Feature Guide](../reference/features.md) (mentions plugin system)
+- [Installation Guide](../getting-started/install.md)
 
 ### 2. For Plugin Developers
 **Goal**: Create new plugins
 
 #### Phase 1: Understand
-1. [Plugin Development Guide](PLUGIN_DEVELOPMENT.md) - START HERE
+1. [Plugin Development Guide](development.md) - START HERE
    - What are plugins
    - Architecture overview
    - Creating your first plugin
    
-2. [Architecture Deep Dive](PLUGINS_ARCHITECTURE.md)
+2. [Architecture Deep Dive](architecture.md)
    - Design patterns explained
    - Lifecycle details
    - Performance characteristics
 
 #### Phase 2: Learn by Example
-- [Sample Plugin](../examples/sample_plugin/sample_plugin.py)
+- [Sample Plugin](https://github.com/pyenvstudio/py-env-studio/blob/main/examples/sample_plugin/sample_plugin.py)
   - Working, documented code
   - Handler pattern
   - Error handling
@@ -54,23 +54,23 @@ This index helps you navigate the PyEnvStudio Plugin System documentation and co
 
 #### Phase 3: Create
 1. Copy sample plugin template
-2. Follow [Plugin Development Guide](PLUGIN_DEVELOPMENT.md) step-by-step
+2. Follow [Plugin Development Guide](development.md) step-by-step
 3. Test with included examples
 
 #### Phase 4: Reference
-- [Quick Reference](PLUGIN_QUICK_REFERENCE.md) - Templates and patterns
+- [Quick Reference](quick-reference.md) - Templates and patterns
 - [API Reference](#api-reference-section) below
 
 ### 3. For System Maintainers
 **Goal**: Understand and extend the plugin system
 
 #### Core Understanding
-1. [Architecture Document](PLUGINS_ARCHITECTURE.md)
+1. [Architecture Document](architecture.md)
    - Component responsibilities
    - Design patterns
    - Lifecycle management
 
-2. [Core Code](../py_env_studio/core/plugins/)
+2. [Core Code](https://github.com/pyenvstudio/py-env-studio/tree/main/py_env_studio/core/plugins)
    - `base.py` - Plugin interface
    - `manager.py` - Factory and orchestration
    - `exceptions.py` - Error types
@@ -87,11 +87,11 @@ This index helps you navigate the PyEnvStudio Plugin System documentation and co
 ### Documentation Files
 ```
 docs/
-├── PLUGIN_DEVELOPMENT.md       # ⭐ Start here for plugin creation
-├── PLUGINS_ARCHITECTURE.md     # Technical deep-dive
-├── PLUGIN_QUICK_REFERENCE.md   # Quick lookup tables
+├── development.md       # ⭐ Start here for plugin creation
+├── architecture.md     # Technical deep-dive
+├── quick-reference.md   # Quick lookup tables
 ├── PLUGIN_SYSTEM_SUMMARY.md    # Implementation overview
-└── PLUGIN_DOCUMENTATION_INDEX.md (this file)
+└── index.md (this file)
 
 examples/
 └── sample_plugin/
@@ -130,22 +130,22 @@ py_env_studio/ui/
 ## 🎯 Common Tasks
 
 ### I want to... Enable a plugin
-→ [Quick Reference - Installation Steps](PLUGIN_QUICK_REFERENCE.md#installation-steps)
+→ [Quick Reference - Installation Steps](quick-reference.md#installation-steps)
 
 ### I want to... Create a plugin
-→ [Development Guide - Creating a Plugin](PLUGIN_DEVELOPMENT.md#step-3-implement-plugin-class)
+→ [Development Guide - Creating a Plugin](development.md#step-3-implement-plugin-class)
 
 ### I want to... Understand hooks
-→ [Architecture - Hook System](PLUGINS_ARCHITECTURE.md#hook-system)
+→ [Architecture - Hook System](architecture.md#hook-system)
 
 ### I want to... Debug a plugin
-→ [Quick Reference - Debugging](PLUGIN_QUICK_REFERENCE.md#debugging)
+→ [Quick Reference - Debugging](quick-reference.md#debugging)
 
 ### I want to... See working code
-→ [Sample Plugin - sample_plugin.py](../examples/sample_plugin/sample_plugin.py)
+→ [Sample Plugin - sample_plugin.py](https://github.com/pyenvstudio/py-env-studio/blob/main/examples/sample_plugin/sample_plugin.py)
 
 ### I want to... Understand design patterns
-→ [Architecture - Design Patterns](PLUGINS_ARCHITECTURE.md#design-patterns)
+→ [Architecture - Design Patterns](architecture.md#design-patterns)
 
 ---
 
@@ -221,7 +221,7 @@ class PluginManager:
 - `on_app_shutdown`
 - `on_scan_complete`
 
-**See**: [Architecture - Hook System](PLUGINS_ARCHITECTURE.md#hook-system)
+**See**: [Architecture - Hook System](architecture.md#hook-system)
 
 ---
 
@@ -234,7 +234,7 @@ class PluginManager:
 5. **Unloading** - User disables or app shuts down
 6. **Cleanup** - Plugin's `cleanup()` method called
 
-**See**: [Architecture - Plugin Lifecycle](PLUGINS_ARCHITECTURE.md#plugin-lifecycle)
+**See**: [Architecture - Plugin Lifecycle](architecture.md#plugin-lifecycle)
 
 ---
 
@@ -266,7 +266,7 @@ class PluginManager:
 
 ### Adding Plugin Features
 
-See [Architecture - Future Enhancements](PLUGINS_ARCHITECTURE.md#future-enhancements)
+See [Architecture - Future Enhancements](architecture.md#future-enhancements)
 
 ---
 
@@ -292,23 +292,23 @@ See [Architecture - Future Enhancements](PLUGINS_ARCHITECTURE.md#future-enhancem
 ## 🚀 Getting Started Path
 
 ### Path 1: Just Use Plugins (5 min)
-1. Read: [Quick Reference](PLUGIN_QUICK_REFERENCE.md)
+1. Read: [Quick Reference](quick-reference.md)
 2. Do: Enable sample plugin via Tools > Plugins
 3. Done!
 
 ### Path 2: Create First Plugin (45 min)
-1. Read: [Development Guide](PLUGIN_DEVELOPMENT.md) introduction
-2. Study: [Sample Plugin](../examples/sample_plugin/sample_plugin.py)
+1. Read: [Development Guide](development.md) introduction
+2. Study: [Sample Plugin](https://github.com/pyenvstudio/py-env-studio/blob/main/examples/sample_plugin/sample_plugin.py)
 3. Copy: Sample plugin to new directory
 4. Modify: For your use case
 5. Test: Via plugin manager
 6. Done!
 
 ### Path 3: Understand System (60 min)
-1. Read: [Architecture Document](PLUGINS_ARCHITECTURE.md)
-2. Study: [Core Plugin Code](../py_env_studio/core/plugins/)
-3. Review: [Design Patterns](PLUGINS_ARCHITECTURE.md#design-patterns)
-4. Understand: [Plugin Lifecycle](PLUGINS_ARCHITECTURE.md#plugin-lifecycle)
+1. Read: [Architecture Document](architecture.md)
+2. Study: [Core Plugin Code](https://github.com/pyenvstudio/py-env-studio/tree/main/py_env_studio/core/plugins)
+3. Review: [Design Patterns](architecture.md#design-patterns)
+4. Understand: [Plugin Lifecycle](architecture.md#plugin-lifecycle)
 5. Done!
 
 ---
@@ -337,10 +337,10 @@ A: No, they run in main process (security consideration)
 
 ## 📞 Support
 
-- **Questions?** Check [Quick Reference FAQ](PLUGIN_QUICK_REFERENCE.md)
-- **Stuck?** Review [Development Guide - Troubleshooting](PLUGIN_DEVELOPMENT.md#troubleshooting)
-- **Code Issue?** See [Architecture - Troubleshooting](PLUGINS_ARCHITECTURE.md#troubleshooting)
-- **Example?** Study [Sample Plugin](../examples/sample_plugin/sample_plugin.py)
+- **Questions?** Check [Quick Reference FAQ](quick-reference.md)
+- **Stuck?** Review [Development Guide - Troubleshooting](development.md#troubleshooting)
+- **Code Issue?** See [Architecture - Troubleshooting](architecture.md#troubleshooting)
+- **Example?** Study [Sample Plugin](https://github.com/pyenvstudio/py-env-studio/blob/main/examples/sample_plugin/sample_plugin.py)
 
 ---
 
@@ -357,7 +357,7 @@ The PyEnvStudio Plugin System provides:
 ✅ **DRY Principles** - Handler pattern, metadata reuse  
 ✅ **SRE Ready** - Reliability, observability, scalability, simplicity, automation  
 
-**Get started**: Read [Plugin Quick Reference](PLUGIN_QUICK_REFERENCE.md) or [Plugin Development Guide](PLUGIN_DEVELOPMENT.md)
+**Get started**: Read [Plugin Quick Reference](quick-reference.md) or [Plugin Development Guide](development.md)
 
 ---
 

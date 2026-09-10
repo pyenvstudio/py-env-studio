@@ -216,6 +216,8 @@ changelogs/
 notes/
 prompts/
 tests/
+!.github/agent-context/
+!.github/agent-context/**
 
 # javascript
 node_modules/

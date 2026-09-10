@@ -186,11 +186,11 @@ is_plugin_enabled(name) -> bool
 
 ## Documentation
 
-- **[Plugin Development Guide](../docs/PLUGIN_DEVELOPMENT.md)** - Complete how-to
-- **[Architecture Document](../docs/PLUGINS_ARCHITECTURE.md)** - Technical details
-- **[Quick Reference](../docs/PLUGIN_QUICK_REFERENCE.md)** - Quick lookup
-- **[Documentation Index](../docs/PLUGIN_DOCUMENTATION_INDEX.md)** - Navigation guide
-- **[Sample Plugin](../examples/sample_plugin/)** - Working example
+- **[Plugin Development Guide](../../../docs/plugins/development.md)** - Complete how-to
+- **[Architecture Document](../../../docs/plugins/architecture.md)** - Technical details
+- **[Quick Reference](../../../docs/plugins/quick-reference.md)** - Quick lookup
+- **[Documentation Index](../../../docs/plugins/index.md)** - Navigation guide
+- **[Sample Plugin](../../../examples/sample_plugin/)** - Working example
 
 ## Common Patterns
 
@@ -275,16 +275,16 @@ To extend the plugin system:
 
 ## Support Resources
 
-- **Questions?** Check [Quick Reference](../docs/PLUGIN_QUICK_REFERENCE.md)
-- **How-to?** See [Development Guide](../docs/PLUGIN_DEVELOPMENT.md)
-- **Architecture?** Review [Architecture Doc](../docs/PLUGINS_ARCHITECTURE.md)
-- **Example?** Study [Sample Plugin](../examples/sample_plugin/)
+- **Questions?** Check [Quick Reference](../../../docs/plugins/quick-reference.md)
+- **How-to?** See [Development Guide](../../../docs/plugins/development.md)
+- **Architecture?** Review [Architecture Doc](../../../docs/plugins/architecture.md)
+- **Example?** Study [Sample Plugin](../../../examples/sample_plugin/)
 - **Stuck?** Check troubleshooting sections
 
 ## Next Steps
 
-1. 📖 Read [Quick Reference](../docs/PLUGIN_QUICK_REFERENCE.md)
-2. 📚 Study [Development Guide](../docs/PLUGIN_DEVELOPMENT.md)
-3. 👀 Review [Sample Plugin](../examples/sample_plugin/sample_plugin.py)
+1. 📖 Read [Quick Reference](../../../docs/plugins/quick-reference.md)
+2. 📚 Study [Development Guide](../../../docs/plugins/development.md)
+3. 👀 Review [Sample Plugin](../../../examples/sample_plugin/sample_plugin.py)
 4. 🚀 Create your first plugin
 5. ✨ Enable via Tools > Plugins

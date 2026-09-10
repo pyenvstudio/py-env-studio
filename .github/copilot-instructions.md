@@ -2,7 +2,7 @@
 
 Primary instruction source for this repository:
 
-- .github/prompts/Py Env Studio — Master Coding Agent Instruction.md
+- .github/agent-context/instructions/master-coding-agent-instructions.md
 
 Treat that document as the authoritative agent behavior for all coding tasks in this repository.
 
@@ -19,7 +19,7 @@ Treat that document as the authoritative agent behavior for all coding tasks in 
 - Fail clearly with user-friendly messages and actionable logs.
 - Add deterministic tests for success, failure, and edge cases.
 - Preserve backward compatibility and avoid unrelated refactors.
-- Keep feature tracking current: for every added or fixed feature, append a dated entry to docs/FEATURE/CURRENT.md.
+- Keep feature tracking current: for every added or fixed feature, append a dated entry to .github/agent-context/feature-ledger.md.
 
 ## Engineering Principles
 
