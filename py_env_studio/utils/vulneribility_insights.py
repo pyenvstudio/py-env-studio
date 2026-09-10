@@ -1,12 +1,19 @@
 import json
+import logging
+import queue
+import re
+import threading
 import webbrowser
 import customtkinter as ctk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from collections import defaultdict
 from datetime import datetime
 from .handlers import DBHelper
+from .version_utils import version_key, vuln_status
+from .db_status import ensure_vulnerability_statuses, mark_package_fixed
+from py_env_studio.core.package_manager import install_package
 
 # Set customtkinter appearance
 ctk.set_appearance_mode("dark")
@@ -19,12 +26,19 @@ class VulnerabilityInsightsApp:
     def __init__(self, root, env_name):
         self.root = root
         self.env_name = env_name
+        # Make sure every vulnerability in the DB carries a persisted
+        # 'status' (fixed/not fixed) before rendering the report.
+        ensure_vulnerability_statuses(self.env_name)
         self.data = DBHelper.get_vulnerability_info(self.env_name)
 
         # State
         self.current_pkg_key = None
         self.current_pkg_data = None
         self.vulnerabilities = []
+        self.current_vuln = None
+        self.current_update_button = None
+        self._updating = False
+        self._update_queue = queue.Queue()
 
         # Precompute packages map once
         self.packages_map = self._packages_map()
@@ -55,14 +69,38 @@ class VulnerabilityInsightsApp:
         return result
 
     def _extract_vulnerabilities(self, pkg_data):
+        """Extract vulnerabilities with a 'current_version' and 'status'.
+
+        The status (fixed/not fixed) comes from the DB when present and is
+        otherwise computed from installed vs fixed versions.
+        """
+        meta = pkg_data.get("metadata", {})
+        current_versions = {}
+        if meta.get("package"):
+            current_versions[str(meta["package"]).split("[")[0].strip()] = meta.get("version", "?")
+        for entry in meta.get("index_insights", []):
+            name = str(entry.get("package", "")).split("[")[0].strip()
+            ver = entry.get("version")
+            if name and ver:
+                current_versions[name] = ver
+
         vulnerabilities = []
         for vuln in pkg_data.get("developer_view", []):
+            package = (vuln.get("affected_components") or ["Unknown"])[0]
+            package_key = str(package).split("[")[0].strip()
+            raw_fixed = vuln.get("fixed_versions", []) or []
+            current_version = current_versions.get(package_key, "?")
+            status = vuln.get("status")
+            if status not in ("fixed", "not fixed"):
+                status = vuln_status(current_version, raw_fixed)
             vulnerabilities.append({
                 "id": vuln.get("vulnerability_id", "Unknown"),
-                "package": (vuln.get("affected_components") or ["Unknown"])[0],
+                "package": package,
+                "current_version": current_version,
+                "status": status,
                 "summary": vuln.get("summary", "—"),
                 "severity": vuln.get("severity", {}).get("level", "Unknown"),
-                "fixed_versions": ", ".join(vuln.get("fixed_versions", [])) or "None",
+                "fixed_versions": ", ".join(raw_fixed) or "None",
                 "impact": vuln.get("impact", "—"),
                 "remediation": vuln.get("remediation_steps", "—"),
                 "references": vuln.get("references", []),
@@ -95,14 +133,22 @@ class VulnerabilityInsightsApp:
     def _setup_left_panel(self, parent):
         frame = ctk.CTkFrame(parent)
         frame.pack(side="left", fill="both", expand=True, padx=5)
-        self.tree = ttk.Treeview(frame, columns=("ID", "Severity", "Fixed"), show="headings")
+        self.tree = ttk.Treeview(
+            frame,
+            columns=("ID", "Severity", "Current", "Fixed", "Status"),
+            show="headings",
+        )
         for col, text, width in [
-            ("ID", "Vulnerability ID", 220),
-            ("Severity", "Severity", 120),
-            ("Fixed", "Fixed Versions", 220),
+            ("ID", "Vulnerability ID", 170),
+            ("Severity", "Severity", 90),
+            ("Current", "Current Version", 110),
+            ("Fixed", "Fixed Versions", 150),
+            ("Status", "Status", 90),
         ]:
             self.tree.heading(col, text=text, command=lambda c=col: self.sort_column(c, False))
             self.tree.column(col, width=width, anchor="w")
+        self.tree.tag_configure("fixed", foreground="#388E3C")
+        self.tree.tag_configure("notfixed", foreground="#C62828")
         self.tree.pack(fill="both", expand=True)
         self.tree.bind("<<TreeviewSelect>>", self.show_details)
 
@@ -114,15 +160,39 @@ class VulnerabilityInsightsApp:
 
         # Tabs: Dependencies, Basic Details, Scan Details
         self.index_details_text = self._create_details_tab("Dependencies", "Select a package for details")
-        self.developer_details_text = self._create_details_tab("Basic Details", "Select a vulnerability for details")
+        self.developer_details_text = self._create_details_tab(
+            "Basic Details", "Select a vulnerability for details", with_action=True
+        )
         self.enterprise_details_text = self._create_details_tab("Scan Details", "Select a package to see scan details")
 
-    def _create_details_tab(self, name, default=""):
+    def _create_details_tab(self, name, default="", with_action=False):
         tab = self.details_notebook.add(name)
         textbox = ctk.CTkTextbox(tab, width=380, height=350)
         textbox.pack(fill="both", expand=True, padx=5, pady=5)
         textbox.configure(state="disabled")
         self._set_text(textbox, default)
+
+        if with_action:
+            # Action bar so the user can remediate directly from the report
+            action_frame = ctk.CTkFrame(tab)
+            action_frame.pack(fill="x", padx=5, pady=(2, 5))
+            self.update_now_button = ctk.CTkButton(
+                action_frame,
+                text="⬆ Upgrade all Packages",
+                width=180,
+                height=32,
+                state="disabled",
+                command=self.upgrade_all_packages,
+            )
+            self.update_now_button.pack(side="left", padx=(0, 8))
+            self.update_status_label = ctk.CTkLabel(
+                action_frame,
+                text="Upgrade all packages to their recommended fixed versions.",
+                text_color="#7F8B9A",
+                anchor="w",
+            )
+            self.update_status_label.pack(side="left", fill="x", expand=True)
+
         return textbox
 
     def _setup_bottom_panel(self, parent):
@@ -179,6 +249,7 @@ class VulnerabilityInsightsApp:
         pkg = meta.get("package", "Unknown")
         ver = meta.get("version", "?")
         self.root.title(f"Vulnerability Insights Dashboard - {self.env_name} [{pkg}:{ver}]")
+        self._refresh_upgrade_all_button()
 
     def _clear_ui(self):
         for item in self.tree.get_children():
@@ -190,10 +261,31 @@ class VulnerabilityInsightsApp:
         self.canvas.draw()
         self.vulnerabilities.clear()
         self.current_pkg_data = None
+        self.current_vuln = None
+        self.current_update_button = None
+        if hasattr(self, "update_now_button"):
+            self.update_now_button.configure(text="⬆ Upgrade all Packages", state="disabled")
+        if hasattr(self, "update_status_label"):
+            self.update_status_label.configure(
+                text="Upgrade all packages to their recommended fixed versions."
+            )
 
     def populate_treeview(self):
         for vuln in self.vulnerabilities:
-            self.tree.insert("", "end", values=(vuln["id"], vuln["severity"], vuln["fixed_versions"]))
+            status = vuln.get("status", "not fixed")
+            tag = "fixed" if status == "fixed" else "notfixed"
+            self.tree.insert(
+                "",
+                "end",
+                values=(
+                    vuln["id"],
+                    vuln["severity"],
+                    vuln.get("current_version", "?"),
+                    vuln["fixed_versions"],
+                    status,
+                ),
+                tags=(tag,),
+            )
 
     def show_details(self, event):
         sel = self.tree.selection()
@@ -203,9 +295,16 @@ class VulnerabilityInsightsApp:
         vuln = next((v for v in self.vulnerabilities if v["id"] == vid), None)
         if not vuln:
             return
+        self.current_vuln = vuln
+        target = self._parse_target_version(vuln)
+        current_version = vuln.get("current_version", "?")
+        status = vuln.get("status", "not fixed")
+        up_to_date = status == "fixed"
         lines = [
             f"ID: {vuln['id']}",
             f"Package: {vuln['package']}",
+            f"Current Version: {current_version}",
+            f"Status: {status}",
             f"Summary: {vuln['summary']}",
             f"Severity: {vuln['severity']}",
             f"Fixed Versions: {vuln['fixed_versions']}",
@@ -219,6 +318,337 @@ class VulnerabilityInsightsApp:
             lines.append(url)
             lines.append("────────────────────")
         self._set_text(self.developer_details_text, "\n".join(lines))
+        if target:
+            self._embed_update_now_button(target, up_to_date=up_to_date)
+        else:
+            self.current_update_button = None
+        self._refresh_upgrade_all_button()
+
+    # ---------------------- Remediation Action ----------------------
+
+    @staticmethod
+    def _parse_target_version(vuln):
+        """Extract the fixed version the remediation recommends.
+
+        Example: "Upgrade to 26.2.0" -> "26.2.0".
+        Returns None when no actionable fix is available.
+        """
+        if not vuln:
+            return None
+        remediation = vuln.get("remediation", "") or ""
+        match = re.search(r"[Uu]pgrade to\s+(\d[\w.\-]*)", remediation)
+        if match:
+            return match.group(1).strip()
+        fixed = vuln.get("fixed_versions", "") or ""
+        first = fixed.split(",")[0].strip()
+        if first and first.lower() not in ("none", "no fix available", "—"):
+            return first
+        return None
+
+    def _is_vuln_up_to_date(self, vuln):
+        """True when the vulnerability is already fixed (installed version meets
+        or exceeds the recommended fix). Prefers the DB-persisted status."""
+        if not vuln:
+            return False
+        status = vuln.get("status")
+        if status in ("fixed", "not fixed"):
+            return status == "fixed"
+        # Fallback for records built without a status field.
+        target = self._parse_target_version(vuln)
+        if not target:
+            return False
+        current = (vuln.get("current_version") or "").strip()
+        if not current or current in ("?", "—", "None", "Unknown"):
+            return False
+        return self._version_key(current) >= self._version_key(target)
+
+    def _embed_update_now_button(self, target, up_to_date=False):
+        """Embed a real 'Update Now' button inline at the end of the Remediation line.
+
+        When the installed version already meets the fix (current >= target), the
+        button is embedded disabled and labelled 'Up to date'.
+        """
+        textbox = self.developer_details_text
+        content = textbox.get("0.0", "end")
+        rem_line = None
+        for line in content.splitlines():
+            if line.startswith("Remediation:"):
+                rem_line = line
+                break
+        if rem_line is None:
+            self.current_update_button = None
+            return
+
+        start = content.index(rem_line)
+        index = f"1.0 + {start + len(rem_line)} chars"
+
+        btn = ctk.CTkButton(
+            textbox._textbox,
+            text="Up to date" if up_to_date else "Update Now",
+            width=88 if not up_to_date else 100,
+            height=24,
+            state="disabled" if up_to_date else "normal",
+            command=self.update_now,
+        )
+        textbox.configure(state="normal")
+        textbox._textbox.window_create(index, window=btn)
+        textbox.configure(state="disabled")
+        self.current_update_button = btn
+
+    def _refresh_upgrade_all_button(self):
+        """Enable 'Upgrade all Packages' when any package in the environment has a fix."""
+        has_fix = bool(self._collect_upgrade_plan())
+        if has_fix and not self._updating:
+            self.update_now_button.configure(text="⬆ Upgrade all Packages", state="normal")
+        else:
+            self.update_now_button.configure(text="⬆ Upgrade all Packages", state="disabled")
+
+    def update_now(self):
+        """Upgrade the currently selected vulnerable package to its fixed version."""
+        if self._updating or not self.current_vuln:
+            return
+        vuln = self.current_vuln
+        target = self._parse_target_version(vuln)
+        if not target:
+            messagebox.showinfo(
+                "No Action",
+                "No fixed version is available for the selected vulnerability.",
+            )
+            return
+        if self._is_vuln_up_to_date(vuln):
+            messagebox.showinfo(
+                "Already Up to Date",
+                f"'{vuln['package']}' is already at version "
+                f"{vuln.get('current_version', '?')}, which meets or exceeds the "
+                f"recommended fixed version {target}.",
+            )
+            return
+        package = vuln["package"].split("[")[0].strip()
+        if not package:
+            return
+        if not messagebox.askyesno(
+            "Confirm Update",
+            f"Upgrade '{package}' to version {target} in environment '{self.env_name}'?\n\n"
+            "This installs the fixed version recommended by the remediation "
+            "and resolves this vulnerability.",
+        ):
+            return
+
+        btn = getattr(self, "current_update_button", None)
+        self._updating = True
+        if btn is not None:
+            try:
+                if btn.winfo_exists():
+                    btn.configure(state="disabled", text="Updating...")
+            except Exception:
+                pass
+        self.update_status_label.configure(
+            text=f"Upgrading {package} to {target}..."
+        )
+        threading.Thread(
+            target=self._do_update,
+            args=(package, target, btn),
+            daemon=True,
+        ).start()
+        self.root.after(100, self._poll_update_result)
+
+    def _do_update(self, package, target, btn=None):
+        # Runs in a worker thread: NEVER touch tkinter here.
+        try:
+            install_package(
+                self.env_name,
+                f"{package}=={target}",
+                log_callback=lambda msg: None,
+            )
+            self._update_queue.put(("single_success", (btn, package, target)))
+        except Exception as e:
+            self._update_queue.put(("single_failure", (btn, package, target, str(e))))
+
+    def _poll_update_result(self):
+        """Main-thread poller that reads the worker thread's result safely."""
+        if not self._updating:
+            return
+        try:
+            outcome, payload = self._update_queue.get_nowait()
+        except queue.Empty:
+            self.root.after(100, self._poll_update_result)
+            return
+        if outcome == "single_success":
+            self._on_update_success(*payload)
+        elif outcome == "single_failure":
+            self._on_update_failure(*payload)
+        elif outcome == "upgrade_all_done":
+            self._on_upgrade_all_done(*payload)
+
+    def _configure_embedded_buttons(self, text, state):
+        """Update every live embedded 'Update Now' button instance."""
+        candidates = {getattr(self, "current_update_button", None)}
+        for btn in candidates:
+            if btn is None:
+                continue
+            try:
+                if btn.winfo_exists():
+                    btn.configure(text=text, state=state)
+            except Exception:
+                pass
+
+    def _on_update_success(self, btn, package, target):
+        self._updating = False
+        self._configure_embedded_buttons("✓ Updated", "disabled")
+        self.current_vuln = None
+        self.current_update_button = None
+        self.update_status_label.configure(
+            text=f"{package} upgraded to {target} successfully."
+        )
+        messagebox.showinfo(
+            "Update Successful",
+            f"'{package}' has been upgraded to {target}.\n\n"
+            "The vulnerability remediation has been applied.",
+        )
+        # Persist the fixed status + new version in the DB, then refresh the
+        # report so the status column and locks reflect the resolution.
+        try:
+            mark_package_fixed(self.env_name, package, target)
+        except Exception as e:
+            logging.warning(f"Failed to persist fixed status for {package}: {e}")
+        self._refresh_from_db()
+
+    def _on_update_failure(self, btn, package, target, error):
+        self._updating = False
+        self._configure_embedded_buttons("Update Now", "normal")
+        self.update_status_label.configure(
+            text=f"Failed — {package} was not upgraded to {target}."
+        )
+        self._refresh_upgrade_all_button()
+        messagebox.showerror(
+            "Update Failed",
+            f"Failed to upgrade '{package}' to {target}:\n\n{error}",
+        )
+
+    # ---------------------- Upgrade All Packages ----------------------
+
+    @staticmethod
+    def _version_key(version):
+        """Turn a version string into a comparable numeric tuple."""
+        return version_key(version)
+
+    def _collect_upgrade_plan(self):
+        """Build {package: recommended_fixed_version} from ALL packages scanned in
+        the environment — NOT just the currently selected package.
+
+        For every vulnerability across every package, the remediation-recommended
+        fixed version is picked (highest wins when duplicates exist).
+        """
+        plan = {}
+        for pkg_data in self.packages_map.values():
+            for vuln in self._extract_vulnerabilities(pkg_data):
+                target = self._parse_target_version(vuln)
+                if not target or self._is_vuln_up_to_date(vuln):
+                    # No fix, or the installed version already meets the fix.
+                    continue
+                package = vuln["package"].split("[")[0].strip()
+                if not package:
+                    continue
+                if package not in plan or self._version_key(target) > self._version_key(plan[package]):
+                    plan[package] = target
+        return plan
+
+    def upgrade_all_packages(self):
+        """Upgrade every vulnerable package across the whole environment to its
+        recommended fixed version."""
+        if self._updating or not self.packages_map:
+            return
+        plan = self._collect_upgrade_plan()
+        if not plan:
+            messagebox.showinfo(
+                "No Action",
+                "No vulnerabilities with a recommended fixed version were found "
+                f"in environment '{self.env_name}'.\n"
+                "Rescan the environment to refresh the report.",
+            )
+            return
+        plan_text = "\n".join(f"  • {p} -> {v}" for p, v in plan.items())
+        if not messagebox.askyesno(
+            "Confirm Upgrade",
+            f"Upgrade all {len(plan)} package(s) to the recommended fixed versions "
+            f"in environment '{self.env_name}'?\n\n{plan_text}",
+        ):
+            return
+
+        self._updating = True
+        self.update_now_button.configure(state="disabled", text="⏳ Upgrading...")
+        self.update_status_label.configure(
+            text=f"Upgrading {len(plan)} package(s) to recommended versions..."
+        )
+        threading.Thread(
+            target=self._do_upgrade_all,
+            args=(plan,),
+            daemon=True,
+        ).start()
+        self.root.after(100, self._poll_update_result)
+
+    def _do_upgrade_all(self, plan):
+        # Runs in a worker thread: NEVER touch tkinter here.
+        successful, failed = [], []
+        for package, target in plan.items():
+            try:
+                install_package(
+                    self.env_name,
+                    f"{package}=={target}",
+                    log_callback=lambda msg: None,
+                )
+                successful.append((package, target))
+            except Exception as e:
+                failed.append((package, target, str(e)))
+        self._update_queue.put(("upgrade_all_done", (successful, failed)))
+
+    def _on_upgrade_all_done(self, successful, failed):
+        self._updating = False
+        parts = []
+        if successful:
+            parts.append(f"✓ Upgraded ({len(successful)}):")
+            parts.extend(f"  • {p} -> {v}" for p, v in successful)
+        if failed:
+            parts.append(f"✗ Failed ({len(failed)}):")
+            parts.extend(f"  • {p} -> {v}: {err}" for p, v, err in failed)
+        summary = "\n".join(parts) or "No packages were updated."
+
+        if failed:
+            self.update_status_label.configure(
+                text=f"Upgrade finished: {len(successful)} ok, {len(failed)} failed."
+            )
+            messagebox.showerror("Upgrade Summary", summary)
+        else:
+            self.update_status_label.configure(
+                text=f"All {len(successful)} package(s) upgraded to recommended versions."
+            )
+            messagebox.showinfo("Upgrade Summary", summary)
+
+        # Persist the upgraded versions + fixed statuses, then refresh the report.
+        for package, new_version in successful:
+            try:
+                mark_package_fixed(self.env_name, package, new_version)
+            except Exception as e:
+                logging.warning(f"Failed to persist fixed status for {package}: {e}")
+        self._refresh_from_db()
+
+    def _refresh_from_db(self):
+        """Reload the latest scan data from the DB (e.g., after a successful
+        upgrade persisted a fixed status) and rebuild the current view."""
+        self.data = DBHelper.get_vulnerability_info(self.env_name)
+        new_map = self._packages_map()
+        selected = (
+            self.current_pkg_key
+            if self.current_pkg_key in new_map
+            else (list(new_map)[0] if new_map else None)
+        )
+        self.packages_map = new_map
+        self.pkg_combo.configure(values=list(new_map.keys()))
+        if selected:
+            self.pkg_combo.set(selected)
+            self.on_package_selected(None)
+        else:
+            self._clear_ui()
 
     # ---------------------- Details Formatters ----------------------
 

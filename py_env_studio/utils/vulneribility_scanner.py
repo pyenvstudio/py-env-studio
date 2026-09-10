@@ -3,6 +3,7 @@ import requests
 from datetime import datetime
 from cvss import CVSS3
 from .handlers import DBHelper
+from .version_utils import vuln_status
 from py_env_studio.core.env_manager import VENV_DIR, DB_FILE
 from py_env_studio.core.pip_tools import list_packages
 
@@ -178,6 +179,19 @@ class SecurityMatrix:
             for dv in dep_vulns:
                 dv["affected_components"] = [dep_name]
                 matrix["vulnerability_insights"]["developer_view"].append(dv)
+
+        # Stamp remediation status (fixed / not fixed) from installed vs fixed versions,
+        # and persist it with the scan so the UI can lock resolved vulnerabilities.
+        current_versions = {str(package): str(version)}
+        for dep_name, dep_version in deps:
+            current_versions[str(dep_name)] = str(dep_version)
+        for v in matrix["vulnerability_insights"]["developer_view"]:
+            affected = v.get("affected_components") or []
+            pkg = str(affected[0]).split("[")[0].strip() if affected else str(package)
+            v["status"] = vuln_status(
+                current_versions.get(pkg),
+                v.get("fixed_versions", []) or [],
+            )
         # Summary counts
         severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
         for v in matrix["vulnerability_insights"]["developer_view"]:
