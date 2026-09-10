@@ -165,6 +165,19 @@ Displays detailed vulnerability and dependency information for packages:
    - **Scan Details** - *(enterprise level external tool integration option [Compliance/ Training/ Incident Response]Currently not implemented)*
 5. An interactive graph visualizes dependencies and vulnerabilities
 
+#### Remediate Vulnerabilities
+
+The Vulnerability Report can apply available fixes without leaving the dashboard.
+
+1. Run **Tools -> Scan Now**, then open **Tools -> Vulnerability Report** for the environment.
+2. Select a package and the vulnerability you want to address.
+3. In the vulnerability details, select **Update Now** beside the remediation recommendation.
+4. Confirm the versioned package upgrade. Py Env Studio installs the recommended fixed version in the selected environment, marks the vulnerability as fixed, and refreshes the report.
+
+To remediate every package with an available recommended fix, select **Upgrade all Packages**. The confirmation dialog lists the planned upgrades. The dashboard reports successful and failed upgrades separately, then refreshes resolved statuses.
+
+The actions are unavailable when the report has no recommended fixed version, or when the installed version already meets or exceeds the recommended fix.
+
 ---
 
 #### Check for Package Updates

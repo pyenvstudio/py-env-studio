@@ -26,3 +26,4 @@ This file tracks implemented features/fixes with implementation date.
 - Project open UX hardening: Added detected-app selection dialog, preferred editor reuse, and retry/choose-another recovery flow when opening a created project fails.
 - Template-plugin integration: Added `after_template_created` hook execution with project/template context and safe error logging.
 - Fix: GitHub import now defaults template name to actual repository slug (for example fastapi-starter-kit) instead of temporary clone folder name.
+- Vulnerability dashboard remediation: Added per-vulnerability `Update Now` and environment-wide `Upgrade all Packages` actions. They apply remediation-recommended fixed versions after confirmation, run without blocking the UI, persist fixed status, and refresh the report with partial-failure feedback.

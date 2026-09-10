@@ -32,6 +32,9 @@ Python environments, packages, projects, and related developer workflows.
 - Store scan results locally and retain the scan timestamp per environment.
 - Present a vulnerability insights dashboard with dependency, package-detail, and scan-detail views.
 - Track fixed package versions and mark stored vulnerability status as resolved after package updates.
+- Remediate an individual vulnerability directly from its dashboard details with `Update Now`; the action upgrades the affected package to the remediation-recommended fixed version after confirmation.
+- Remediate all actionable vulnerabilities in an environment with `Upgrade all Packages`; the dashboard selects the highest recommended fixed version for each affected package, reports partial failures, and refreshes the scan data when the operation finishes.
+- Disable remediation actions when no fixed version is available or the installed package version already satisfies the recommended fix.
 
 ## Project templates
 
