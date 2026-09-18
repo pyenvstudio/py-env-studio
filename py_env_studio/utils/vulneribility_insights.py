@@ -13,6 +13,7 @@ from datetime import datetime
 from .handlers import DBHelper
 from .version_utils import version_key, vuln_status
 from .db_status import ensure_vulnerability_statuses, mark_package_fixed
+from .app_icon import schedule_window_icon
 from py_env_studio.core.package_manager import install_package
 
 # Set customtkinter appearance
@@ -47,6 +48,10 @@ class VulnerabilityInsightsApp:
         self.root.title(f"Vulnerability Insights Dashboard - {self.env_name}")
         self.root.geometry("1400x800")
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        # Apply the shared Py Env Studio icon so the dashboard matches the
+        # main application (this also covers standalone launches).
+        schedule_window_icon(self.root)
 
         # Build GUI
         self._setup_gui()

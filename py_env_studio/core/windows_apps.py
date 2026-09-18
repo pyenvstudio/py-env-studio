@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-import importlib.resources as pkg_resources
+from py_env_studio.utils.app_icon import get_app_icon_path
 
 LOGGER = logging.getLogger(__name__)
 
@@ -23,14 +23,8 @@ def _resolve_python_gui_executable() -> Path:
 
 
 def _resolve_icon_path() -> Path | None:
-    try:
-        with pkg_resources.path("py_env_studio.ui.static.icons", "pes-transparrent-icon-default.ico") as icon_path:
-            resolved = Path(icon_path).resolve()
-            if resolved.exists():
-                return resolved
-    except Exception:
-        return None
-    return None
+    """Return the shared Py Env Studio icon used for the Start Menu shortcut."""
+    return get_app_icon_path()
 
 
 def _get_start_menu_shortcut_path() -> Path | None:

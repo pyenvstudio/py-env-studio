@@ -28,3 +28,6 @@ This file tracks implemented features/fixes with implementation date.
 - Fix: GitHub import now defaults template name to actual repository slug (for example fastapi-starter-kit) instead of temporary clone folder name.
 - Vulnerability dashboard remediation: Added per-vulnerability `Update Now` and environment-wide `Upgrade all Packages` actions. They apply remediation-recommended fixed versions after confirmation, run without blocking the UI, persist fixed status, and refresh the report with partial-failure feedback.
 - Templates Phase 1.3: Added GitHub-backed Community Templates discovery with asynchronous metadata search, categories, sorting, pagination, lightweight caching, static repository preview, duplicate-origin detection, and import through the existing user-template storage, registry, and project-creation workflow. Community repositories remain untrusted and are never executed during discovery, preview, or import.
+
+## 2026-09-18
+- Window icon fix: every Py Env Studio window (all CustomTkinter dialogs, plugin windows and the Vulnerability Insights Dashboard) now shows the PES application icon. Added shared icon helpers (resolve, apply, delayed re-apply) plus a global Tk window hook that covers windows created later, and reused the same resolver for the Windows Start Menu shortcut.

@@ -4,7 +4,7 @@ from tkinter import messagebox, filedialog
 import ctypes
 import customtkinter as ctk
 import os
-from PIL import Image, ImageTk
+from PIL import Image
 import importlib.resources as pkg_resources
 from datetime import datetime as DT
 import webbrowser
@@ -41,6 +41,7 @@ from py_env_studio.core.py_tonic import (
     should_notify,
 )
 from py_env_studio.utils.vulneribility_scanner import DBHelper, SecurityMatrix
+from py_env_studio.utils.app_icon import install_window_icon_hook, schedule_window_icon
 from  py_env_studio.utils.vulneribility_insights  import VulnerabilityInsightsApp
 from py_env_studio.core.plugins import PluginManager
 from py_env_studio.core.templates import TemplateEngine, TemplateCreationRequest
@@ -236,7 +237,11 @@ class PyEnvStudio(ctk.CTk):
                 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
             except Exception as e:
                 logging.warning(f"Could not set Windows AppUserModelID: {e}")
-        
+
+        # Make every window created from now on (dialogs, plugin windows, the
+        # Vulnerability Insights Dashboard, ...) use the Py Env Studio icon.
+        install_window_icon_hook()
+
         appearance_mode = self.preferences.appearance_mode if self.preferences.appearance_mode else "System"
         ctk.set_appearance_mode(appearance_mode)
         scaling = self.preferences.ui_scaling if self.preferences.ui_scaling else "100%"
@@ -248,17 +253,10 @@ class PyEnvStudio(ctk.CTk):
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        try:
-            with pkg_resources.path('py_env_studio.ui.static.icons', 'pes-transparrent-icon-default.ico') as p:
-                self.icon = ImageTk.PhotoImage(file=str(p))
-
-            # Clear default icon and set new one with delay for reliability on Windows
-            self.wm_iconbitmap()
-            # Use iconbitmap for .ico files first, then iconphoto
-            self.after(300, lambda: self.iconbitmap(str(p)))
-            self.after(350, lambda: self.iconphoto(False, self.icon))
-        except Exception as e:
-            logging.warning(f"Could not set icon: {e}")
+        # Apply the Py Env Studio icon to the main window as well. CustomTkinter
+        # sets its own default icon shortly after creation, so the icon is
+        # applied immediately and re-applied once more with a short delay.
+        schedule_window_icon(self)
 
 
     def _setup_logging(self):
