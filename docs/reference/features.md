@@ -39,6 +39,9 @@ Python environments, packages, projects, and related developer workflows.
 ## Project templates
 
 - Start projects from built-in Python Script, Python CLI, and Python Package templates.
+- Discover public GitHub repository candidates through Community Templates, with search, lightweight categories, sorting, pagination, and short-lived in-memory result caching.
+- Preview community repositories through static inspection before import; repository code, build hooks, dependencies, Docker files, and GitHub workflows are never executed by the discovery or import flow.
+- Import a community repository as a normal PES user template with custom metadata, duplicate-origin detection, source provenance, and the existing template creation workflow.
 - Preview template files before creation and validate project names, module names, Python versions, and target directories.
 - Create a project through a non-blocking workflow that exposes creation state, success, and failure to the GUI.
 - Optionally create a virtual environment and initialize Git as part of project creation, using configured defaults.

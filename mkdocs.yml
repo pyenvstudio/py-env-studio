@@ -35,6 +35,7 @@ nav:
   - Templates:
       - Phase 1: project-templates/phase-1.md
       - Phase 1.2: project-templates/phase-1-2.md
+      - Community Templates: project-templates/community-templates.md
   - Development:
       - Contributing: development/contributing.md
   - Plugins:

@@ -47,6 +47,9 @@ from py_env_studio.core.templates import TemplateEngine, TemplateCreationRequest
 from py_env_studio.core.templates import TemplateCreationWorkflow, ProjectCreationStatus
 from py_env_studio.core.templates.validator import sanitize_module_name
 from py_env_studio.core.templates import (
+    CommunityTemplateCandidate,
+    CommunityTemplateInspection,
+    CommunityTemplateService,
     UserTemplateError,
     UserTemplateStore,
     generate_template_id,
@@ -186,6 +189,9 @@ class PyEnvStudio(ctk.CTk):
         self.template_engine = TemplateEngine()
         self.template_creation_workflow = TemplateCreationWorkflow(self.template_engine)
         self.user_template_store = UserTemplateStore()
+        self.community_template_service = CommunityTemplateService(
+            template_store=self.user_template_store
+        )
         self._setup_ui()
         self._setup_logging()
 
@@ -384,6 +390,7 @@ class PyEnvStudio(ctk.CTk):
             )
         templates_menu.add_separator()
         templates_menu.add_command(label="Manage Templates", command=self.show_manage_templates_dialog)
+        templates_menu.add_command(label="Community Templates", command=self.show_community_templates_dialog)
 
         # === Help Menu ===
         help_menu = tkinter.Menu(menubar, tearoff=0)
@@ -1849,6 +1856,243 @@ class PyEnvStudio(ctk.CTk):
         self.template_creation_workflow.engine = self.template_engine
         self._setup_menubar()
 
+    def show_community_templates_dialog(self) -> None:
+        """Browse GitHub repository candidates and import them as user templates."""
+        top = ctk.CTkToplevel(self)
+        top.title("Community Templates")
+        top.geometry("980x700")
+        top.transient(self)
+        top.grab_set()
+        top.grid_columnconfigure(0, weight=1)
+        top.grid_rowconfigure(2, weight=1)
+        top.geometry(f"+{self.winfo_rootx() + 150}+{self.winfo_rooty() + 70}")
+
+        query_var = tkinter.StringVar()
+        category_var = tkinter.StringVar(value="All")
+        sort_var = tkinter.StringVar(value="Popular")
+        state = {"page": 1, "results": [], "busy": False, "error": None}
+
+        ctk.CTkLabel(top, text="Community Templates", font=("Segoe UI", 18, "bold")).grid(
+            row=0, column=0, padx=16, pady=(16, 2), sticky="w"
+        )
+        ctk.CTkLabel(
+            top,
+            text="Discover untrusted third-party Python project templates from GitHub. Preview before importing.",
+            text_color=self.theme.TEXT_COLOR_LIGHT,
+        ).grid(row=1, column=0, padx=16, pady=(0, 10), sticky="w")
+
+        controls = ctk.CTkFrame(top)
+        controls.grid(row=2, column=0, padx=16, pady=(0, 8), sticky="ew")
+        controls.grid_columnconfigure(0, weight=1)
+        self.entry(controls, var=query_var, width=360).grid(row=0, column=0, padx=8, pady=8, sticky="ew")
+        self.optmenu(controls, list(self.community_template_service.CATEGORIES), var=category_var).grid(row=0, column=1, padx=8, pady=8)
+        self.optmenu(controls, ["Popular", "Recently Updated", "Recently Added"], var=sort_var).grid(row=0, column=2, padx=8, pady=8)
+
+        status_label = self.lbl(top, "Ready to search GitHub community templates.", text_color=self.theme.HIGHLIGHT_COLOR)
+        status_label.grid(row=3, column=0, padx=16, pady=(0, 4), sticky="w")
+        list_frame = ctk.CTkScrollableFrame(top)
+        list_frame.grid(row=4, column=0, padx=16, pady=4, sticky="nsew")
+        top.grid_rowconfigure(4, weight=1)
+        list_frame.grid_columnconfigure(0, weight=1)
+
+        footer = ctk.CTkFrame(top)
+        footer.grid(row=5, column=0, padx=16, pady=(8, 16), sticky="ew")
+
+        def use_candidate(candidate: CommunityTemplateCandidate) -> None:
+            existing = self.community_template_service.find_existing_import(candidate.url)
+            if existing:
+                top.destroy()
+                self.open_template_wizard(existing)
+                return
+            inspect_candidate(candidate, use_after_import=True)
+
+        def render_results() -> None:
+            for child in list_frame.winfo_children():
+                child.destroy()
+            if state["error"]:
+                ctk.CTkLabel(list_frame, text=state["error"], justify="left", wraplength=860, text_color=self.theme.ERROR_COLOR).pack(padx=16, pady=24)
+                return
+            if not state["results"] and not state["busy"]:
+                ctk.CTkLabel(list_frame, text="No community templates found. Try a different search or category.").pack(padx=16, pady=24)
+                return
+            for candidate in state["results"]:
+                card = ctk.CTkFrame(list_frame, corner_radius=8, border_width=1, border_color=self.theme.BORDER_COLOR)
+                card.pack(fill="x", padx=4, pady=6)
+                card.grid_columnconfigure(0, weight=1)
+                ctk.CTkLabel(card, text=f"Community Template: {candidate.name}", font=("Segoe UI", 13, "bold")).grid(row=0, column=0, padx=12, pady=(10, 2), sticky="w")
+                ctk.CTkLabel(card, text=candidate.full_name, text_color=self.theme.HIGHLIGHT_COLOR).grid(row=1, column=0, padx=12, pady=2, sticky="w")
+                ctk.CTkLabel(card, text=candidate.description, justify="left", wraplength=660).grid(row=2, column=0, padx=12, pady=2, sticky="w")
+                topics = " | ".join(candidate.topics[:5]) or "Other"
+                metadata = (
+                    f"Stars: {candidate.stars}   Updated: {candidate.updated_at[:10]}   "
+                    f"Language: {candidate.language or 'Unknown'}   License: {candidate.license_name or 'Unknown'}\n"
+                    f"Topics: {topics}"
+                )
+                ctk.CTkLabel(card, text=metadata, justify="left").grid(row=3, column=0, padx=12, pady=(2, 10), sticky="w")
+                actions = ctk.CTkFrame(card, fg_color="transparent")
+                actions.grid(row=0, column=1, rowspan=4, padx=12, pady=10, sticky="ne")
+                self.btn(actions, "Preview", lambda item=candidate: inspect_candidate(item), width=110).pack(pady=3)
+                self.btn(actions, "Use Template", lambda item=candidate: use_candidate(item), width=110).pack(pady=3)
+                self.btn(actions, "Open GitHub", lambda item=candidate: open_link(item.url), width=110).pack(pady=3)
+
+        def search(reset: bool = True) -> None:
+            if state["busy"]:
+                return
+            if reset:
+                state["page"] = 1
+                state["results"] = []
+            state["busy"] = True
+            state["error"] = None
+            status_label.configure(text="Searching GitHub community templates...")
+            render_results()
+
+            def task() -> None:
+                try:
+                    found = self.community_template_service.search(
+                        query=query_var.get(),
+                        category=category_var.get(),
+                        sort=sort_var.get(),
+                        page=state["page"],
+                    )
+                    state["found"] = found
+                except Exception as exc:
+                    state["error"] = str(exc)
+
+            def on_complete() -> None:
+                state["busy"] = False
+                if not top.winfo_exists():
+                    return
+                if not state["error"]:
+                    found = state.pop("found", [])
+                    state["results"] = found if reset else state["results"] + found
+                    status_label.configure(text=f"Showing {len(state['results'])} community template candidates.")
+                else:
+                    status_label.configure(text="Unable to retrieve community templates.", text_color=self.theme.ERROR_COLOR)
+                render_results()
+
+            self.run_async(task, callback=on_complete)
+
+        def inspect_candidate(candidate: CommunityTemplateCandidate, use_after_import: bool = False) -> None:
+            if state["busy"]:
+                return
+            state["busy"] = True
+            status_label.configure(text=f"Inspecting {candidate.full_name} without executing repository code...")
+
+            def task() -> None:
+                try:
+                    state["inspection"] = self.community_template_service.inspect(candidate)
+                    state["inspection_error"] = None
+                except Exception as exc:
+                    state["inspection"] = None
+                    state["inspection_error"] = exc
+
+            def on_complete() -> None:
+                state["busy"] = False
+                if not top.winfo_exists():
+                    inspection = state.get("inspection")
+                    if inspection:
+                        self.community_template_service.cleanup_inspection(inspection)
+                    return
+                inspection = state.get("inspection")
+                error = state.get("inspection_error")
+                if error or inspection is None:
+                    status_label.configure(text=f"Inspection failed: {error}", text_color=self.theme.ERROR_COLOR)
+                    return
+                status_label.configure(text=f"Inspection complete: {candidate.full_name}")
+                show_preview(inspection, use_after_import)
+
+            self.run_async(task, callback=on_complete)
+
+        def show_preview(inspection: CommunityTemplateInspection, use_after_import: bool) -> None:
+            preview = ctk.CTkToplevel(top)
+            preview.title(f"Community Template Preview - {inspection.candidate.name}")
+            preview.geometry("900x700")
+            preview.transient(top)
+            preview.grab_set()
+            preview.grid_columnconfigure(0, weight=1)
+            preview.grid_rowconfigure(1, weight=1)
+
+            ctk.CTkLabel(preview, text="Community Template (Untrusted Third-Party Source)", font=("Segoe UI", 16, "bold")).grid(row=0, column=0, padx=16, pady=(16, 8), sticky="w")
+            details = ctk.CTkTextbox(preview)
+            details.grid(row=1, column=0, padx=16, pady=8, sticky="nsew")
+            concerns = []
+            if inspection.source_inspection.sensitive_files:
+                concerns.append("Sensitive files detected and excluded: " + ", ".join(path.as_posix() for path in inspection.source_inspection.sensitive_files[:8]))
+            if inspection.has_workflows:
+                concerns.append("GitHub workflows detected. Workflows are not executed or imported.")
+            lines = [
+                f"Name: {inspection.candidate.name}",
+                f"GitHub: {inspection.candidate.full_name}",
+                f"Stars: {inspection.candidate.stars}",
+                f"Language: {inspection.candidate.language or 'Unknown'}",
+                f"License: {inspection.candidate.license_name or 'Unknown'}",
+                f"Topics: {', '.join(inspection.candidate.topics) or 'Other'}",
+                "",
+                "Description:", inspection.candidate.description,
+                "",
+                "Detected:",
+                f"- Python project: {'yes' if inspection.has_python_project else 'no'}",
+                f"- Tests: {'yes' if inspection.has_tests else 'no'}",
+                f"- Environment files: {'yes' if inspection.has_environment_files else 'no'}",
+                "",
+                "Relevant files:",
+            ]
+            lines.extend(f"- {path}" for path in inspection.detected_files)
+            lines.extend(["", "Project structure:"])
+            lines.extend(f"- {path.as_posix()}" for path in inspection.source_inspection.included_files[:160])
+            if concerns:
+                lines.extend(["", "Potential concerns:"])
+                lines.extend(f"- {item}" for item in concerns)
+            if inspection.readme_excerpt:
+                lines.extend(["", "README excerpt:", inspection.readme_excerpt])
+            details.insert("1.0", "\n".join(lines))
+            details.configure(state="disabled")
+
+            def close_preview() -> None:
+                self.community_template_service.cleanup_inspection(inspection)
+                preview.destroy()
+
+            def import_template() -> None:
+                existing = self.community_template_service.find_existing_import(inspection.candidate.url)
+                if existing:
+                    choice = messagebox.askyesnocancel(
+                        "Template Already Imported",
+                        "This GitHub repository is already in My Templates.\n\n"
+                        "Yes: use the existing template\nNo: import another copy\nCancel: return to preview",
+                        parent=preview,
+                    )
+                    if choice is None:
+                        return
+                    if choice:
+                        close_preview()
+                        top.destroy()
+                        self.open_template_wizard(existing)
+                        return
+                preview.destroy()
+                self._show_template_metadata_dialog(
+                    source_dir=inspection.source_dir,
+                    source_type="github",
+                    origin=inspection.candidate.url,
+                    cleanup_dir=inspection.cleanup_dir,
+                    refresh_callback=lambda: None,
+                    suggested_template_name=inspection.candidate.name,
+                    on_saved_template=(lambda template_id: self.open_template_wizard(template_id)) if use_after_import else None,
+                )
+
+            footer = ctk.CTkFrame(preview)
+            footer.grid(row=2, column=0, padx=16, pady=(8, 16), sticky="ew")
+            self.btn(footer, "Import as Template", import_template, width=150).pack(side="left", padx=8, pady=8)
+            self.btn(footer, "Open GitHub", lambda: open_link(inspection.candidate.url), width=120).pack(side="left", padx=8, pady=8)
+            self.btn(footer, "Back", close_preview, width=100).pack(side="right", padx=8, pady=8)
+            preview.protocol("WM_DELETE_WINDOW", close_preview)
+
+        self.btn(controls, "Search", search, width=100).grid(row=0, column=3, padx=8, pady=8)
+        self.btn(footer, "Load More", lambda: [state.__setitem__("page", state["page"] + 1), search(reset=False)], width=120).pack(side="left", padx=8, pady=8)
+        self.btn(footer, "My Templates", lambda: self.show_manage_templates_dialog(), width=130).pack(side="left", padx=8, pady=8)
+        self.btn(footer, "Close", top.destroy, width=100).pack(side="right", padx=8, pady=8)
+        top.protocol("WM_DELETE_WINDOW", top.destroy)
+        search()
+
     def show_manage_templates_dialog(self):
         """Manage built-in and user-created templates."""
         top = ctk.CTkToplevel(self)
@@ -2022,7 +2266,7 @@ class PyEnvStudio(ctk.CTk):
 
         self.run_async(task, success_msg=None, error_msg=None, callback=on_complete)
 
-    def _show_template_metadata_dialog(self, source_dir: Path, source_type: str, origin: str, cleanup_dir: Path | None, refresh_callback, suggested_template_name: str | None = None) -> None:
+    def _show_template_metadata_dialog(self, source_dir: Path, source_type: str, origin: str, cleanup_dir: Path | None, refresh_callback, suggested_template_name: str | None = None, on_saved_template=None) -> None:
         try:
             inspection = self.user_template_store.inspect_source(source_dir)
         except Exception as exc:
@@ -2150,6 +2394,8 @@ class PyEnvStudio(ctk.CTk):
                 refresh_callback()
                 show_info("Template saved successfully.")
                 close_dialog()
+                if on_saved_template:
+                    on_saved_template(template_id_var.get().strip())
             except UserTemplateError as exc:
                 show_error(str(exc))
             except Exception as exc:

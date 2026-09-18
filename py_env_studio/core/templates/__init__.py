@@ -18,6 +18,13 @@ from .user_template_store import (
     validate_template_name,
 )
 from .workflow import ProjectCreationState, ProjectCreationStatus, TemplateCreationWorkflow
+from .community import (
+    CommunityTemplateCandidate,
+    CommunityTemplateError,
+    CommunityTemplateInspection,
+    CommunityTemplateRateLimitError,
+    CommunityTemplateService,
+)
 
 __all__ = [
     "TemplateCreationRequest",
@@ -40,4 +47,9 @@ __all__ = [
     "ProjectCreationState",
     "ProjectCreationStatus",
     "TemplateCreationWorkflow",
+    "CommunityTemplateCandidate",
+    "CommunityTemplateError",
+    "CommunityTemplateInspection",
+    "CommunityTemplateRateLimitError",
+    "CommunityTemplateService",
 ]

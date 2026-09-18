@@ -102,6 +102,21 @@ class UserTemplateStore:
     def template_exists(self, template_id: str) -> bool:
         return self._template_dir(template_id).exists()
 
+    def find_template_by_origin(self, origin: str) -> str | None:
+        """Return the saved template ID for a matching source origin, if any."""
+        normalized = self._normalize_origin(origin)
+        for template_dir in self.base_dir.iterdir() if self.base_dir.exists() else []:
+            metadata_file = template_dir / "template.json"
+            if not metadata_file.is_file():
+                continue
+            try:
+                metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if self._normalize_origin(str(metadata.get("origin", ""))) == normalized:
+                return str(metadata.get("id", "")) or None
+        return None
+
     def save_template(
         self,
         source_dir: Path,
@@ -243,3 +258,8 @@ class UserTemplateStore:
 
     def _template_dir(self, template_id: str) -> Path:
         return self.base_dir / template_id
+
+    @staticmethod
+    def _normalize_origin(origin: str) -> str:
+        value = origin.strip().rstrip("/")
+        return value[:-4] if value.endswith(".git") else value
