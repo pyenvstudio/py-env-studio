@@ -71,6 +71,11 @@ from py_env_studio.core.configuration import (
     ConfigurationService,
 )
 from py_env_studio.core.runtime import refresh_runtime_config
+from py_env_studio.core.runtime_providers import (
+    PythonInstallManagerProvider,
+    PythonRuntime,
+    RuntimeProvider,
+)
 # ===== THEME & CONSTANTS =====
 class Theme:
     PADDING = 10
@@ -87,6 +92,8 @@ class Theme:
     BORDER_COLOR = "#2B4F6B"
     ERROR_COLOR = "#FF4C4C"
     SUCCESS_COLOR = "#61D759"
+    WARNING_COLOR = "#FFA500"
+    SECONDARY_COLOR = "#A9A9A9"
     TEXT_COLOR_LIGHT = "#FFFFFF"
     TEXT_COLOR_DARK = "#000000"
 
@@ -473,30 +480,49 @@ class PyEnvStudio(ctk.CTk):
         )
         self.available_python.grid(row=1, column=4, padx=(5, 10), pady=5, sticky="w")
 
+        # Managed Python runtime selection. This is intentionally separate from
+        # the explicit interpreter-path override above. The runtime selector is
+        # backed by the configured RuntimeProvider and therefore does not require
+        # users to browse for python.exe manually.
+        self.lbl(f, "Python Runtime:").grid(row=2, column=0, padx=(10, 5), pady=5, sticky="w")
+        self.env_runtime_var = tkinter.StringVar()
+        self.env_runtime_menu = self.optmenu(
+            f,
+            ["System Default"],
+            var=self.env_runtime_var,
+            width=180,
+        )
+        self.env_runtime_menu.grid(row=2, column=1, padx=(0, 5), pady=5, sticky="w")
+        self.btn(f, "Refresh", self.refresh_env_runtime_choices, width=80).grid(
+            row=2, column=2, padx=5, pady=5, sticky="w"
+        )
+
         # Upgrade pip checkbox below, full width
         self.checkbox_upgrade_pip = self.chk(f, "Upgrade pip during creation")
         self.checkbox_upgrade_pip.select()
-        self.checkbox_upgrade_pip.grid(row=2, column=0, columnspan=5, padx=10, pady=5, sticky="w")
+        self.checkbox_upgrade_pip.grid(row=3, column=0, columnspan=5, padx=10, pady=5, sticky="w")
 
         # Package manager selection
-        self.lbl(f, "Package Manager:").grid(row=3, column=0, padx=(10, 5), pady=5, sticky="w")
+        self.lbl(f, "Package Manager:").grid(row=4, column=0, padx=(10, 5), pady=5, sticky="w")
         self.create_env_pkg_mgr = self.optmenu(
             f,
             ["pip", "uv"],
             var=None,
             width=150
         )
-        self.create_env_pkg_mgr.grid(row=3, column=1, padx=(0, 5), pady=5, sticky="w")
+        self.create_env_pkg_mgr.grid(row=4, column=1, padx=(0, 5), pady=5, sticky="w")
         from py_env_studio.core.env_manager import get_preferred_package_manager
         self.create_env_pkg_mgr.set(get_preferred_package_manager())
 
         # show python version information label below checkbox
         self.python_version_info = self.lbl(f, "USING PYTHON: Default", font=self.theme.FONT_BOLD, text_color=self.theme.HIGHLIGHT_COLOR)
-        self.python_version_info.grid(row=4, column=0, columnspan=5, padx=10, pady=5, sticky="w")
+        self.python_version_info.grid(row=5, column=0, columnspan=5, padx=10, pady=5, sticky="w")
 
         # Create environment button below
         self.btn_create_env = self.btn(f, "Create Environment", self.create_env, self.icons.get("create-env"))
-        self.btn_create_env.grid(row=5, column=0, columnspan=5, padx=10, pady=5)
+        self.btn_create_env.grid(row=6, column=0, columnspan=5, padx=10, pady=5)
+
+        self.refresh_env_runtime_choices()
 
     def _env_activate_section(self, parent):
         p = self.frame(parent, corner_radius=12, border_width=1, border_color=self.theme.BORDER_COLOR)
@@ -1533,6 +1559,45 @@ class PyEnvStudio(ctk.CTk):
                 )
             self.packages_list_frame.grid_remove()
 
+    def refresh_env_runtime_choices(self):
+        """Refresh managed Python runtime choices without blocking the GUI."""
+        if not hasattr(self, "env_runtime_menu"):
+            return
+
+        provider_name = (self.preferences.runtime_provider if self.preferences else "Python Install Manager")
+        provider = self._get_runtime_provider(provider_name)
+        if provider is None:
+            self.env_runtime_menu.configure(values=["System Default"])
+            self.env_runtime_var.set("System Default")
+            return
+
+        self.env_runtime_menu.configure(values=["Loading..."])
+        self.env_runtime_var.set("Loading...")
+
+        def task():
+            try:
+                installed = provider.list_installed() if provider.is_available() else []
+            except Exception as exc:
+                logging.warning("Failed to load managed Python runtimes: %s", exc)
+                installed = []
+
+            values = ["System Default"] + [rt.version for rt in installed]
+            preferred = (self.preferences.default_python if self.preferences else "").strip()
+
+            def apply():
+                self.env_runtime_menu.configure(values=values)
+                current = self.env_runtime_var.get().strip()
+                if preferred and preferred in values:
+                    self.env_runtime_var.set(preferred)
+                elif current in values and current != "Loading...":
+                    self.env_runtime_var.set(current)
+                else:
+                    self.env_runtime_var.set("System Default")
+
+            self.after(0, apply)
+
+        threading.Thread(target=task, daemon=True).start()
+
     def create_env(self):
         env_name = self.entry_env_name.get().strip()
         python_path = self.entry_python_path.get().strip() or None
@@ -1542,17 +1607,57 @@ class PyEnvStudio(ctk.CTk):
         if is_valid_env_selected(env_name):
             messagebox.showerror("Error", f"Environment '{env_name}' already exists.")
             return
-        
+
         # Get selected package manager from create env section
         selected_pkg_mgr = self.create_env_pkg_mgr.get()
-        
+
         # Temporarily set the preference to use in create_env function
         from py_env_studio.core.env_manager import set_preferred_package_manager
         set_preferred_package_manager(selected_pkg_mgr)
-        
+
+        requested_version = self._version_from_python_path(python_path)
+        runtime_choice = self.env_runtime_var.get().strip() if hasattr(self, "env_runtime_var") else "System Default"
+
+        # An explicit interpreter path wins. Otherwise use the selected managed
+        # runtime, falling back to the configured default runtime.
+        if not python_path and runtime_choice not in ("", "System Default", "Loading..."):
+            requested_version = runtime_choice
+        elif not python_path:
+            configured_default = (self.preferences.default_python if self.preferences else "").strip()
+            if configured_default:
+                requested_version = configured_default
+
+        if requested_version:
+            provider = self._get_runtime_provider(
+                self.preferences.runtime_provider if self.preferences else "Python Install Manager"
+            )
+            if provider is not None and provider.is_available():
+                self._resolve_env_runtime_then_create(
+                    env_name=env_name,
+                    python_path=python_path,
+                    upgrade_pip=bool(self.checkbox_upgrade_pip.get()),
+                    requested_version=requested_version,
+                    provider=provider,
+                )
+                return
+
+        self._start_env_creation(env_name, python_path, bool(self.checkbox_upgrade_pip.get()))
+
+    @staticmethod
+    def _version_from_python_path(python_path) -> str | None:
+        """Return a bare version token (3.11.11) when a chosen path reveals one."""
+        if not python_path:
+            return None
+        detected = is_valid_python_version_detected(python_path)
+        if detected and detected.startswith("Python "):
+            return detected.split(" ", 1)[1].strip()
+        return None
+
+    def _start_env_creation(self, env_name: str, python_path, upgrade_pip: bool) -> None:
+        """Begin async environment creation using the existing workflow/helpers."""
         self.btn_create_env.configure(state="disabled")
         self.run_async(
-            lambda: create_env(env_name, python_path, bool(self.checkbox_upgrade_pip.get()),
+            lambda: create_env(env_name, python_path, upgrade_pip,
                                log_callback=lambda msg: self.env_log_queue.put(msg)),
             success_msg=f"Environment '{env_name}' created successfully.",
             error_msg="Failed to create environment",
@@ -1564,6 +1669,130 @@ class PyEnvStudio(ctk.CTk):
             ],
             py_tonic_action="create_env",
         )
+
+
+    def _resolve_env_runtime_then_create(self, env_name: str, python_path,
+                                         upgrade_pip: bool, requested_version: str,
+                                         provider) -> None:
+        """Check installed runtimes off-thread; install when missing, then create."""
+        self.btn_create_env.configure(state="disabled")
+        self.env_log_queue.put(f"Checking Python {requested_version}...")
+
+        def task():
+            try:
+                installed = provider.list_installed()
+            except Exception as exc:
+                self.after(0, lambda: self._on_env_runtime_check_failed(exc))
+                return
+            if requested_version in {rt.version for rt in installed}:
+                executable = provider.get_executable(requested_version)
+                if not executable:
+                    self.after(0, lambda: self._on_env_runtime_check_failed(
+                        RuntimeError(f"Unable to resolve Python {requested_version} executable.")))
+                    return
+                self.after(
+                    0,
+                    lambda: self._start_env_creation(env_name, executable, upgrade_pip),
+                )
+                return
+
+            def ask_install():
+                answer = messagebox.askyesno(
+                    "Python Not Installed",
+                    f"Python {requested_version} is required but is not installed.\n\n"
+                    "Python Install Manager can install it.\n\n"
+                    f"[ Install Python {requested_version} ]",
+                )
+                if not answer:
+                    self.btn_create_env.configure(state="normal")
+                    return
+                self._install_runtime_for_env(
+                    env_name, python_path, upgrade_pip, requested_version, provider)
+
+            self.after(0, ask_install)
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def _on_env_runtime_check_failed(self, exc: Exception) -> None:
+        """Keep UI responsive when runtime lookup fails; fall back to saved Python."""
+        logging.warning("Runtime lookup during env creation failed: %s", exc)
+        self.env_log_queue.put("Runtime lookup failed; creating with configured Python.")
+        self.btn_create_env.configure(state="normal")
+
+    def _install_runtime_for_env(self, env_name, python_path, upgrade_pip,
+                                 requested_version, provider) -> None:
+        """Install the requested runtime without blocking the UI, then continue."""
+        self.env_log_queue.put(f"Installing Python {requested_version}...")
+        self.env_log_queue.put("Verifying installation...")
+
+        def task():
+            try:
+                result = provider.install(
+                    requested_version,
+                    log_callback=lambda msg: self.env_log_queue.put(msg),
+                )
+            except Exception as exc:
+                logging.warning("Python %s installation failed: %s", requested_version, exc)
+                self.after(0, lambda: self._on_env_runtime_install_failed(
+                    env_name, requested_version, str(exc)))
+                return
+            if not result:
+                self.after(0, lambda: self._on_env_runtime_install_failed(
+                    env_name, requested_version, "installation reported failure"))
+                return
+
+            def verify_and_continue():
+                try:
+                    installed = provider.list_installed()
+                except Exception as exc:
+                    self.after(0, lambda: self._on_env_runtime_install_failed(
+                        env_name, requested_version, str(exc)))
+                    return
+                if requested_version not in {rt.version for rt in installed}:
+                    self._on_env_runtime_install_failed(
+                        env_name, requested_version,
+                        "installed runtime not found after install")
+                    return
+                executable = provider.get_executable(requested_version)
+                if not executable:
+                    self._on_env_runtime_install_failed(
+                        env_name, requested_version,
+                        "installed runtime was found, but its executable path could not be resolved")
+                    return
+                self.env_log_queue.put(f"\u2713 Python {requested_version} installed")
+                self._start_env_creation(env_name, executable, upgrade_pip)
+
+            self.after(0, verify_and_continue)
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def _on_env_runtime_install_failed(self, env_name: str, requested_version: str,
+                                       details: str) -> None:
+        """Report install failure and offer retry while staying in the create flow."""
+        logging.warning("Python %s install for env %s failed: %s",
+                        requested_version, env_name, details)
+        retry = messagebox.askretrycancel(
+            "Python Installation Failed",
+            f"Python {requested_version} installation failed.\n\n"
+            f"Details: {details}\n\n[View Details] [Retry]",
+        )
+        if retry:
+            provider = self._get_runtime_provider(
+                self.preferences.runtime_provider if self.preferences else "Python Install Manager"
+            )
+            if provider is not None and provider.is_available():
+                self._install_runtime_for_env(
+                    self.entry_env_name.get().strip() or env_name,
+                    self.entry_python_path.get().strip() or None,
+                    bool(self.checkbox_upgrade_pip.get()),
+                    requested_version, provider)
+                return
+        self.btn_create_env.configure(state="normal")
+
+    def _resolve_python_for_env(self, version: str, log_queue) -> tuple[bool, str]:
+        """Deprecated synchronous helper retained only for backward compatibility."""
+        logging.warning("_resolve_python_for_env is deprecated; env creation now uses the async flow.")
+        return False, ""
 
     def show_about_dialog(self):
         show_info(f"PyEnvStudio: Manage Python virtual environments and packages.\n\n"
@@ -1598,6 +1827,8 @@ class PyEnvStudio(ctk.CTk):
         init_git_var = tkinter.IntVar(value=1 if current.template_initialize_git_default else 0)
         appearance_var = tkinter.StringVar(value=current.appearance_mode)
         scaling_var = tkinter.StringVar(value=current.ui_scaling)
+        runtime_provider_var = tkinter.StringVar(value=current.runtime_provider)
+        default_python_rt_var = tkinter.StringVar(value=current.default_python or "")
 
         python_map: dict[str, tuple[str, str]] = {"System Default": ("", "")}
         python_labels = ["System Default"]
@@ -1650,26 +1881,45 @@ class PyEnvStudio(ctk.CTk):
         ).grid(row=0, column=1, padx=0, pady=0)
 
         self.lbl(body, "Python", font=("Segoe UI", 14, "bold")).grid(row=5, column=0, columnspan=2, padx=8, pady=(14, 4), sticky="w")
-        self.lbl(body, "Default Python Version:", font=self.theme.FONT_BOLD).grid(row=6, column=0, padx=8, pady=6, sticky="w")
+        self.lbl(body, "Explicit Interpreter Override:", font=self.theme.FONT_BOLD).grid(row=6, column=0, padx=8, pady=6, sticky="w")
         self.optmenu(body, python_labels, var=default_python_var, width=620).grid(row=6, column=1, padx=8, pady=6, sticky="ew")
 
-        self.lbl(body, "Package Manager", font=("Segoe UI", 14, "bold")).grid(row=7, column=0, columnspan=2, padx=8, pady=(14, 4), sticky="w")
+        # ---- Python Runtime section ----
+        self.lbl(body, "Python Runtime", font=("Segoe UI", 14, "bold")).grid(row=7, column=0, columnspan=2, padx=8, pady=(14, 4), sticky="w")
+        self.lbl(body, "Runtime Provider:", font=self.theme.FONT_BOLD).grid(row=8, column=0, padx=8, pady=6, sticky="w")
+        self.runtime_provider_menu = self.optmenu(
+            body, list(self.configuration_service.SUPPORTED_RUNTIME_PROVIDERS),
+            var=runtime_provider_var, width=250,
+            cmd=lambda value: self._populate_runtime_ui(runtime_provider_var, default_python_rt_var, status_label),
+        )
+        self.runtime_provider_menu.grid(row=8, column=1, padx=8, pady=6, sticky="ew")
+        self.lbl(body, "Default Python:", font=self.theme.FONT_BOLD).grid(row=9, column=0, padx=8, pady=6, sticky="w")
+        self.default_python_rt_menu = self.optmenu(body, ["Loading..."], var=default_python_rt_var, width=250)
+        self.default_python_rt_menu.grid(row=9, column=1, padx=8, pady=6, sticky="ew")
+        self.lbl(body, "Installed Runtimes", font=("Segoe UI", 11, "bold")).grid(row=10, column=0, columnspan=2, padx=8, pady=(10, 2), sticky="w")
+        self.installed_runtimes_frame = ctk.CTkScrollableFrame(body, height=120)
+        self.installed_runtimes_frame.grid(row=11, column=0, columnspan=2, padx=8, pady=2, sticky="nsew")
+        self.lbl(body, "Available to Install", font=("Segoe UI", 11, "bold")).grid(row=12, column=0, columnspan=2, padx=8, pady=(10, 2), sticky="w")
+        self.available_runtimes_frame = ctk.CTkScrollableFrame(body, height=120)
+        self.available_runtimes_frame.grid(row=13, column=0, columnspan=2, padx=8, pady=2, sticky="nsew")
+        self.btn(body, "Refresh", lambda: self._refresh_runtime_ui(top, runtime_provider_var, default_python_rt_var, status_label), width=100).grid(row=14, column=0, columnspan=2, padx=8, pady=(8, 0), sticky="w")
+        self.lbl(body, "Package Manager", font=("Segoe UI", 14, "bold")).grid(row=15, column=0, columnspan=2, padx=8, pady=(14, 4), sticky="w")
         pm_row = ctk.CTkFrame(body, fg_color="transparent")
-        pm_row.grid(row=8, column=0, columnspan=2, padx=8, pady=6, sticky="w")
+        pm_row.grid(row=16, column=0, columnspan=2, padx=8, pady=6, sticky="w")
         pip_radio = ctk.CTkRadioButton(pm_row, text="pip", variable=package_manager_var, value="pip")
         pip_radio.grid(row=0, column=0, padx=(0, 18), pady=4, sticky="w")
         uv_text = "uv" if uv_tools.is_uv_installed() else "uv (Not Installed)"
         uv_radio = ctk.CTkRadioButton(pm_row, text=uv_text, variable=package_manager_var, value="uv")
         uv_radio.grid(row=0, column=1, padx=0, pady=4, sticky="w")
 
-        self.lbl(body, "Project / Templates", font=("Segoe UI", 14, "bold")).grid(row=9, column=0, columnspan=2, padx=8, pady=(14, 4), sticky="w")
-        self.lbl(body, "Default Project Tool:", font=self.theme.FONT_BOLD).grid(row=10, column=0, padx=8, pady=6, sticky="w")
-        self.optmenu(body, tool_labels, var=project_tool_var, width=320).grid(row=10, column=1, padx=8, pady=6, sticky="w")
-        self.chk(body, "Create virtual environment automatically", variable=create_venv_var).grid(row=11, column=0, columnspan=2, padx=8, pady=6, sticky="w")
-        self.chk(body, "Initialize Git repository", variable=init_git_var).grid(row=12, column=0, columnspan=2, padx=8, pady=6, sticky="w")
+        self.lbl(body, "Project / Templates", font=("Segoe UI", 14, "bold")).grid(row=17, column=0, columnspan=2, padx=8, pady=(14, 4), sticky="w")
+        self.lbl(body, "Default Project Tool:", font=self.theme.FONT_BOLD).grid(row=18, column=0, padx=8, pady=6, sticky="w")
+        self.optmenu(body, tool_labels, var=project_tool_var, width=320).grid(row=18, column=1, padx=8, pady=6, sticky="w")
+        self.chk(body, "Create virtual environment automatically", variable=create_venv_var).grid(row=19, column=0, columnspan=2, padx=8, pady=6, sticky="w")
+        self.chk(body, "Initialize Git repository", variable=init_git_var).grid(row=20, column=0, columnspan=2, padx=8, pady=6, sticky="w")
 
         status_label = self.lbl(body, "", text_color=self.theme.HIGHLIGHT_COLOR)
-        status_label.grid(row=13, column=0, columnspan=2, padx=8, pady=(4, 8), sticky="w")
+        status_label.grid(row=21, column=0, columnspan=2, padx=8, pady=(4, 8), sticky="w")
 
         def collect_preferences() -> AppPreferences:
             selected_python_label = default_python_var.get().strip() or "System Default"
@@ -1687,6 +1937,8 @@ class PyEnvStudio(ctk.CTk):
                 template_initialize_git_default=bool(init_git_var.get()),
                 appearance_mode=appearance_var.get().strip() or "System",
                 ui_scaling=scaling_var.get().strip() or "100%",
+                runtime_provider=runtime_provider_var.get().strip() or "Python Install Manager",
+                default_python=default_python_rt_var.get().strip(),
             )
 
         def apply_runtime_preferences(saved: AppPreferences) -> None:
@@ -1753,6 +2005,279 @@ class PyEnvStudio(ctk.CTk):
         self.btn(footer, "Cancel", top.destroy, width=100).pack(side="right", padx=8, pady=8)
         self.btn(footer, "Save", lambda: persist(close_after_save=True), width=100).pack(side="right", padx=8, pady=8)
         self.btn(footer, "Apply", lambda: persist(close_after_save=False), width=100).pack(side="right", padx=8, pady=8)
+
+        # Load runtime provider data asynchronously
+        self._populate_runtime_ui(runtime_provider_var, default_python_rt_var, status_label)
+
+    def _get_runtime_provider(self, provider_name: str) -> "RuntimeProvider | None":
+        """Return the configured runtime provider instance."""
+        if provider_name == "Python Install Manager":
+            return PythonInstallManagerProvider()
+        return None
+
+    def _populate_runtime_ui(self, provider_var, default_python_var, status_label) -> None:
+        """Load runtime information in the background and update the UI on the main thread."""
+        provider_name = provider_var.get().strip() or "Python Install Manager"
+        self._clear_frame(self.installed_runtimes_frame)
+        self._clear_frame(self.available_runtimes_frame)
+        self.lbl(
+            self.installed_runtimes_frame,
+            "Loading installed runtimes...",
+            text_color=self.theme.SECONDARY_COLOR,
+        ).pack(anchor="w", padx=8, pady=4)
+        self.lbl(
+            self.available_runtimes_frame,
+            "Loading official Python releases...",
+            text_color=self.theme.SECONDARY_COLOR,
+        ).pack(anchor="w", padx=8, pady=4)
+        status_label.configure(
+            text=f"Loading {provider_name}...",
+            text_color=self.theme.SECONDARY_COLOR,
+        )
+
+        def task():
+            provider = self._get_runtime_provider(provider_name)
+            if provider is None:
+                self.after(0, lambda: self._show_runtime_unavailable(
+                    provider_var, default_python_var, status_label))
+                return
+
+            error = None
+            installed = []
+            available = []
+            available_flag = False
+            try:
+                available_flag = provider.is_available()
+                if available_flag:
+                    installed = provider.list_installed()
+                    available = provider.list_available()
+                else:
+                    error = f"{provider_name} is not available on this system."
+            except Exception as exc:
+                error = str(exc)
+                logging.warning("Failed to load runtime data from %s: %s", provider_name, exc)
+
+            self.after(0, lambda: self._update_runtime_ui(
+                provider_name,
+                installed,
+                available,
+                available_flag,
+                default_python_var,
+                status_label,
+                error=error,
+            ))
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def _show_runtime_unavailable(self, provider_var, default_python_var, status_label) -> None:
+        """Display the provider-unavailable state."""
+        self._clear_frame(self.installed_runtimes_frame)
+        self._clear_frame(self.available_runtimes_frame)
+        self.lbl(
+            self.installed_runtimes_frame,
+            "Runtime provider is not configured for this UI yet.",
+            text_color=self.theme.WARNING_COLOR,
+        ).pack(anchor="w", padx=8, pady=4)
+        self.lbl(
+            self.available_runtimes_frame,
+            "Choose Python Install Manager to manage official Python releases.",
+            text_color=self.theme.SECONDARY_COLOR,
+        ).pack(anchor="w", padx=8, pady=2)
+        default_python_var.set("")
+        self.default_python_rt_menu.configure(values=[""])
+        status_label.configure(
+            text="Selected runtime provider is not implemented yet.",
+            text_color=self.theme.WARNING_COLOR,
+        )
+
+    def _update_runtime_ui(
+        self,
+        provider_name: str,
+        installed: list,
+        available: list,
+        available_flag: bool,
+        default_python_var,
+        status_label,
+        *,
+        error: str | None = None,
+    ) -> None:
+        """Render runtime data returned by the provider."""
+        if not available_flag:
+            self._clear_frame(self.installed_runtimes_frame)
+            self._clear_frame(self.available_runtimes_frame)
+            message = error or f"{provider_name} is not available on this system."
+            self.lbl(
+                self.installed_runtimes_frame,
+                message,
+                text_color=self.theme.WARNING_COLOR,
+            ).pack(anchor="w", padx=8, pady=4)
+            self.lbl(
+                self.installed_runtimes_frame,
+                "Install Python Install Manager to manage official Python runtimes through Py Env Studio.",
+                text_color=self.theme.SECONDARY_COLOR,
+            ).pack(anchor="w", padx=8, pady=2)
+            default_python_var.set("")
+            self.default_python_rt_menu.configure(values=[""])
+            status_label.configure(text=message, text_color=self.theme.ERROR_COLOR)
+            return
+
+        self._clear_frame(self.installed_runtimes_frame)
+        if not installed:
+            self.lbl(
+                self.installed_runtimes_frame,
+                "No Python runtimes installed.",
+                text_color=self.theme.SECONDARY_COLOR,
+            ).pack(anchor="w", padx=8, pady=4)
+        else:
+            for rt in installed:
+                details = []
+                if rt.implementation:
+                    details.append(rt.implementation.upper() if rt.implementation == "cpython" else rt.implementation)
+                if rt.architecture:
+                    details.append(rt.architecture)
+                suffix = f"  ({', '.join(details)})" if details else ""
+                self.lbl(
+                    self.installed_runtimes_frame,
+                    f"✓ Python {rt.version}{suffix}",
+                    text_color=self.theme.HIGHLIGHT_COLOR,
+                ).pack(anchor="w", padx=8, pady=2)
+
+        self._clear_frame(self.available_runtimes_frame)
+        if not available:
+            self.lbl(
+                self.available_runtimes_frame,
+                "No additional official Python releases available.",
+                text_color=self.theme.SECONDARY_COLOR,
+            ).pack(anchor="w", padx=8, pady=4)
+        else:
+            provider = self._get_runtime_provider(provider_name)
+            for rt in available:
+                row = ctk.CTkFrame(self.available_runtimes_frame, fg_color="transparent")
+                row.pack(fill="x", padx=6, pady=2)
+                row.grid_columnconfigure(0, weight=1)
+                display = f"Python {rt.version}"
+                if rt.release_status:
+                    display += f"  [{rt.release_status}]"
+                self.lbl(row, display).grid(row=0, column=0, padx=(2, 8), pady=2, sticky="w")
+                install_btn = self.btn(
+                    row,
+                    "Install",
+                    lambda r=rt, p=provider, b=None: self._install_python(
+                        r, p, default_python_var, status_label, install_button=b
+                    ),
+                    width=85,
+                )
+                # Rebind the callback with the actual button so it can be disabled
+                # during the background installation.
+                install_btn.configure(
+                    command=lambda r=rt, p=provider, b=install_btn: self._install_python(
+                        r, p, default_python_var, status_label, install_button=b
+                    )
+                )
+                install_btn.grid(row=0, column=1, padx=(0, 2), pady=2)
+
+        if installed:
+            default_opts = [rt.version for rt in installed]
+            self.default_python_rt_menu.configure(values=default_opts)
+            current_val = default_python_var.get().strip()
+            if current_val in default_opts:
+                default_python_var.set(current_val)
+            elif self.preferences and self.preferences.default_python in default_opts:
+                default_python_var.set(self.preferences.default_python)
+            else:
+                default_python_var.set(default_opts[0])
+        else:
+            self.default_python_rt_menu.configure(values=[""])
+            default_python_var.set("")
+
+        if error:
+            status_label.configure(text=error, text_color=self.theme.WARNING_COLOR)
+        else:
+            status_label.configure(
+                text=f"Loaded {len(installed)} installed, {len(available)} official releases available to install.",
+                text_color=self.theme.HIGHLIGHT_COLOR,
+            )
+
+    def _refresh_runtime_ui(self, top, provider_var, default_python_var, status_label) -> None:
+        """Refresh runtime data from the selected provider."""
+        self._populate_runtime_ui(provider_var, default_python_var, status_label)
+
+    def _install_python(
+        self,
+        runtime: "PythonRuntime",
+        provider: "RuntimeProvider | None",
+        default_python_var,
+        status_label,
+        install_button=None,
+    ) -> None:
+        """Install a runtime asynchronously and refresh the complete runtime UI."""
+        if provider is None:
+            status_label.configure(
+                text="Python Install Manager is not available.",
+                text_color=self.theme.ERROR_COLOR,
+            )
+            return
+
+        if install_button is not None:
+            install_button.configure(state="disabled", text="Installing...")
+        status_label.configure(
+            text=f"Installing Python {runtime.version}...",
+            text_color=self.theme.HIGHLIGHT_COLOR,
+        )
+
+        provider_name = provider.NAME
+
+        def task():
+            try:
+                result = provider.install(runtime.version)
+                # Installation succeeded; verify and refresh through the same
+                # provider rather than assuming the command completed correctly.
+                installed = provider.list_installed()
+                available = provider.list_available()
+                available_flag = provider.is_available()
+                installed_versions = {item.version for item in installed}
+                if runtime.version not in installed_versions:
+                    raise RuntimeError(
+                        f"Python {runtime.version} was not found after installation."
+                    )
+                error = None if result else "Installation reported no result."
+            except Exception as exc:
+                installed = []
+                available = []
+                available_flag = False
+                error = str(exc)
+                logging.warning("Python %s installation failed: %s", runtime.version, exc)
+
+            def on_done():
+                if error:
+                    if install_button is not None and install_button.winfo_exists():
+                        install_button.configure(state="normal", text="Retry")
+                    status_label.configure(
+                        text=f"Python {runtime.version} installation failed: {error}",
+                        text_color=self.theme.ERROR_COLOR,
+                    )
+                    return
+
+                if install_button is not None and install_button.winfo_exists():
+                    install_button.configure(state="normal", text="Installed")
+                self._update_runtime_ui(
+                    provider_name,
+                    installed,
+                    available,
+                    available_flag,
+                    default_python_var,
+                    status_label,
+                )
+                self.refresh_env_runtime_choices()
+
+            self.after(0, on_done)
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def _clear_frame(self, frame) -> None:
+        """Remove all widgets from a frame."""
+        for child in frame.winfo_children():
+            child.destroy()
 
     def show_install_package_dialog(self):
         """Show a dialog to install a package in the selected environment."""

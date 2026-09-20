@@ -3,6 +3,7 @@ from __future__ import annotations
 from configparser import ConfigParser
 from dataclasses import dataclass
 from pathlib import Path
+import re
 import tempfile
 from typing import Iterable
 
@@ -29,6 +30,8 @@ class AppPreferences:
     template_initialize_git_default: bool
     appearance_mode: str
     ui_scaling: str
+    runtime_provider: str
+    default_python: str
 
 
 def _user_config_path() -> Path:
@@ -74,6 +77,7 @@ class ConfigurationService:
     """Single source of truth for user configuration persistence and validation."""
 
     SUPPORTED_PACKAGE_MANAGERS = ("pip", "uv")
+    SUPPORTED_RUNTIME_PROVIDERS = ("Python Install Manager", "System", "Custom")
     SUPPORTED_APPEARANCE_MODES = ("Light", "Dark", "System")
     SUPPORTED_UI_SCALING = ("80%", "90%", "100%", "110%", "120%")
 
@@ -129,6 +133,8 @@ class ConfigurationService:
             "template_initialize_git_default": "true",
             "appearance_mode": "System",
             "ui_scaling": "100%",
+            "runtime_provider": "Python Install Manager",
+            "default_python": "",
         }
         for option, value in defaults.items():
             if not parser.has_option("settings", option):
@@ -175,6 +181,8 @@ class ConfigurationService:
             ),
             appearance_mode=settings.get("appearance_mode", "System"),
             ui_scaling=settings.get("ui_scaling", "100%"),
+            runtime_provider=settings.get("runtime_provider", "Python Install Manager"),
+            default_python=settings.get("default_python", ""),
         )
 
     def validate_preferences(
@@ -212,6 +220,18 @@ class ConfigurationService:
                 f"Unsupported appearance mode: {preferences.appearance_mode}"
             )
 
+
+
+        if preferences.runtime_provider not in self.SUPPORTED_RUNTIME_PROVIDERS:
+            supported = ", ".join(self.SUPPORTED_RUNTIME_PROVIDERS)
+            raise ConfigurationError(
+                f"Unsupported runtime provider: {preferences.runtime_provider}. Supported: {supported}"
+            )
+        if preferences.default_python and not re.match(r"^\d+(?:\.\d+)*$", preferences.default_python):
+            raise ConfigurationError(
+                f"Invalid default Python identifier: {preferences.default_python}"
+            )
+
         if preferences.ui_scaling not in self.SUPPORTED_UI_SCALING:
             raise ConfigurationError(
                 f"Unsupported UI scaling value: {preferences.ui_scaling}"
@@ -246,6 +266,8 @@ class ConfigurationService:
         )
         parser.set("settings", "appearance_mode", preferences.appearance_mode)
         parser.set("settings", "ui_scaling", preferences.ui_scaling)
+        parser.set("settings", "runtime_provider", preferences.runtime_provider)
+        parser.set("settings", "default_python", preferences.default_python)
         self._save_parser(parser)
 
     def reset_to_defaults(self) -> AppPreferences:
