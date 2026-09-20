@@ -75,6 +75,7 @@ include-package-data = true
 
 [tool.setuptools.package-data]
 "py_env_studio" = ["config.ini"]
+"py_env_studio.core.schema" = ["*.sql"]
 "py_env_studio.ui.static.icons" = [
     "about.png",
     "activate-env.png",
