@@ -65,6 +65,32 @@ class DatabaseManager:
                     """
                 )
 
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS python_runtime_metadata (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        provider TEXT NOT NULL,
+                        version TEXT NOT NULL,
+                        release_status TEXT,
+                        architecture TEXT,
+                        implementation TEXT,
+                        metadata_json TEXT NOT NULL,
+                        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(provider, version)
+                    )
+                    """
+                )
+
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS python_runtime_cache_state (
+                        provider TEXT PRIMARY KEY,
+                        last_updated TIMESTAMP NOT NULL,
+                        last_error TEXT
+                    )
+                    """
+                )
+
                 self._migrate_legacy_schema(cur)
                 conn.commit()
         except sqlite3.Error as exc:

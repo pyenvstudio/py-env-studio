@@ -34,6 +34,12 @@ class RuntimeProvider:
     def install(self, version: str, log_callback: Callable[[str], None] | None = None):
         raise NotImplementedError
 
+    def uninstall(self, version: str, log_callback: Callable[[str], None] | None = None):
+        raise RuntimeError(f"The {self.NAME} provider does not support uninstall.")
+
+    def update(self, version: str, log_callback: Callable[[str], None] | None = None):
+        raise RuntimeError(f"The {self.NAME} provider does not support update.")
+
     def is_available(self) -> bool:
         raise NotImplementedError
 
@@ -258,11 +264,29 @@ class PythonInstallManagerProvider(RuntimeProvider):
     # Available official releases
     # ------------------------------------------------------------------
     def list_available(self) -> list[PythonRuntime]:
+        """Available = online catalogue minus installed (network-backed)."""
         if not self.is_available():
             return []
 
         installed = self.list_installed()
         installed_versions = {self._version_key(rt.version) for rt in installed}
+        available = self.list_online_releases()
+        filtered = [
+            item for item in available
+            if self._version_key(item.version) not in installed_versions
+        ]
+        return self._dedupe_runtimes(filtered)
+
+    def list_online_releases(self) -> list[PythonRuntime]:
+        """Return the raw official online catalogue (no installed filtering).
+
+        This is the network-backed call whose normalized result should be
+        cached by ``runtime_cache`` instead of being executed on every UI
+        render. ``list_available`` keeps the old filtering behavior for
+        backward compatibility.
+        """
+        if not self.is_available():
+            return []
 
         try:
             stdout = self._run(["list", "--online", "--format=json"])
@@ -283,11 +307,7 @@ class PythonInstallManagerProvider(RuntimeProvider):
             except RuntimeError:
                 return []
 
-        filtered = [
-            item for item in available
-            if self._version_key(item.version) not in installed_versions
-        ]
-        return self._dedupe_runtimes(filtered)
+        return self._dedupe_runtimes(available)
 
     def _parse_available(self, stdout: str) -> list[PythonRuntime]:
         results = []
@@ -470,6 +490,70 @@ class PythonInstallManagerProvider(RuntimeProvider):
                 raise
 
         raise RuntimeError(f"Failed to install Python {version}: {last_error}") from last_error
+
+    # ------------------------------------------------------------------
+    # Uninstall / update (official manager only)
+    # ------------------------------------------------------------------
+    def uninstall(self, version: str, log_callback: Callable[[str], None] | None = None):
+        """Uninstall an installed runtime via the official manager."""
+        if not self._py:
+            raise RuntimeError("Python Install Manager is not available on this system.")
+
+        normalized = self.normalize_version(version)
+        if not self._VERSION_RE.fullmatch(normalized):
+            raise ValueError(f"Unsupported Python version identifier: {version!r}")
+
+        attempts = [normalized]
+        major_minor = self._major_minor(normalized)
+        if major_minor != normalized:
+            attempts.append(major_minor)
+
+        last_error = None
+        for attempt in attempts:
+            # Prefer non-interactive flags; fall back to the bare command for
+            # older managers that do not accept them.
+            arg_variants = (
+                ["uninstall", attempt, "-y"],
+                ["uninstall", attempt, "--yes"],
+                ["uninstall", attempt],
+            )
+            for argv in arg_variants:
+                try:
+                    self._run(argv, log_callback=log_callback)
+                    LOGGER.info("Python Install Manager uninstalled Python %s", attempt)
+                    return attempt
+                except RuntimeError as exc:
+                    last_error = exc
+                    error_text = str(exc)
+                    if re.search(r"not installed|no match|not found", error_text, re.IGNORECASE):
+                        break  # try next version spelling, not next flag spelling
+                    if re.search(r"unrecognized|unknown option|invalid (option|argument)", error_text, re.IGNORECASE):
+                        continue  # flag not supported; try next variant
+                    # Otherwise this attempt genuinely failed; stop flag cycling.
+                    break
+            else:
+                continue
+            # If the error says "not installed", try the alternate spelling.
+            if last_error is not None and re.search(
+                r"not installed|no match|not found", str(last_error), re.IGNORECASE
+            ):
+                continue
+            break
+
+        raise RuntimeError(f"Failed to uninstall Python {version}: {last_error}") from last_error
+
+    def update(self, version: str, log_callback: Callable[[str], None] | None = None):
+        """Update an installed runtime to the newest patch of its minor line.
+
+        The official manager updates by installing the latest patch for a
+        ``major.minor`` line, so update == install ``major.minor``.
+        """
+        if not self._py:
+            raise RuntimeError("Python Install Manager is not available on this system.")
+        normalized = self.normalize_version(version)
+        if not self._VERSION_RE.fullmatch(normalized):
+            raise ValueError(f"Unsupported Python version identifier: {version!r}")
+        return self.install(self._major_minor(normalized), log_callback=log_callback)
 
     # ------------------------------------------------------------------
     # Parsing helpers

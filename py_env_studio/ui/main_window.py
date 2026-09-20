@@ -2019,7 +2019,11 @@ class PyEnvStudio(ctk.CTk):
         self.lbl(body, "Available to Install", font=("Segoe UI", 11, "bold")).grid(row=12, column=0, columnspan=2, padx=8, pady=(10, 2), sticky="w")
         self.available_runtimes_frame = ctk.CTkScrollableFrame(body, height=120)
         self.available_runtimes_frame.grid(row=13, column=0, columnspan=2, padx=8, pady=2, sticky="nsew")
-        self.btn(body, "Refresh", lambda: self._refresh_runtime_ui(top, runtime_provider_var, default_python_rt_var, status_label), width=100).grid(row=14, column=0, columnspan=2, padx=8, pady=(8, 0), sticky="w")
+        refresh_row = ctk.CTkFrame(body, fg_color="transparent")
+        refresh_row.grid(row=14, column=0, columnspan=2, padx=8, pady=(8, 0), sticky="ew")
+        self.btn(refresh_row, "Refresh", lambda: self._refresh_runtime_ui(top, runtime_provider_var, default_python_rt_var, status_label), width=100).pack(side="left")
+        self._runtime_cache_label = self.lbl(refresh_row, "Last checked: never", font=("Segoe UI", 10), text_color=self.theme.SECONDARY_COLOR)
+        self._runtime_cache_label.pack(side="left", padx=(12, 0))
         self.lbl(body, "Package Manager", font=("Segoe UI", 14, "bold")).grid(row=15, column=0, columnspan=2, padx=8, pady=(14, 4), sticky="w")
         pm_row = ctk.CTkFrame(body, fg_color="transparent")
         pm_row.grid(row=16, column=0, columnspan=2, padx=8, pady=6, sticky="w")
@@ -2142,8 +2146,18 @@ class PyEnvStudio(ctk.CTk):
             return get_runtime_provider(normalized, custom_path=custom_path)
         return get_runtime_provider(normalized)
 
-    def _populate_runtime_ui(self, provider_var, default_python_var, status_label) -> None:
-        """Load runtime information in the background and update the UI on the main thread."""
+    def _populate_runtime_ui(self, provider_var, default_python_var, status_label, force_refresh: bool = False) -> None:
+        """Load runtime information without unnecessary network access.
+
+        Normal flow (Configuration open): installed runtimes are read
+        locally, official releases come from the DB cache, and the UI
+        renders immediately. The online catalogue (``py list --online``)
+        runs at most once, only when the cache is missing/expired or the
+        user explicitly clicks Refresh (``force_refresh=True``). Expired
+        caches render stale data first, then refresh in the background.
+        """
+        from py_env_studio.core.runtime_cache import RuntimeCache
+
         provider_name = provider_var.get().strip() or "Python Install Manager"
         installed_frame = self.installed_runtimes_frame
         available_frame = self.available_runtimes_frame
@@ -2176,30 +2190,121 @@ class PyEnvStudio(ctk.CTk):
                     message=str(exc), generation=generation))
                 return
 
+            cache = RuntimeCache()
             error = None
-            installed = []
-            available = []
+            installed: list = []
+            cached: list = []
             available_flag = False
+            last_checked = None
+            stale = True
+            cache_present = False
+            usage: dict = {}
+            updates: dict = {}
+            background_pending = False
             try:
                 available_flag = provider.is_available()
-                if available_flag:
-                    installed = provider.list_installed()
-                    available = provider.list_available()
-                else:
+                if not available_flag:
                     error = f"{provider_name} is not available on this system."
+                elif getattr(provider, "NAME", "") != "Python Install Manager":
+                    installed = provider.list_installed()
+                else:
+                    # Local state first: no network on this path.
+                    try:
+                        installed = provider.list_installed()
+                    except Exception as exc:
+                        logging.warning("Local installed-runtime query failed: %s", exc)
+                        installed = []
+                    cached, last_updated = cache.load_cached(provider.NAME)
+                    last_checked = last_updated
+                    cache_present = bool(cached)
+                    stale = not cache.is_fresh(last_updated)
+                    available = RuntimeCache.filter_available(cached, installed)
+                    from py_env_studio.core.runtime_cache import map_runtime_usage
+                    try:
+                        usage = map_runtime_usage(installed)
+                    except Exception:
+                        usage = {}
+                    try:
+                        updates = cache.update_candidates(installed, cached)
+                    except Exception:
+                        updates = {}
+                    needs_online = force_refresh or not cache_present or stale
+                    if needs_online:
+                        if cache_present and stale and not force_refresh:
+                            # Stale-while-revalidate: render stale now,
+                            # refresh in this same background thread.
+                            background_pending = True
+                            self._safe_after(0, lambda _i=list(installed), _a=list(available), _u=dict(usage), _up=dict(updates), _lc=last_checked: self._update_runtime_ui(
+                                provider_name, _i, _a,
+                                available_flag, default_python_var, status_label,
+                                error=None, generation=generation,
+                                last_checked=_lc, stale=True,
+                                cache_present=cache_present, usage=_u,
+                                updates=_up, refreshing=True,
+                            ))
+                        try:
+                            fresh = cache.refresh_online(provider, provider_name=provider.NAME)
+                            cached = fresh
+                            _, last_updated = cache.load_cached(provider.NAME)
+                            last_checked = last_updated
+                            cache_present = bool(cached)
+                            stale = False
+                            available = RuntimeCache.filter_available(cached, installed)
+                            try:
+                                updates = cache.update_candidates(installed, cached)
+                            except Exception:
+                                updates = {}
+                        except Exception as exc:
+                            logging.warning("Online metadata refresh failed; using cache: %s", exc)
+                            if not cache_present:
+                                error = (
+                                    "No online release information is currently available. "
+                                    "Check your connection and click Refresh to retry."
+                                )
+                                cached = []
+                                available = []
+                            else:
+                                error = (
+                                    "⚠ Unable to refresh Python release information. "
+                                    "Showing cached data."
+                                )
+                    else:
+                        available = RuntimeCache.filter_available(cached, installed)
+                    if not background_pending:
+                        shown_available = available if getattr(provider, "NAME", "") == "Python Install Manager" else []
+                        if getattr(provider, "NAME", "") != "Python Install Manager":
+                            cached = []
+                        self._safe_after(0, lambda _i=list(installed), _a=list(shown_available), _c=list(cached), _u=dict(usage), _up=dict(updates), _lc=last_checked, _e=error, _s=stale, _cp=cache_present: self._update_runtime_ui(
+                            provider_name, _i, _a,
+                            available_flag, default_python_var, status_label,
+                            error=_e, generation=generation,
+                            last_checked=_lc, stale=_s,
+                            cache_present=_cp, usage=_u,
+                            updates=_up, refreshing=False,
+                        ))
+                        return
+                    # Stale was already rendered; now render the refreshed state.
+                    shown_available = available if getattr(provider, "NAME", "") == "Python Install Manager" else []
+                    self._safe_after(0, lambda _i=list(installed), _a=list(shown_available), _c=list(cached), _u=dict(usage), _up=dict(updates), _lc=last_checked, _e=error, _s=stale, _cp=cache_present: self._update_runtime_ui(
+                        provider_name, _i, _a,
+                        available_flag, default_python_var, status_label,
+                        error=_e, generation=generation,
+                        last_checked=_lc, stale=_s,
+                        cache_present=_cp, usage=_u,
+                        updates=_up, refreshing=False,
+                    ))
+                    return
             except Exception as exc:
                 error = str(exc)
                 logging.warning("Failed to load runtime data from %s: %s", provider_name, exc)
 
+            # Fallthrough: non-PyManager providers, unavailable providers, or
+            # unexpected errors. (The PyManager path always renders above.)
+            _installed = list(installed) if isinstance(installed, list) else []
             self._safe_after(0, lambda: self._update_runtime_ui(
-                provider_name,
-                installed,
-                available,
-                available_flag,
-                default_python_var,
-                status_label,
-                error=error,
-                generation=generation,
+                provider_name, _installed, [],
+                available_flag, default_python_var, status_label,
+                error=error, generation=generation,
             ))
 
         threading.Thread(target=task, daemon=True).start()
@@ -2248,8 +2353,14 @@ class PyEnvStudio(ctk.CTk):
         *,
         error: str | None = None,
         generation=None,
+        last_checked=None,
+        stale: bool = False,
+        cache_present: bool = False,
+        usage: dict | None = None,
+        updates: dict | None = None,
+        refreshing: bool = False,
     ) -> None:
-        """Render runtime data returned by the provider."""
+        """Render runtime data (cached official releases minus installed)."""
         if generation is not None and generation != getattr(self, "_runtime_ui_generation", generation):
             return
         try:
@@ -2257,6 +2368,20 @@ class PyEnvStudio(ctk.CTk):
                 return
         except Exception:
             return
+        try:
+            from py_env_studio.core.runtime_cache import _format_age
+            if last_checked is not None and getattr(self, "_runtime_cache_label", None) is not None:
+                try:
+                    if self._runtime_cache_label.winfo_exists():
+                        prefix = "⚠ Last checked: " if stale else "Last checked: "
+                        self._runtime_cache_label.configure(
+                            text=f"{prefix}{_format_age(last_checked)}" + (" (updating…)" if refreshing else ""),
+                            text_color=self.theme.WARNING_COLOR if stale else self.theme.SECONDARY_COLOR,
+                        )
+                except Exception:
+                    pass
+        except Exception:
+            pass
         if not available_flag:
             self._clear_frame(self.installed_runtimes_frame)
             self._clear_frame(self.available_runtimes_frame)
@@ -2294,6 +2419,8 @@ class PyEnvStudio(ctk.CTk):
                 text_color=self.theme.SECONDARY_COLOR,
             ).pack(anchor="w", padx=8, pady=4)
         else:
+            usage = usage or {}
+            updates = updates or {}
             for rt in installed:
                 details = []
                 if rt.implementation:
@@ -2307,11 +2434,48 @@ class PyEnvStudio(ctk.CTk):
                 self.lbl(row, f"✓ Python {rt.version}{suffix}").grid(
                     row=0, column=0, padx=2, pady=1, sticky="w"
                 )
+                sub_row = 1
                 if rt.path:
                     self.lbl(row, rt.path, font=("Segoe UI", 10),
                              text_color=self.theme.SECONDARY_COLOR).grid(
-                        row=1, column=0, padx=2, pady=(0, 1), sticky="w"
+                        row=sub_row, column=0, padx=2, pady=(0, 1), sticky="w"
                     )
+                    sub_row += 1
+                used_by = list(usage.get(rt.version, []))
+                used_label = (
+                    f"Used by: {', '.join(used_by)}"
+                    if used_by else "Used by: no environments"
+                )
+                self.lbl(row, used_label, font=("Segoe UI", 10),
+                         text_color=self.theme.SECONDARY_COLOR).grid(
+                    row=sub_row, column=0, padx=2, pady=(0, 1), sticky="w"
+                )
+                sub_row += 1
+                candidate = updates.get(rt.version)
+                if candidate is not None:
+                    self.lbl(row, f"Update available → {candidate.version}",
+                             font=("Segoe UI", 10),
+                             text_color=self.theme.WARNING_COLOR).grid(
+                        row=sub_row, column=0, padx=2, pady=(0, 1), sticky="w"
+                    )
+                    sub_row += 1
+                btn_row = ctk.CTkFrame(row, fg_color="transparent")
+                btn_row.grid(row=sub_row, column=0, padx=2, pady=(0, 2), sticky="w")
+                if candidate is not None:
+                    upd_btn = self.btn(btn_row, f"Update → {candidate.version}", lambda: None, width=150)
+                    upd_btn.configure(
+                        command=lambda r=rt, c=candidate, b=upd_btn: self._update_python(
+                            r, c, default_python_var, status_label, install_button=b
+                        )
+                    )
+                    upd_btn.pack(side="left", padx=(0, 6))
+                rm_btn = self.btn(btn_row, "Remove", lambda: None, width=85)
+                rm_btn.configure(
+                    command=lambda r=rt, b=rm_btn: self._uninstall_python(
+                        r, default_python_var, status_label, install_button=b
+                    )
+                )
+                rm_btn.pack(side="left")
 
         self._clear_frame(self.available_runtimes_frame)
         if provider_name != "Python Install Manager":
@@ -2322,11 +2486,19 @@ class PyEnvStudio(ctk.CTk):
                 text_color=self.theme.SECONDARY_COLOR,
             ).pack(anchor="w", padx=8, pady=4)
         elif not available:
-            self.lbl(
-                self.available_runtimes_frame,
-                "Everything installable is already installed, or the online index is unreachable.",
-                text_color=self.theme.SECONDARY_COLOR,
-            ).pack(anchor="w", padx=8, pady=4)
+            if provider_name == "Python Install Manager" and not cache_present:
+                self.lbl(
+                    self.available_runtimes_frame,
+                    "No online release information is currently available.\n"
+                    "Check your connection, then click Refresh to retry.",
+                    text_color=self.theme.WARNING_COLOR,
+                ).pack(anchor="w", padx=8, pady=4)
+            else:
+                self.lbl(
+                    self.available_runtimes_frame,
+                    "Everything installable is already installed, or the online index is unreachable.",
+                    text_color=self.theme.SECONDARY_COLOR,
+                ).pack(anchor="w", padx=8, pady=4)
         else:
             try:
                 provider = self._get_runtime_provider(provider_name)
@@ -2361,9 +2533,10 @@ class PyEnvStudio(ctk.CTk):
             if error:
                 status_label.configure(text=error, text_color=self.theme.WARNING_COLOR)
             elif provider_name == "Python Install Manager":
+                stale_note = " (may be outdated)" if stale else ""
                 status_label.configure(
-                    text=f"Loaded {len(installed)} installed, {len(available)} official releases available to install.",
-                    text_color=self.theme.HIGHLIGHT_COLOR,
+                    text=f"Loaded {len(installed)} installed, {len(available)} official releases available to install.{stale_note}",
+                    text_color=self.theme.WARNING_COLOR if stale else self.theme.HIGHLIGHT_COLOR,
                 )
             else:
                 status_label.configure(
@@ -2374,13 +2547,13 @@ class PyEnvStudio(ctk.CTk):
             pass
 
     def _refresh_runtime_ui(self, top, provider_var, default_python_var, status_label) -> None:
-        """Refresh runtime data from the selected provider."""
+        """Explicit Refresh: permitted to query online metadata (cache policy)."""
         try:
             if top is not None and not top.winfo_exists():
                 return
         except Exception:
             return
-        self._populate_runtime_ui(provider_var, default_python_var, status_label)
+        self._populate_runtime_ui(provider_var, default_python_var, status_label, force_refresh=True)
 
     def _install_python(
         self,
@@ -2424,10 +2597,23 @@ class PyEnvStudio(ctk.CTk):
                     runtime.version,
                     log_callback=lambda msg: self.env_log_queue.put(msg),
                 )
-                # Installation succeeded; verify and refresh through the same
-                # provider rather than assuming the command completed correctly.
+                # Verify with a local query, then recalculate the available
+                # list from the DB cache: no online request after install.
                 installed = provider.list_installed()
-                available = provider.list_available()
+                from py_env_studio.core.runtime_cache import RuntimeCache
+                cache = RuntimeCache()
+                cached, last_checked = cache.load_cached(provider.NAME)
+                available = RuntimeCache.filter_available(cached, installed)
+                from py_env_studio.core.runtime_cache import map_runtime_usage
+                try:
+                    usage = map_runtime_usage(installed)
+                except Exception:
+                    usage = {}
+                try:
+                    updates = cache.update_candidates(installed, cached)
+                except Exception:
+                    updates = {}
+                stale = not cache.is_fresh(last_checked)
                 available_flag = provider.is_available()
                 matched = provider.find_best_match(runtime.version, installed)
                 if matched is None:
@@ -2438,6 +2624,11 @@ class PyEnvStudio(ctk.CTk):
             except Exception as exc:
                 installed = []
                 available = []
+                cached = []
+                usage = {}
+                updates = {}
+                last_checked = None
+                stale = False
                 available_flag = False
                 error = str(exc)
                 logging.warning("Python %s installation failed: %s", runtime.version, exc)
@@ -2478,6 +2669,230 @@ class PyEnvStudio(ctk.CTk):
                     default_python_var,
                     status_label,
                     generation=generation,
+                    last_checked=last_checked,
+                    stale=stale,
+                    cache_present=bool(cached),
+                    usage=usage,
+                    updates=updates,
+                )
+                self.refresh_env_runtime_choices()
+
+            self._safe_after(0, on_done)
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def _update_python(
+        self,
+        runtime: "PythonRuntime",
+        candidate: "PythonRuntime",
+        default_python_var,
+        status_label,
+        install_button=None,
+    ) -> None:
+        """Update an installed runtime to a newer cached patch (via manager)."""
+        try:
+            provider = self._get_runtime_provider("Python Install Manager")
+        except Exception as exc:
+            try:
+                status_label.configure(text=str(exc), text_color=self.theme.ERROR_COLOR)
+            except Exception:
+                pass
+            return
+        if install_button is not None:
+            try:
+                install_button.configure(state="disabled", text="Updating...")
+            except Exception:
+                pass
+        try:
+            status_label.configure(
+                text=f"Updating Python {runtime.version} → {candidate.version}...",
+                text_color=self.theme.HIGHLIGHT_COLOR,
+            )
+        except Exception:
+            pass
+        self.env_log_queue.put(f"Updating Python {runtime.version} → {candidate.version}...")
+
+        provider_name = provider.NAME
+        generation = getattr(self, "_runtime_ui_generation", 0)
+
+        def task():
+            try:
+                result = provider.update(
+                    runtime.version,
+                    log_callback=lambda msg: self.env_log_queue.put(msg),
+                )
+                installed = provider.list_installed()
+                from py_env_studio.core.runtime_cache import RuntimeCache, map_runtime_usage
+                cache = RuntimeCache()
+                cached, last_checked = cache.load_cached(provider.NAME)
+                available = RuntimeCache.filter_available(cached, installed)
+                try:
+                    usage = map_runtime_usage(installed)
+                except Exception:
+                    usage = {}
+                try:
+                    updates = cache.update_candidates(installed, cached)
+                except Exception:
+                    updates = {}
+                stale = not cache.is_fresh(last_checked)
+                error = None if result else "Update reported no result."
+            except Exception as exc:
+                installed, available, cached, usage, updates = [], [], [], {}, {}
+                last_checked, stale = None, False
+                error = str(exc)
+                logging.warning("Python %s update failed: %s", runtime.version, exc)
+
+            def on_done():
+                try:
+                    if not self.winfo_exists():
+                        return
+                except Exception:
+                    return
+                if error:
+                    if install_button is not None:
+                        try:
+                            if install_button.winfo_exists():
+                                install_button.configure(state="normal", text="Retry")
+                        except Exception:
+                            pass
+                    try:
+                        status_label.configure(
+                            text=f"Python {runtime.version} update failed: {error}",
+                            text_color=self.theme.ERROR_COLOR,
+                        )
+                    except Exception:
+                        pass
+                    return
+                if install_button is not None:
+                    try:
+                        if install_button.winfo_exists():
+                            install_button.configure(state="normal", text="Updated")
+                    except Exception:
+                        pass
+                self._update_runtime_ui(
+                    provider_name, installed, available, True,
+                    default_python_var, status_label, generation=generation,
+                    last_checked=last_checked, stale=stale,
+                    cache_present=bool(cached), usage=usage, updates=updates,
+                )
+                self.refresh_env_runtime_choices()
+
+            self._safe_after(0, on_done)
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def _uninstall_python(
+        self,
+        runtime: "PythonRuntime",
+        default_python_var,
+        status_label,
+        install_button=None,
+    ) -> None:
+        """Safely remove an installed runtime (blocked when in use without confirm)."""
+        from py_env_studio.core.runtime_cache import find_runtime_usage
+        try:
+            used_by = find_runtime_usage(runtime.version)
+        except Exception:
+            used_by = []
+        if used_by:
+            confirm = messagebox.askyesno(
+                "Runtime In Use",
+                f"Python {runtime.version} is used by environment(s):\n"
+                f"{', '.join(used_by)}\n\n"
+                "Removing it may break those environments.\n\n"
+                "Remove anyway?",
+            )
+            if not confirm:
+                return
+        else:
+            confirm = messagebox.askyesno(
+                "Remove Runtime",
+                f"Remove Python {runtime.version} via Python Install Manager?",
+            )
+            if not confirm:
+                return
+        try:
+            provider = self._get_runtime_provider("Python Install Manager")
+        except Exception as exc:
+            try:
+                status_label.configure(text=str(exc), text_color=self.theme.ERROR_COLOR)
+            except Exception:
+                pass
+            return
+        if install_button is not None:
+            try:
+                install_button.configure(state="disabled", text="Removing...")
+            except Exception:
+                pass
+        try:
+            status_label.configure(
+                text=f"Removing Python {runtime.version}...",
+                text_color=self.theme.HIGHLIGHT_COLOR,
+            )
+        except Exception:
+            pass
+        self.env_log_queue.put(f"Removing Python {runtime.version}...")
+
+        provider_name = provider.NAME
+        generation = getattr(self, "_runtime_ui_generation", 0)
+
+        def task():
+            try:
+                result = provider.uninstall(
+                    runtime.version,
+                    log_callback=lambda msg: self.env_log_queue.put(msg),
+                )
+                installed = provider.list_installed()
+                from py_env_studio.core.runtime_cache import RuntimeCache, map_runtime_usage
+                cache = RuntimeCache()
+                cached, last_checked = cache.load_cached(provider.NAME)
+                available = RuntimeCache.filter_available(cached, installed)
+                try:
+                    usage = map_runtime_usage(installed)
+                except Exception:
+                    usage = {}
+                try:
+                    updates = cache.update_candidates(installed, cached)
+                except Exception:
+                    updates = {}
+                stale = not cache.is_fresh(last_checked)
+                if provider.find_best_match(runtime.version, installed) is not None:
+                    raise RuntimeError(
+                        f"Python {runtime.version} is still present after removal."
+                    )
+                error = None if result else "Removal reported no result."
+            except Exception as exc:
+                installed, available, cached, usage, updates = [], [], [], {}, {}
+                last_checked, stale = None, False
+                error = str(exc)
+                logging.warning("Python %s removal failed: %s", runtime.version, exc)
+
+            def on_done():
+                try:
+                    if not self.winfo_exists():
+                        return
+                except Exception:
+                    return
+                if error:
+                    if install_button is not None:
+                        try:
+                            if install_button.winfo_exists():
+                                install_button.configure(state="normal", text="Retry")
+                        except Exception:
+                            pass
+                    try:
+                        status_label.configure(
+                            text=f"Python {runtime.version} removal failed: {error}",
+                            text_color=self.theme.ERROR_COLOR,
+                        )
+                    except Exception:
+                        pass
+                    return
+                self._update_runtime_ui(
+                    provider_name, installed, available, True,
+                    default_python_var, status_label, generation=generation,
+                    last_checked=last_checked, stale=stale,
+                    cache_present=bool(cached), usage=usage, updates=updates,
                 )
                 self.refresh_env_runtime_choices()
 
