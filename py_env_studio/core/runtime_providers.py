@@ -39,14 +39,58 @@ class RuntimeProvider:
 
     def get_executable(self, version: str) -> str | None:
         """Return an executable path for an installed runtime, when supported."""
-        for runtime in self.list_installed():
-            if self.normalize_version(runtime.version) == self.normalize_version(version):
-                if runtime.path:
-                    return runtime.path
+        runtimes = self.list_installed()
+        match = self.find_best_match(version, runtimes)
+        if match is not None and match.path:
+            return match.path
         return None
 
+    def resolve_executable(self, version: str) -> str | None:
+        """Resolve the best executable for ``version`` without extra I/O."""
+        return self.get_executable(version)
+
+    @staticmethod
+    def find_best_match(
+        requested: str, runtimes: list[PythonRuntime]
+    ) -> PythonRuntime | None:
+        """Return the best runtime for ``requested`` (exact, then prefix)."""
+        wanted = RuntimeProvider.normalize_version_static(requested)
+        if not wanted or not runtimes:
+            return None
+        # Exact match first.
+        for runtime in runtimes:
+            if RuntimeProvider.normalize_version_static(runtime.version) == wanted:
+                return runtime
+        # Prefix match: "3.12" matches installed "3.12.10" (highest patch wins).
+        candidates = [
+            runtime
+            for runtime in runtimes
+            if RuntimeProvider.normalize_version_static(runtime.version).startswith(wanted + ".")
+            or wanted.startswith(RuntimeProvider.normalize_version_static(runtime.version) + ".")
+        ]
+        if not candidates:
+            # Bare major version: "3" matches "3.12.10".
+            candidates = [
+                runtime
+                for runtime in runtimes
+                if RuntimeProvider.normalize_version_static(runtime.version).split(".")[0] == wanted
+            ]
+        if not candidates:
+            return None
+        return max(
+            candidates,
+            key=lambda item: PythonInstallManagerProvider._version_key(item.version),
+        )
+
+    @staticmethod
+    def normalize_version_static(version: str) -> str:
+        text = str(version or "").strip().lower()
+        if text.startswith("python "):
+            text = text[len("python "):].strip()
+        return text.rstrip("*").strip()
+
     def normalize_version(self, version: str) -> str:
-        return str(version).strip()
+        return self.normalize_version_static(version)
 
 
 class PythonInstallManagerProvider(RuntimeProvider):
@@ -151,9 +195,10 @@ class PythonInstallManagerProvider(RuntimeProvider):
 
     def get_executable(self, version: str) -> str | None:
         normalized = self.normalize_version(version)
-        for runtime in self.list_installed():
-            if self.normalize_version(runtime.version) == normalized and runtime.path:
-                return runtime.path
+        runtimes = self.list_installed()
+        match = self.find_best_match(normalized, runtimes)
+        if match is not None and match.path:
+            return match.path
 
         # The current manager can launch a specific runtime. Resolve its actual
         # interpreter path without exposing subprocess details to the UI.
@@ -393,7 +438,7 @@ class PythonInstallManagerProvider(RuntimeProvider):
     # Install
     # ------------------------------------------------------------------
     def install(self, version: str, log_callback: Callable[[str], None] | None = None):
-        if not self.is_available():
+        if not self._py:
             raise RuntimeError("Python Install Manager is not available on this system.")
 
         normalized = self.normalize_version(version)
@@ -512,5 +557,137 @@ class PythonInstallManagerProvider(RuntimeProvider):
     def _major_minor(version: str) -> str:
         parts = version.split(".")
         return ".".join(parts[:2]) if len(parts) >= 2 else version
+
+
+class SystemRuntimeProvider(RuntimeProvider):
+    """Runtimes already discoverable on PATH (cross-platform fallback)."""
+
+    NAME = "System"
+
+    def is_available(self) -> bool:
+        try:
+            from py_env_studio.core.env_manager import list_pythons
+        except Exception:
+            return shutil.which("python3") is not None or shutil.which("python") is not None
+        try:
+            return bool(list_pythons())
+        except Exception:
+            return False
+
+    def list_installed(self) -> list[PythonRuntime]:
+        try:
+            from py_env_studio.core.env_manager import (
+                is_valid_python_version_detected,
+                list_pythons,
+            )
+        except Exception:
+            LOGGER.debug("System provider cannot import env_manager", exc_info=True)
+            return []
+        runtimes: list[PythonRuntime] = []
+        try:
+            interpreters = list_pythons()
+        except Exception:
+            LOGGER.debug("System provider failed to list interpreters", exc_info=True)
+            return []
+        for interpreter in interpreters:
+            try:
+                detected = is_valid_python_version_detected(interpreter)
+            except Exception:
+                continue
+            if not detected or not detected.startswith("Python "):
+                continue
+            version = detected.split(" ", 1)[1].strip()
+            if not version:
+                continue
+            runtimes.append(
+                PythonRuntime(
+                    version=version,
+                    display=f"Python {version}",
+                    installed=True,
+                    path=interpreter,
+                )
+            )
+        return PythonInstallManagerProvider._dedupe_runtimes(runtimes)
+
+    def list_available(self) -> list[PythonRuntime]:
+        return []
+
+    def install(self, version: str, log_callback: Callable[[str], None] | None = None):
+        raise RuntimeError(
+            "The System provider cannot install Python. "
+            "Install it from python.org (or your OS package manager) "
+            "and it will appear here automatically."
+        )
+
+
+class CustomRuntimeProvider(RuntimeProvider):
+    """Single explicit interpreter chosen by the user (Preferences override)."""
+
+    NAME = "Custom"
+
+    def __init__(self, custom_path: str | None = None):
+        self._custom_path = (custom_path or "").strip() or None
+
+    def is_available(self) -> bool:
+        return bool(self._custom_path)
+
+    def list_installed(self) -> list[PythonRuntime]:
+        if not self._custom_path:
+            return []
+        try:
+            from py_env_studio.core.env_manager import is_valid_python_version_detected
+        except Exception:
+            return []
+        try:
+            detected = is_valid_python_version_detected(self._custom_path)
+        except Exception:
+            return []
+        if not detected or not detected.startswith("Python "):
+            return []
+        version = detected.split(" ", 1)[1].strip()
+        if not version:
+            return []
+        return [
+            PythonRuntime(
+                version=version,
+                display=f"Python {version} (custom)",
+                installed=True,
+                path=self._custom_path,
+            )
+        ]
+
+    def list_available(self) -> list[PythonRuntime]:
+        return []
+
+    def install(self, version: str, log_callback: Callable[[str], None] | None = None):
+        raise RuntimeError(
+            "The Custom provider uses your explicit interpreter path and cannot install Python."
+        )
+
+
+SUPPORTED_RUNTIME_PROVIDERS: tuple[str, ...] = (
+    "Python Install Manager",
+    "System",
+    "Custom",
+)
+
+
+def get_runtime_provider(
+    name: str | None,
+    *,
+    custom_path: str | None = None,
+    py_executable: str | None = None,
+) -> RuntimeProvider:
+    """Factory returning the provider for ``name`` (never None)."""
+    normalized = (name or "").strip() or "Python Install Manager"
+    if normalized == PythonInstallManagerProvider.NAME:
+        return PythonInstallManagerProvider(py_executable=py_executable)
+    if normalized == SystemRuntimeProvider.NAME:
+        return SystemRuntimeProvider()
+    if normalized == CustomRuntimeProvider.NAME:
+        return CustomRuntimeProvider(custom_path=custom_path)
+    raise ValueError(
+        f"Unsupported runtime provider: {name!r}. Supported: {', '.join(SUPPORTED_RUNTIME_PROVIDERS)}"
+    )
 
 
