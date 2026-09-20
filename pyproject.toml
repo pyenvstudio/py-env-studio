@@ -59,7 +59,7 @@ classifiers = [
 dependencies = [
     "customtkinter>=5.2.2",
     "Pillow>=11.3.0",
-    "matplotlib>=3.10.5",
+    "tkinter-dash>=0.1.5",
     "cvss>=3.6",
     "Requests",
     "pip",
@@ -112,4 +112,5 @@ pes = "py_env_studio.commands:main"
 [project.urls]
 Homepage = "https://github.com/pyenvstudio/py-env-studio"
 Issues = "https://github.com/pyenvstudio/py-env-studio/issues"
+Documentation = "https://py-env-studio.readthedocs.io/en/latest/"
 

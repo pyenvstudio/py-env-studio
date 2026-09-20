@@ -1,0 +1,620 @@
+=== py_env_studio/__init__.py
+=== py_env_studio/__main__.py
+=== py_env_studio/commands.py
+  def _split_two_values(raw_value: str, usage: str)
+  def handle_create(args: argparse.Namespace)
+  def handle_delete(args: argparse.Namespace)
+  def handle_list(_: argparse.Namespace)
+  def handle_activate(args: argparse.Namespace)
+  def handle_install(args: argparse.Namespace)
+  def handle_uninstall(args: argparse.Namespace)
+  def handle_export(args: argparse.Namespace)
+  def handle_import_requirements(args: argparse.Namespace)
+  def _print_runtime_result(result: Dict[str, object])
+  def handle_init(_: argparse.Namespace)
+  def handle_on(_: argparse.Namespace)
+  def handle_off(_: argparse.Namespace)
+  def handle_status(_: argparse.Namespace)
+  def handle_list_projects(_: argparse.Namespace)
+  def handle_run(args: argparse.Namespace)
+  def launch_gui(_: argparse.Namespace)
+  CONST FLAG_COMMANDS = {'create': {'option': '--create', 'function': handle_create, 'help': '
+  CONST SUBCOMMANDS = {'init': {'function': handle_init, 'help': 'Initialize the current pro
+  def build_parser()
+  def dispatch_command(args: argparse.Namespace)
+  def main(argv: Optional[Sequence[str]]=None)
+=== py_env_studio/core/__init__.py
+=== py_env_studio/core/auto_resolve.py
+  def extract_package_name(package_spec: str)
+  def strip_version_constraints(package_spec: str)
+  def is_resolution_error(error_output: str)
+  def parse_conflicting_packages(error_output: str)
+  class AutoResolver
+      def __init__(self, log_callback=None)
+      def log(self, message: str)
+      def should_retry(self, error_output: str)
+      def prepare_retry_package(self, package_spec: str, attempt: int)
+      def resolve(self, package_spec: str, install_func, *args, **kwargs)
+  def auto_resolve_install(package_spec: str, install_func, log_callback=None, *args, **kwargs)
+=== py_env_studio/core/bootstrap.py
+  CONST LOGGER = logging.getLogger(__name__)
+  def initialize_app_runtime()
+=== py_env_studio/core/configuration.py
+  CONST APP_NAME = 'PyEnvStudio'
+  CONST APP_AUTHOR = 'PyEnvStudio'
+  class ConfigurationError
+  class AppPreferences
+  def _user_config_path()
+  def _package_config_path()
+  def _new_parser()
+  def _normalize_open_with_entries(raw: str | None)
+  def _write_atomic_text(path: Path, text: str)
+  class ConfigurationService
+      def __init__(self, config_path: Path | None=None, package_defaults_path: Path | None=None)
+      def _ensure_bootstrapped(self)
+      def _load_default_parser(self)
+      def _load_parser(self)
+      def _save_parser(self, parser: ConfigParser)
+      def _parse_bool(raw_value: str | bool | None, default_value: bool)
+      def load_preferences(self)
+      def validate_preferences(self, preferences: AppPreferences, available_project_tools: Iterable[str] | None=None)
+      def save_preferences(self, preferences: AppPreferences)
+      def reset_to_defaults(self)
+  class AppConfig
+      def __init__(self, config_path: str | None=None)
+      def _load_version(self)
+      def get_param(self, section: str, option: str, fallback: str | None=None)
+      def set_param(self, section: str, option: str, value: str)
+=== py_env_studio/core/database.py
+  class DatabaseError
+  class DatabaseManager
+      def __init__(self, db_path: Path | None=None)
+      def connect(self)
+      def initialize_database(self)
+      def _migrate_legacy_schema(self, cur: sqlite3.Cursor)
+      def db_exists(self)
+      def get_db_path(self)
+=== py_env_studio/core/dependency_preview.py
+  class DependencyPreviewError
+  class DependencyChange
+      def __init__(self, name: str, version: str, old_version: Optional[str]=None)
+      def to_dict(self)
+  class BreakingChange
+      def __init__(self, package: str, reason: str, severity: str='medium')
+      def to_dict(self)
+  class PreviewResult
+      def __init__(self)
+      def to_dict(self)
+  def parse_package_spec(spec: str)
+  def get_installed_packages(env_name: str)
+  def get_package_dependencies(python_path: str, package_spec: str)
+  def simulate_dependency_resolution(env_name: str, package_spec: str, python_path: str)
+  def _parse_pip_dry_run_output(output: str, package_name: str, installed: Dict[str, str], result: PreviewResult)
+  def _extract_name_and_version(pkg_spec: str)
+  def _analyze_dependencies_manually(env_name: str, package_spec: str, package_name: str, python_path: str, installed: Dict[str, str], result: PreviewResult)
+  def _check_breaking_changes(package_name: str, result: PreviewResult)
+  def preview_install(env_name: str, package_spec: str)
+=== py_env_studio/core/env_manager.py
+  CONST VENV_DIR = ''
+  CONST PYTHON_PATH = None
+  CONST LOG_FILE = ''
+  CONST DB_FILE = ''
+  CONST MATRIX_FILE = ''
+  CONST ENV_DATA_FILE = ''
+  def refresh_runtime_paths()
+  def _write_atomic(path: Path, data: bytes)
+  def search_envs(query)
+  def get_available_tools()
+  def add_tool(name, path=None)
+  def _load_env_data()
+  def _save_env_data(data)
+  def set_env_data(env_name, recent_location=None, size=None, last_scanned=None, python_version=None, package_manager=None)
+  def get_env_data(env_name)
+  def calculate_env_size_mb(env_path)
+  def is_valid_python(python_path)
+  def is_valid_python_version_detected(python_path)
+  def is_valid_env_selected(env_name)
+  def get_preferred_package_manager()
+  def set_preferred_package_manager(manager: str)
+  def get_package_manager_display(manager: str=None)
+  def _is_valid_env_name(name: str)
+  def create_env(name, python_path=None, upgrade_pip=False, log_callback=None)
+  def rename_env(old_name, new_name, log_callback=None)
+  def list_envs()
+  def _extract_python_version(python_path)
+  def list_pythons()
+  def delete_env(name, log_callback=None)
+  def get_env_python(env_name)
+  def activate_env(env_name, directory=None, open_with='vscode', open_in_venv_cwd=False, log_callback=None)
+  def is_exact_env_active(python_exe_path)
+=== py_env_studio/core/integration.py
+  def _which(exe)
+  def detect_tools()
+=== py_env_studio/core/package_manager.py
+  def get_env_package_manager(env_name: str)
+  def list_packages(env_name)
+  def install_package(env_name, package, log_callback=None)
+  def uninstall_package(env_name, package, log_callback=None)
+  def update_package(env_name, package, log_callback=None)
+  def export_requirements(env_name, output_file, log_callback=None)
+  def import_requirements(env_name, requirements_file, log_callback=None)
+  def check_outdated_packages(env_name, log_callback=None)
+=== py_env_studio/core/pip_tools.py
+  def get_pip_version()
+  def list_packages(env_name)
+  def install_package(env_name, package, log_callback=None)
+  def uninstall_package(env_name, package, log_callback=None)
+  def update_package(env_name, package, log_callback=None)
+  def check_outdated_packages(env_name, log_callback=None)
+  def export_requirements(env_name, file_path)
+  def import_requirements(env_name, file_path, log_callback=None)
+=== py_env_studio/core/plugins/__init__.py
+=== py_env_studio/core/plugins/base.py
+  class PluginHook
+  class PluginMetadata
+      def __post_init__(self)
+  class BasePlugin
+      def __init__(self)
+      def get_metadata(self)
+      def initialize(self, app_context: Dict[str, Any])
+      def execute(self, hook: str, context: Dict[str, Any])
+      def validate(self)
+      def cleanup(self)
+      def is_initialized(self)
+      def app_context(self)
+=== py_env_studio/core/plugins/exceptions.py
+  class PluginException
+  class PluginLoadError
+  class PluginValidationError
+  class PluginExecutionError
+=== py_env_studio/core/plugins/manager.py
+  class PluginManager
+      def __init__(self, plugins_dir: Path=None)
+      def set_app_context(self, context: Dict[str, Any])
+      def discover_plugins(self)
+      def load_plugin(self, plugin_name: str)
+      def unload_plugin(self, plugin_name: str)
+      def execute_hook(self, hook: str, context: Dict[str, Any]=None)
+      def get_plugin(self, plugin_name: str)
+      def get_all_plugins(self)
+      def get_plugin_metadata(self, plugin_name: str)
+      def is_plugin_enabled(self, plugin_name: str)
+      def load_enabled_plugins(self, enabled_list: List[str])
+      def _validate_plugin(self, plugin: BasePlugin, metadata: PluginMetadata)
+      def _register_hook(self, plugin_name: str, hook: str, plugin: BasePlugin)
+      def _is_plugin_hook(self, handler: Callable, plugin_name: str)
+      def _manifest_to_metadata(manifest: Dict[str, Any])
+      def _load_plugin_state(self)
+      def _save_plugin_state(self)
+      def set_plugin_enabled(self, plugin_name: str, enabled: bool)
+      def is_plugin_enabled_state(self, plugin_name: str)
+      def get_enabled_plugins_list(self)
+=== py_env_studio/core/project_launcher.py
+  CONST DISPLAY_NAMES = {'vscode': 'Visual Studio Code', 'pycharm': 'PyCharm', 'cursor': 'Curs
+  def _normalize(name: str)
+  def discover_project_open_tools(open_with_names: list[str], include_default: bool=True)
+  def find_tool_by_id(tool_id: str, tools: list[dict])
+  def open_project_with_tool(tool: dict, project_path: Path)
+=== py_env_studio/core/py_tonic.py
+  CONST MOST_USED_BEST_PRACTICES = ['Always use a dedicated virtual environment per project.', 'Pin depen
+  CONST PY_TONIC_TOPICS = ('core_python', 'python_django')
+  CONST PY_TONIC_NOTIFICATION_MODES = ('daily', 'weekly', 'manual')
+  CONST PY_TONIC_LEARNING_MODES = ('strict', 'learning')
+  CONST _ACTION_ADVICE = {'general': {'notification': 'Keep environments isolated and dependenc
+  CONST _TOPIC_HINTS = {'core_python': ['Remember import order and explicit dependencies.', '
+  CONST _CHALLENGE_BANK = {'core_python': [{'id': 'core-python-venv-import', 'title': 'Core Pyth
+  def _profile_path()
+  def default_py_tonic_profile()
+  def load_py_tonic_profile()
+  def sanitize_py_tonic_profile(profile)
+  def save_py_tonic_profile(profile)
+  def _parse_iso(value)
+  def should_notify(profile)
+  def mark_notified(profile)
+  def get_random_challenge(profile)
+  def evaluate_challenge_answer(challenge, answer)
+  def get_py_tonic_advice(action='general')
+=== py_env_studio/core/runtime.py
+  class RuntimeConfig
+  def _load_package_config()
+  def _load_user_config(user_data_dir: Path)
+  def _resolve_data_path(value: str | None, default_name: str, user_data_dir: Path)
+  def get_runtime_config()
+  def refresh_runtime_config()
+=== py_env_studio/core/runtime_toggle.py
+  CONST PROJECT_METADATA_FILE = 'pes.config'
+  CONST REGISTRY_FILE = 'registry.json'
+  def get_project_root(start_path: Optional[Path]=None)
+  def get_project_metadata_path(project_root: Path)
+  def get_global_data_dir()
+  def get_envs_dir()
+  def get_registry_path()
+  def load_project_metadata(project_root: Path)
+  def save_project_metadata(project_root: Path, metadata: dict)
+  def load_registry()
+  def save_registry(registry: dict)
+  def generate_environment_id(project_name: str)
+  def get_python_version()
+  def get_system_python()
+  def create_managed_environment(env_id: str, python_version: str)
+  def get_environment_python(env_path: Path)
+  def get_environment_scripts_dir(env_path: Path)
+  def get_environment_executable(env_path: Path, command_name: str)
+  def is_runtime_enabled(project_root: Path)
+  def set_runtime_enabled(project_root: Path, enabled: bool)
+  def init_project(project_root: Optional[Path]=None, python_version: Optional[str]=None)
+  def enable_runtime(project_root: Optional[Path]=None)
+  def disable_runtime(project_root: Optional[Path]=None)
+  def get_runtime_python(project_root: Optional[Path]=None)
+  def get_project_environment_python(project_root: Path, auto_init: bool=False)
+  def get_project_environment_path(project_root: Path, auto_init: bool=False)
+  def create_runtime_interceptor(project_root: Path)
+  def execute_in_managed_env(project_root: Path, args: list[str])
+  def get_project_status(project_root: Optional[Path]=None)
+  def list_registered_projects()
+=== py_env_studio/core/setup_state.py
+  CONST CURRENT_SCHEMA = 1
+  CONST INSTALL_TIMEOUT = timedelta(minutes=10)
+  class SetupStateManager
+      def __init__(self)
+      def _write_atomic(self, path: Path, data: bytes)
+      def _read_json(self, path: Path)
+      def _write_json(self, path: Path, obj: dict)
+      def create_installing_marker(self)
+      def remove_installing_marker(self)
+      def mark_setup_complete(self)
+      def mark_setup_failed(self, reason: str)
+      def _is_marker_stale(self, path: Path)
+      def get_sentinel(self)
+      def is_complete(self)
+      def needs_migration(self)
+      def check_installation_health(self)
+      def get_state_path(self)
+=== py_env_studio/core/strategies.py
+  CONST STRATEGIES = {}
+  def register_strategy(name)
+  def run_strategy(name, tool_path, venv_dir, target_dir, open_in_venv_cwd=False, log_callback=None)
+  def venv_injection(tool_path, venv_dir, target_dir, open_in_venv_cwd=False, log_callback=None)
+  def shell_activation(tool_path, venv_dir, target_dir, **_)
+=== py_env_studio/core/templates/__init__.py
+=== py_env_studio/core/templates/builtin_templates.py
+  def _common_gitignore()
+  def _license_text()
+  def _script_template()
+  def _cli_template()
+  def _package_template()
+  def register_builtin_templates(registry)
+=== py_env_studio/core/templates/community.py
+  class CommunityTemplateError
+  class CommunityTemplateRateLimitError
+  class CommunityTemplateCandidate
+  class CommunityTemplateInspection
+  class CommunityTemplateService
+      def __init__(self, session: requests.Session | None=None, template_store: UserTemplateStore | None=None, timeout_seconds: int=15)
+      def search(self, query: str='', category: str='All', sort: str='Popular', page: int=1)
+      def inspect(self, candidate: CommunityTemplateCandidate)
+      def find_existing_import(self, repository_url: str)
+      def cleanup_inspection(inspection: CommunityTemplateInspection)
+      def _build_query(self, query: str, category: str)
+      def _candidate_from_item(item: Any)
+      def _read_readme(source_dir: Path, limit: int=4000)
+      def _detect_files(source_dir: Path, included_paths: list[str])
+=== py_env_studio/core/templates/content_filters.py
+  CONST EXCLUDED_DIR_NAMES = {'.git', '.github', '.venv', 'venv', '__pycache__', '.pytest_cache', '
+  CONST EXCLUDED_FILE_NAMES = {'.gitignore'}
+  CONST EXCLUDED_FILE_PATTERNS = {'*.pyc', '*.pyo', '*.pyd', '*.egg-info'}
+  CONST SENSITIVE_FILE_NAMES = {'.env', 'credentials.json', 'secrets.json'}
+  CONST SENSITIVE_FILE_PATTERNS = {'*.pem', '*.key'}
+  def _matches_patterns(name: str, patterns: set[str])
+  def is_excluded_path(relative_path: Path, is_dir: bool)
+  def is_sensitive_file(relative_path: Path)
+  def is_path_safe(relative_path: Path)
+=== py_env_studio/core/templates/engine.py
+  class TemplateEngineError
+  class TemplateEngine
+      def __init__(self, registry: TemplateRegistry | None=None)
+      def list_templates(self)
+      def get_template(self, template_id: str)
+      def preview(self, template_id: str, request: TemplateCreationRequest)
+      def create_project(self, request: TemplateCreationRequest, log_callback: Callable[[str], None] | None=None)
+      def _validate_request(self, template, request: TemplateCreationRequest)
+      def _build_context(self, template, request: TemplateCreationRequest)
+      def _safe_format(self, value: str, context: Dict[str, str])
+      def _render_double_brace(self, value: str, context: Dict[str, str])
+      def _render_value(self, value: str, context: Dict[str, str], variable_style: str)
+      def _render_files(self, files, project_path: Path, context: Dict[str, str], log_callback, variable_style: str)
+      def _verify_generated_files(self, project_path: Path, generated_files: list[Path])
+      def _verify_python_files(self, project_path: Path)
+      def _verify_pyproject(self, project_path: Path)
+      def _initialize_git(self, project_path: Path, log_callback)
+      def _create_and_configure_environment(self, request, project_path, template, log_callback)
+      def _resolve_python_interpreter(self, requested_version: str)
+      def _install_dependencies(self, env_name: str, dependencies: list[str], log_callback)
+      def _log(self, log_callback, message: str)
+=== py_env_studio/core/templates/github_import.py
+  class GitHubImportError
+  CONST _GITHUB_URL_PATTERN = re.compile('^https://github\\.com/(?P<owner>[A-Za-z0-9_.-]+)/(?P<repo>
+  def validate_github_repository_url(url: str)
+  def extract_github_repository_name(url: str)
+  def clone_github_repository(repository_url: str, destination_dir: Path, timeout_seconds: int=240, log_callback=None)
+=== py_env_studio/core/templates/models.py
+  class TemplateFile
+  class TemplateSpec
+  class TemplateCreationRequest
+  class TemplateCreationResult
+=== py_env_studio/core/templates/registry.py
+  class TemplateRegistry
+      def __init__(self)
+      def register(self, template: TemplateSpec)
+      def get(self, template_id: str)
+      def list_all(self)
+      def contains(self, template_id: str)
+  def get_default_registry()
+  def refresh_default_registry()
+=== py_env_studio/core/templates/user_template_store.py
+  class UserTemplateError
+  CONST _TEMPLATE_NAME_MIN_LEN = 3
+  def generate_template_id(template_name: str)
+  def validate_template_name(template_name: str)
+  def validate_template_id(template_id: str)
+  class SourceInspectionResult
+  class UserTemplateStore
+      def __init__(self, base_dir: Path | None=None)
+      def inspect_source(self, source_dir: Path)
+      def template_exists(self, template_id: str)
+      def find_template_by_origin(self, origin: str)
+      def save_template(self, source_dir: Path, template_name: str, template_id: str, description: str, author: str | None, version: str, category: str, python_version: str, source_type: str, origin: str, reserved_template_ids: Iterable[str], replace_project_name: bool=False)
+      def delete_template(self, template_id: str)
+      def load_user_templates(self)
+      def _template_dir(self, template_id: str)
+      def _normalize_origin(origin: str)
+=== py_env_studio/core/templates/validator.py
+  class TemplateValidationError
+  CONST _PROJECT_NAME_PATTERN = re.compile('^[A-Za-z0-9][A-Za-z0-9 _.-]{1,79}$')
+  CONST _MODULE_NAME_PATTERN = re.compile('^[A-Za-z_][A-Za-z0-9_]{1,62}$')
+  def sanitize_module_name(project_name: str)
+  def validate_project_name(project_name: str)
+  def validate_module_name(module_name: str)
+  def validate_python_version(requested_version: str, supported_versions: list[str])
+  def resolve_project_path(project_location: str, project_name: str)
+  def validate_target_directory(project_path: Path)
+=== py_env_studio/core/templates/workflow.py
+  class ProjectCreationStatus
+  class ProjectCreationState
+  class TemplateCreationWorkflow
+      def __init__(self, engine: TemplateEngine)
+      def create_project(self, request: TemplateCreationRequest, log_callback: Optional[Callable[[str], None]]=None)
+=== py_env_studio/core/tools.py
+  CONST TOOLS = {'vscode': {'executables': ['code'], 'strategy': 'venv_injection'}, 'p
+=== py_env_studio/core/uv_tools.py
+  def _get_venv_dir_from_python_path(python_path: str)
+  def is_uv_installed()
+  def get_uv_version()
+  def list_packages_uv(venv_path: str)
+  def install_package_uv(venv_path: str, package_name: str, log_callback=None)
+  def uninstall_package_uv(venv_path: str, package_name: str)
+  def update_package_uv(venv_path: str, package_name: str)
+  def import_requirements_uv(venv_path: str, requirements_file: str)
+  def export_requirements_uv(venv_path: str, output_file: str)
+  def check_outdated_packages_uv(venv_path: str)
+  def get_package_info_uv(venv_path: str, package_name: str)
+  class UVManager
+      def __init__(self, venv_path: str)
+      def is_available(self)
+      def get_version(self)
+      def list_packages(self)
+      def install(self, package_name: str)
+      def uninstall(self, package_name: str)
+      def update(self, package_name: str)
+      def import_requirements(self, requirements_file: str)
+      def export_requirements(self, output_file: str)
+      def check_outdated(self)
+      def get_package_info(self, package_name: str)
+=== py_env_studio/core/windows_apps.py
+  CONST LOGGER = logging.getLogger(__name__)
+  def _resolve_python_gui_executable()
+  def _resolve_icon_path()
+  def _get_start_menu_shortcut_path()
+  def ensure_windows_apps_shortcut()
+=== py_env_studio/main.py
+=== py_env_studio/ui/__init__.py
+=== py_env_studio/ui/main_window.py
+  class Theme
+  def get_config_path()
+  def show_error(msg)
+  def show_info(msg)
+  def open_link(link)
+  class MoreActionsDialog
+      def __init__(self, parent, env_name, callback_vulnerability, callback_scan)
+      def vulnerability_report(self)
+      def scan_now(self)
+  class PyEnvStudio
+      def __init__(self)
+      def _setup_config(self)
+      def _setup_vars(self)
+      def _load_open_with_tools(self)
+      def _save_open_with_tools(self)
+      def _setup_window(self)
+      def _setup_logging(self)
+      def btn(self, parent, text, cmd, image=None, width=150, height=None, **kw)
+      def entry(self, parent, ph='', var=None, width=None, **kw)
+      def lbl(self, parent, text, **kw)
+      def frame(self, parent, **kw)
+      def optmenu(self, parent, vals, cmd=None, var=None, **kw)
+      def chk(self, parent, text, **kw)
+      def _setup_plugins(self)
+      def _load_icons(self)
+      def _setup_ui(self)
+      def _setup_menubar(self)
+      def _setup_sidebar(self)
+      def _setup_tabview(self)
+      def _setup_env_tab(self)
+      def _env_create_section(self, parent)
+      def _env_activate_section(self, parent)
+      def on_open_with_change(self, value)
+      def add_open_with_tool(self)
+      def _env_search_section(self, parent)
+      def _env_list_section(self, parent)
+      def _setup_console(self)
+      def _setup_pkg_tab(self)
+      def _pkg_header(self, parent)
+      def _pkg_install_section(self, parent)
+      def _pkg_bulk_section(self, parent)
+      def _pkg_manage_section(self, parent)
+      def notify_py_tonic(self, action='general')
+      def _save_py_tonic_settings(self, frequency, mode, topic_flags)
+      def _show_py_tonic_challenge_dialog(self, challenge, strict=False)
+      def _enforce_strict_py_tonic(self, action)
+      def show_py_tonic_advisor(self)
+      def run_async(self, func, success_msg=None, error_msg=None, callback=None, py_tonic_action=None)
+      def process_log_queues(self)
+      def _process_log_queue(self, q, console)
+      def update_treeview_style(self)
+      def refresh_env_list(self)
+      def show_more_actions_dialog(self, env_name)
+      def show_vulnerability_report(self, env_name)
+      def launch_vulnerability_insights(self, env_name)
+      def scan_environment_now(self, env_name)
+      def show_updatable_packages(self, updatable_packages)
+      def check_for_package_updates(self, env_name)
+      def view_installed_packages(self)
+      def refresh_package_list(self)
+      def _install_package_workflow(self, env_name, package_name, confirm=True, on_complete=None, entry_widget=None, button_widget=None)
+      def install_package(self)
+      def delete_installed_package(self, env_name, package_name)
+      def update_installed_package(self, env_name, package_name)
+      def batch_update_packages(self, env_name, package_names, parent_window=None)
+      def install_requirements(self)
+      def export_packages(self)
+      def activate_with_dir(self)
+      def show_detected_version(self, path)
+      def browse_python_path(self, choice=None)
+      def browse_dir(self)
+      def change_appearance_mode_event(self, new_appearance_mode: str)
+      def change_scaling_event(self, new_scaling: str)
+      def on_tab_changed(self)
+      def create_env(self)
+      def show_about_dialog(self)
+      def show_preferences_dialog(self)
+      def show_install_package_dialog(self)
+      def show_plugins_dialog(self)
+      def _reload_template_registry(self)
+      def show_community_templates_dialog(self)
+      def show_manage_templates_dialog(self)
+      def _show_add_template_dialog(self, refresh_callback)
+      def _import_template_from_local(self, refresh_callback)
+      def _import_template_from_github(self, refresh_callback)
+      def _show_template_metadata_dialog(self, source_dir: Path, source_type: str, origin: str, cleanup_dir: Path | None, refresh_callback, suggested_template_name: str | None=None, on_saved_template=None)
+      def _delete_user_template(self, template_id: str, refresh_callback)
+      def show_templates_dialog(self)
+      def open_template_wizard(self, template_id: str)
+      def _show_project_created_prompt(self, project_name: str, project_path: Path)
+      def _show_open_with_dialog(self, project_path: Path, tools)
+      def _show_project_open_failed_prompt(self, tool_name: str, error_text: str)
+      def _show_project_creation_failed_dialog(self, project_name: str, error: Exception | None)
+      def _get_preferred_project_editor(self)
+      def _set_preferred_project_editor(self, tool_id: str)
+      def _open_created_project_workflow(self, project_path: Path)
+      def _create_plugin_item(self, parent, plugin_name, plugin, is_loaded)
+      def _load_plugin_and_refresh(self, plugin_name, top)
+      def _unload_plugin_and_refresh(self, plugin_name, top)
+      def _reload_plugins_dialog(self, top)
+      def on_closing(self)
+=== py_env_studio/ui/static/icons/__init__.py
+=== py_env_studio/utils/__init__.py
+=== py_env_studio/utils/app_icon.py
+  CONST LOGGER = logging.getLogger(__name__)
+  CONST ICON_PACKAGE = 'py_env_studio.ui.static.icons'
+  CONST ICON_FILENAME = 'pes-transparrent-icon-default.ico'
+  CONST ICON_APPLY_DELAY_MS = 300
+  CONST _HOOK_MARKER = '_pes_window_icon_hooked'
+  def get_app_icon_path()
+  def apply_window_icon(window: Any, icon_path: Path | None=None)
+  def schedule_window_icon(window: Any, delay_ms: int=ICON_APPLY_DELAY_MS)
+  def install_window_icon_hook()
+  def _patch_window_initializer(window_class: type)
+=== py_env_studio/utils/db_status.py
+  def _latest_scan_rows(env_name, cur)
+  def _decode_payload(payload)
+  def _matrices_of(decoded)
+  def _current_versions_of(matrix)
+  def _fill_statuses(matrix, force=False)
+  def ensure_vulnerability_statuses(env_name)
+  def _bump_package_version(matrix, package, new_version)
+  def mark_package_fixed(env_name, package, new_version)
+=== py_env_studio/utils/handlers.py
+  class DataHelper
+      def _load_data()
+      def _save_data(data)
+      def get_or_create_env(env_name, env_path)
+      def save_vulnerability_info(env_id, vulnerabilities_json)
+      def get_vulnerability_info(env_id)
+  class DBHelper
+      def init_db()
+      def get_or_create_env(env_name)
+      def save_vulnerability_info(env_id, vulnerabilities_json)
+      def get_vulnerability_info(env_name)
+=== py_env_studio/utils/version_utils.py
+  CONST _MISSING = {'', '?', '—', '-', 'None', 'Unknown', 'n/a'}
+  def version_key(version)
+  def is_known_version(version)
+  def vuln_status(current_version, fixed_versions)
+=== py_env_studio/utils/vulneribility_insights.py
+  CONST CHART_SEVERITY_ORDER = ('Critical', 'High', 'Medium', 'Low', 'Unknown')
+  CONST TREND_EMPTY_MESSAGE = 'No trend history recorded for this package yet.'
+  def _chart_theme()
+  class VulnerabilityInsightsApp
+      def __init__(self, root, env_name)
+      def _on_close(self)
+      def _packages_map(self)
+      def _extract_vulnerabilities(self, pkg_data)
+      def _setup_gui(self)
+      def _setup_dropdown(self, parent)
+      def _setup_left_panel(self, parent)
+      def _setup_right_panel(self, parent)
+      def _create_details_tab(self, name, default='', with_action=False)
+      def _setup_bottom_panel(self, parent)
+      def _set_text(self, textbox, text)
+      def _make_links_clickable(self, textbox)
+      def on_package_selected(self, event)
+      def _clear_ui(self)
+      def populate_treeview(self)
+      def show_details(self, event)
+      def _parse_target_version(vuln)
+      def _is_vuln_up_to_date(self, vuln)
+      def _embed_update_now_button(self, target, up_to_date=False)
+      def _refresh_upgrade_all_button(self)
+      def update_now(self)
+      def _do_update(self, package, target, btn=None)
+      def _poll_update_result(self)
+      def _configure_embedded_buttons(self, text, state)
+      def _on_update_success(self, btn, package, target)
+      def _on_update_failure(self, btn, package, target, error)
+      def _version_key(version)
+      def _collect_upgrade_plan(self)
+      def upgrade_all_packages(self)
+      def _do_upgrade_all(self, plan)
+      def _on_upgrade_all_done(self, successful, failed)
+      def _refresh_from_db(self)
+      def format_enterprise_details(self, pkg_data)
+      def format_index_details(self, pkg_data)
+      def sort_column(self, col, reverse)
+      def update_charts(self)
+      def _reset_charts(self)
+      def _render_trend_chart(self, series)
+      def _format_trend_label(timestamp)
+      def _unique_labels(labels)
+      def _to_count(value)
+=== py_env_studio/utils/vulneribility_scanner.py
+  class Helpers
+  class PyPIAPI
+      def get_deprecation_eol(self, package, version=None)
+  class DepsDevAPI
+      def get_dependencies(self, package, version)
+  class OSVAPI
+      def get_vulnerabilities(self, package, version)
+  class SecurityMatrix
+      def __init__(self)
+      def build_matrix(self, package, version='latest')
+      def scan_pkg(self, pkg, version='latest', env_id=None)
+      def scan_env(self, env_name, log_callback)

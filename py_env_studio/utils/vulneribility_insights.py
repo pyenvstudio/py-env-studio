@@ -6,8 +6,7 @@ import threading
 import webbrowser
 import customtkinter as ctk
 from tkinter import messagebox, ttk
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from tkinter_dash import BarChart, LineChart
 from collections import defaultdict
 from datetime import datetime
 from .handlers import DBHelper
@@ -19,6 +18,17 @@ from py_env_studio.core.package_manager import install_package
 # Set customtkinter appearance
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
+
+# Severity buckets always rendered in the severity chart (most severe first).
+CHART_SEVERITY_ORDER = ("Critical", "High", "Medium", "Low", "Unknown")
+
+# Shown instead of the trend chart while a package has no scan history.
+TREND_EMPTY_MESSAGE = "No trend history recorded for this package yet."
+
+
+def _chart_theme():
+    """Return the tkinter-dash theme matching the active CustomTkinter mode."""
+    return "dark" if ctk.get_appearance_mode().lower() == "dark" else "light"
 
 
 class VulnerabilityInsightsApp:
@@ -203,9 +213,39 @@ class VulnerabilityInsightsApp:
     def _setup_bottom_panel(self, parent):
         frame = ctk.CTkFrame(parent)
         frame.pack(side="bottom", fill="both", expand=True, pady=5)
-        self.fig, (self.ax1, self.ax2) = plt.subplots(1, 2, figsize=(12, 4))
-        self.canvas = FigureCanvasTkAgg(self.fig, master=frame)
-        self.canvas.get_tk_widget().pack(fill="both", expand=True)
+        frame.grid_columnconfigure(0, weight=1, uniform="charts")
+        frame.grid_columnconfigure(1, weight=1, uniform="charts")
+        frame.grid_rowconfigure(0, weight=1)
+
+        # tkinter-dash charts are native Tk canvas widgets, so they grid
+        # directly inside a CustomTkinter frame.
+        self.severity_chart = BarChart(
+            frame,
+            title="Vulnerability Severity Breakdown",
+            theme=_chart_theme(),
+            height=260,
+            tooltip=True,
+        )
+        self.severity_chart.grid(row=0, column=0, sticky="nsew", padx=(4, 6), pady=4)
+
+        self.trend_chart = LineChart(
+            frame,
+            title="Vulnerability Trends",
+            theme=_chart_theme(),
+            height=260,
+            tooltip=True,
+        )
+        self.trend_chart.grid(row=0, column=1, sticky="nsew", padx=(6, 4), pady=4)
+
+        # Placeholder shown instead of the trend chart when there is no history.
+        self.trend_placeholder = ctk.CTkLabel(
+            frame,
+            text=TREND_EMPTY_MESSAGE,
+            text_color="#7F8B9A",
+            height=260,
+        )
+        self.trend_placeholder.grid(row=0, column=1, sticky="nsew", padx=(6, 4), pady=4)
+        self.trend_placeholder.grid_remove()
 
     # ---------------------- Text Helpers ----------------------
 
@@ -261,9 +301,7 @@ class VulnerabilityInsightsApp:
             self.tree.delete(item)
         for txt in (self.developer_details_text, self.enterprise_details_text, self.index_details_text):
             self._set_text(txt, "")
-        self.ax1.clear()
-        self.ax2.clear()
-        self.canvas.draw()
+        self._reset_charts()
         self.vulnerabilities.clear()
         self.current_pkg_data = None
         self.current_vuln = None
@@ -722,41 +760,77 @@ class VulnerabilityInsightsApp:
     # ---------------------- Charts ----------------------
 
     def update_charts(self):
-        self.ax1.clear()
-        self.ax2.clear()
-
+        """Refresh both tkinter-dash charts from the selected package data."""
         counts = defaultdict(int)
-        for v in self.vulnerabilities:
-            counts[v["severity"]] += 1
+        for vuln in self.vulnerabilities:
+            counts[vuln["severity"]] += 1
 
-        severities = ["Critical", "High", "Medium", "Low", "Unknown"]
-        colors = ["#ff0000", "#ff9900", "#ffcc00", "#00cc00", "#888888"]
-        symbols = ["C", "H", "M", "L", "U"]
-        counts_list = [counts[s] for s in severities]
-
-        bars = self.ax1.bar(range(len(severities)), counts_list, color=colors)
-        for i, bar in enumerate(bars):
-            h = bar.get_height()
-            self.ax1.text(bar.get_x()+bar.get_width()/2, h+0.2, symbols[i],
-                          ha="center", va="bottom", fontsize=14)
-        self.ax1.set_title("Vulnerability Severity Breakdown")
-        self.ax1.set_xticks([])
-        self.ax1.set_ylabel("Number of Vulnerabilities")
+        self.severity_chart.update(
+            {severity: counts.get(severity, 0) for severity in CHART_SEVERITY_ORDER},
+            animate=False,
+        )
 
         # Trend chart
+        trend = []
         if self.current_pkg_data:
-            trend = self.current_pkg_data.get("tech_leader_view", {}).get("trend_data", [])
-            if trend:
-                dates = [datetime.fromisoformat(t["timestamp"]).strftime("%Y-%m-%d") for t in trend]
-                totals = [t.get("total_vulnerabilities", 0) for t in trend]
-                fixeds = [t.get("fixed_vulnerabilities", 0) for t in trend]
-                self.ax2.plot(dates, totals, label="Total Vulnerabilities", marker="o")
-                self.ax2.plot(dates, fixeds, label="Fixed Vulnerabilities", marker="o")
-                self.ax2.set_title("Vulnerability Trends")
-                self.ax2.set_xlabel("Date")
-                self.ax2.set_ylabel("Count")
-                self.ax2.legend()
-                self.ax2.tick_params(axis="x", rotation=45)
+            trend = self.current_pkg_data.get("tech_leader_view", {}).get("trend_data") or []
 
-        self.fig.tight_layout()
-        self.canvas.draw()
+        if trend:
+            labels = self._unique_labels([
+                self._format_trend_label(entry.get("timestamp")) for entry in trend
+            ])
+            self._render_trend_chart({
+                "Total Vulnerabilities": dict(zip(
+                    labels, [self._to_count(entry.get("total_vulnerabilities")) for entry in trend]
+                )),
+                "Fixed Vulnerabilities": dict(zip(
+                    labels, [self._to_count(entry.get("fixed_vulnerabilities")) for entry in trend]
+                )),
+            })
+        else:
+            self._render_trend_chart(None)
+
+    def _reset_charts(self):
+        """Return both charts to their empty state."""
+        self.severity_chart.update(
+            {severity: 0 for severity in CHART_SEVERITY_ORDER},
+            animate=False,
+        )
+        self._render_trend_chart(None)
+
+    def _render_trend_chart(self, series):
+        """Render the trend chart, or its placeholder when there is no data."""
+        if series:
+            self.trend_chart.update(series, animate=True)
+            self.trend_placeholder.grid_remove()
+            self.trend_chart.grid()
+        else:
+            self.trend_chart.grid_remove()
+            self.trend_placeholder.grid()
+
+    @staticmethod
+    def _format_trend_label(timestamp):
+        """Format a trend timestamp for the chart x-axis."""
+        try:
+            return datetime.fromisoformat(str(timestamp)).strftime("%Y-%m-%d")
+        except (TypeError, ValueError):
+            return str(timestamp) if timestamp else "Unknown"
+
+    @staticmethod
+    def _unique_labels(labels):
+        """Keep labels unique because tkinter-dash maps labels to values."""
+        seen = {}
+        unique = []
+        for label in labels:
+            count = seen.get(label, 0)
+            seen[label] = count + 1
+            unique.append(label if count == 0 else f"{label} ({count + 1})")
+        return unique
+
+    @staticmethod
+    def _to_count(value):
+        """Coerce a stored trend value into a non-negative chart count."""
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            return 0
