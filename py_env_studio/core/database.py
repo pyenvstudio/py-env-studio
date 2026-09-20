@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from . import schema as sql
 from .runtime import get_runtime_config
 
 
@@ -23,7 +24,7 @@ class DatabaseManager:
     def connect(self) -> sqlite3.Connection:
         try:
             conn = sqlite3.connect(self.db_path)
-            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute(sql.get("schema_core", "enable_foreign_keys"))
             return conn
         except sqlite3.Error as exc:
             raise DatabaseError(f"Failed to connect to DB: {exc}") from exc
@@ -33,63 +34,14 @@ class DatabaseManager:
             with self.connect() as conn:
                 cur = conn.cursor()
 
-                cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS app_metadata (
-                        key TEXT PRIMARY KEY,
-                        value TEXT NOT NULL
-                    )
-                    """
-                )
-
-                cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS environments (
-                        env_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        env_name TEXT UNIQUE NOT NULL,
-                        env_path TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                    """
-                )
-
-                cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS env_vulnerability_info (
-                        vid INTEGER PRIMARY KEY AUTOINCREMENT,
-                        env_id INTEGER NOT NULL,
-                        vulnerabilities TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (env_id) REFERENCES environments(env_id)
-                    )
-                    """
-                )
-
-                cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS python_runtime_metadata (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        provider TEXT NOT NULL,
-                        version TEXT NOT NULL,
-                        release_status TEXT,
-                        architecture TEXT,
-                        implementation TEXT,
-                        metadata_json TEXT NOT NULL,
-                        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE(provider, version)
-                    )
-                    """
-                )
-
-                cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS python_runtime_cache_state (
-                        provider TEXT PRIMARY KEY,
-                        last_updated TIMESTAMP NOT NULL,
-                        last_error TEXT
-                    )
-                    """
-                )
+                # DDL lives in core/schema/*.sql; executed in file order.
+                # enable_foreign_keys is a connection PRAGMA, not DDL: skip it.
+                for name in sql.available("schema_core"):
+                    if name == "enable_foreign_keys":
+                        continue
+                    cur.execute(sql.get("schema_core", name))
+                for statement in sql.statements("schema_runtime_cache"):
+                    cur.execute(statement)
 
                 self._migrate_legacy_schema(cur)
                 conn.commit()
@@ -98,39 +50,32 @@ class DatabaseManager:
         except Exception as exc:
             raise DatabaseError(f"Unexpected error initializing DB: {exc}") from exc
 
+    #: Columns the legacy table may use for the scan payload. Identifiers
+    #: cannot be bound parameters, so the template is formatted only with
+    #: a value from this whitelist (see core/schema/migration.sql).
+    _LEGACY_PAYLOAD_COLUMNS = ("vulnerabilities", "vulneribilities")
+
     def _migrate_legacy_schema(self, cur: sqlite3.Cursor) -> None:
-        migrated = cur.execute(
-            "SELECT value FROM app_metadata WHERE key='legacy_migrated'"
-        ).fetchone()
+        migrated = cur.execute(sql.get("migration", "select_migration_flag")).fetchone()
         if migrated and migrated[0] == "1":
             return
 
-        legacy_table = cur.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='env_vulneribility_info'"
-        ).fetchone()
+        legacy_table = cur.execute(sql.get("migration", "select_legacy_table")).fetchone()
         if not legacy_table:
-            cur.execute(
-                "INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('legacy_migrated', '1')"
-            )
+            cur.execute(sql.get("migration", "mark_migrated"))
             return
 
         columns = {
             row[1]
-            for row in cur.execute("PRAGMA table_info(env_vulneribility_info)").fetchall()
+            for row in cur.execute(sql.get("migration", "pragma_legacy_table_info")).fetchall()
         }
         source_col = "vulnerabilities" if "vulnerabilities" in columns else "vulneribilities"
+        if source_col not in self._LEGACY_PAYLOAD_COLUMNS:  # pragma: no cover - defensive
+            raise DatabaseError(f"Unexpected legacy column: {source_col!r}")
 
-        cur.execute(
-            f"""
-            INSERT INTO env_vulnerability_info (env_id, vulnerabilities, created_at)
-            SELECT env_id, {source_col}, created_at
-            FROM env_vulneribility_info
-            """
-        )
+        cur.execute(sql.get("migration", "copy_legacy_scans").format(source_col=source_col))
 
-        cur.execute(
-            "INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('legacy_migrated', '1')"
-        )
+        cur.execute(sql.get("migration", "mark_migrated"))
 
     def db_exists(self) -> bool:
         return self.db_path.exists()

@@ -6,6 +6,7 @@ import os
 
 from py_env_studio.core.database import DatabaseManager
 from py_env_studio.core.env_manager import DB_FILE, MATRIX_FILE, VENV_DIR
+from py_env_studio.core import schema as sql
 
 
 class DataHelper:
@@ -79,13 +80,13 @@ class DBHelper:
         env_path = os.path.join(VENV_DIR, env_name)
         with DBHelper._dbm.connect() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT env_id FROM environments WHERE env_name=?", (env_name,))
+            cur.execute(sql.get("environments", "get_env_id"), (env_name,))
             row = cur.fetchone()
             if row:
                 return row[0]
 
             cur.execute(
-                "INSERT INTO environments (env_name, env_path, created_at) VALUES (?, ?, ?)",
+                sql.get("environments", "create_environment"),
                 (env_name, env_path, datetime.now()),
             )
             conn.commit()
@@ -96,7 +97,7 @@ class DBHelper:
         with DBHelper._dbm.connect() as conn:
             cur = conn.cursor()
             cur.execute(
-                "INSERT INTO env_vulnerability_info (env_id, vulnerabilities, created_at) VALUES (?, ?, ?)",
+                sql.get("vulnerability", "insert_scan"),
                 (env_id, json.dumps(vulnerabilities_json), datetime.now()),
             )
             conn.commit()
@@ -106,18 +107,7 @@ class DBHelper:
         with DBHelper._dbm.connect() as conn:
             cur = conn.cursor()
             cur.execute(
-                """
-                SELECT evi.vid, evi.vulnerabilities
-                FROM env_vulnerability_info evi
-                JOIN environments e ON evi.env_id = e.env_id
-                WHERE e.env_name=?
-                AND DATE(evi.created_at) = (
-                    SELECT MAX(DATE(created_at))
-                    FROM env_vulnerability_info
-                    WHERE env_id = evi.env_id
-                )
-                ORDER BY evi.vid ASC
-                """,
+                sql.get("vulnerability", "latest_scan_rows"),
                 (env_name,),
             )
             rows = cur.fetchall()

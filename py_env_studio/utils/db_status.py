@@ -7,6 +7,8 @@ actions once a package is fixed.
 
 import json
 
+from py_env_studio.core import schema as sql
+
 from .handlers import DBHelper
 from .version_utils import vuln_status
 
@@ -15,18 +17,7 @@ def _latest_scan_rows(env_name, cur):
     """Fetch (vid, vulnerabilities) for every scan stored on the most recent
     scan day of an environment."""
     cur.execute(
-        """
-        SELECT evi.vid, evi.vulnerabilities
-        FROM env_vulnerability_info evi
-        JOIN environments e ON evi.env_id = e.env_id
-        WHERE e.env_name=?
-        AND DATE(evi.created_at) = (
-            SELECT MAX(DATE(created_at))
-            FROM env_vulnerability_info
-            WHERE env_id = evi.env_id
-        )
-        ORDER BY evi.vid ASC
-        """,
+        sql.get("vulnerability", "latest_scan_rows"),
         (env_name,),
     )
     return cur.fetchall()
@@ -117,7 +108,7 @@ def ensure_vulnerability_statuses(env_name):
                     changed = True
             if changed:
                 cur.execute(
-                    "UPDATE env_vulnerability_info SET vulnerabilities=? WHERE vid=?",
+                    sql.get("vulnerability", "update_payload_by_vid"),
                     (json.dumps(decoded), vid),
                 )
         conn.commit()
@@ -158,7 +149,7 @@ def mark_package_fixed(env_name, package, new_version):
                     changed = True
             if changed:
                 cur.execute(
-                    "UPDATE env_vulnerability_info SET vulnerabilities=? WHERE vid=?",
+                    sql.get("vulnerability", "update_payload_by_vid"),
                     (json.dumps(decoded), vid),
                 )
         conn.commit()

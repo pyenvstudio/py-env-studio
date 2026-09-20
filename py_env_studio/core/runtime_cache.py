@@ -24,6 +24,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
+from . import schema as sql
 from .database import DatabaseManager
 from .runtime_providers import PythonInstallManagerProvider, PythonRuntime
 
@@ -174,7 +175,7 @@ class RuntimeCache:
                 cur = conn.cursor()
                 try:
                     rows = cur.execute(
-                        "SELECT metadata_json FROM python_runtime_metadata WHERE provider=?",
+                        sql.get("runtime_cache", "select_metadata_by_provider"),
                         (provider_name,),
                     ).fetchall()
                 except sqlite3.OperationalError:
@@ -191,7 +192,7 @@ class RuntimeCache:
                 releases.sort(key=lambda item: _version_key(item.version), reverse=True)
                 try:
                     state = cur.execute(
-                        "SELECT last_updated FROM python_runtime_cache_state WHERE provider=?",
+                        sql.get("runtime_cache", "select_cache_state"),
                         (provider_name,),
                     ).fetchone()
                 except sqlite3.OperationalError:
@@ -216,11 +217,11 @@ class RuntimeCache:
         with self._connect() as conn:
             cur = conn.cursor()
             # Single transaction/batch write (spec section 11).
-            cur.execute("DELETE FROM python_runtime_metadata WHERE provider=?", (provider_name,))
+            cur.execute(
+                sql.get("runtime_cache", "delete_metadata_by_provider"), (provider_name,)
+            )
             cur.executemany(
-                """INSERT OR REPLACE INTO python_runtime_metadata
-                   (provider, version, release_status, architecture, implementation, metadata_json, last_updated)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                sql.get("runtime_cache", "insert_metadata_row"),
                 [
                     (
                         provider_name,
@@ -235,8 +236,7 @@ class RuntimeCache:
                 ],
             )
             cur.execute(
-                """INSERT OR REPLACE INTO python_runtime_cache_state
-                   (provider, last_updated, last_error) VALUES (?, ?, NULL)""",
+                sql.get("runtime_cache", "upsert_cache_state"),
                 (provider_name, stamp),
             )
             conn.commit()
@@ -246,9 +246,7 @@ class RuntimeCache:
         try:
             with self._connect() as conn:
                 conn.execute(
-                    """INSERT INTO python_runtime_cache_state (provider, last_updated, last_error)
-                       VALUES (?, ?, ?)
-                       ON CONFLICT(provider) DO UPDATE SET last_error=excluded.last_error""",
+                    sql.get("runtime_cache", "record_cache_error"),
                     (provider_name, self._now_fn().isoformat(), message[:500]),
                 )
                 conn.commit()
