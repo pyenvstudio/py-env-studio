@@ -918,15 +918,32 @@ class PyEnvStudio(ctk.CTk):
             try:
                 func()
                 if py_tonic_action:
-                    self.after(0, lambda action=py_tonic_action: self.notify_py_tonic(action))
+                    self._safe_after(0, lambda action=py_tonic_action: self.notify_py_tonic(action))
                 if success_msg:
-                    self.after(0, lambda: show_info(success_msg))
+                    self._safe_after(0, lambda: show_info(success_msg))
             except Exception as e:
                 if error_msg:
-                    self.after(0, lambda e=e: show_error(f"{error_msg}: {str(e)}"))
+                    self._safe_after(0, lambda e=e: show_error(f"{error_msg}: {str(e)}"))
             if callback:
-                self.after(0, callback)
+                self._safe_after(0, callback)
         threading.Thread(target=target, daemon=True).start()
+
+    def _safe_after(self, delay_ms, func, *args):
+        """Schedule ``func`` on the Tk main loop; no-op if the loop is gone.
+
+        Background threads routinely outlive the main window (e.g. a runtime
+        refresh still running when the app is closed). A bare ``self.after``
+        then raises ``RuntimeError: main thread is not in main loop``, which
+        surfaces as an unhandled thread exception. Swallow that (and Tcl
+        errors from torn-down widgets) and return None.
+        """
+        try:
+            return self.after(delay_ms, func, *args)
+        except (RuntimeError, tkinter.TclError):
+            return None
+        except Exception:
+            logging.debug("Failed to schedule UI callback", exc_info=True)
+            return None
 
     def process_log_queues(self):
         self._process_log_queue(self.env_log_queue, self.console_frame)
@@ -1247,9 +1264,9 @@ class PyEnvStudio(ctk.CTk):
                             pkg.get("latest_version", ""),
                             pkg.get("latest_filetype", "")
                         ))
-                self.after(0, lambda: self.show_updatable_packages(updatable_packages))
+                self._safe_after(0, lambda: self.show_updatable_packages(updatable_packages))
             except Exception as e:
-                self.after(0, lambda: show_error(f"Failed to check for package updates: {str(e)}"))
+                self._safe_after(0, lambda: show_error(f"Failed to check for package updates: {str(e)}"))
 
         self.run_async(
             task,
@@ -1659,7 +1676,7 @@ class PyEnvStudio(ctk.CTk):
                 except Exception:
                     pass
 
-            self.after(0, apply)
+            self._safe_after(0, apply)
 
         threading.Thread(target=task, daemon=True).start()
 
@@ -1757,19 +1774,19 @@ class PyEnvStudio(ctk.CTk):
             except Exception as exc:
                 lookup_error = exc
             if executable:
-                self.after(
+                self._safe_after(
                     0,
                     lambda: self._start_env_creation(env_name, executable, upgrade_pip),
                 )
                 return
             if lookup_error is not None:
-                self.after(0, lambda: self._on_env_runtime_check_failed(
+                self._safe_after(0, lambda: self._on_env_runtime_check_failed(
                     lookup_error, env_name, python_path, upgrade_pip))
                 return
             # Not installed (or provider cannot supply it).
             if python_path:
                 # Explicit path was given: continue with it instead of stalling.
-                self.after(
+                self._safe_after(
                     0,
                     lambda: self._start_env_creation(env_name, python_path, upgrade_pip),
                 )
@@ -1798,7 +1815,7 @@ class PyEnvStudio(ctk.CTk):
                 self._install_runtime_for_env(
                     env_name, python_path, upgrade_pip, requested_version, provider)
 
-            self.after(0, ask_install)
+            self._safe_after(0, ask_install)
 
         threading.Thread(target=task, daemon=True).start()
 
@@ -1825,26 +1842,26 @@ class PyEnvStudio(ctk.CTk):
                 )
             except Exception as exc:
                 logging.warning("Python %s installation failed: %s", requested_version, exc)
-                self.after(0, lambda: self._on_env_runtime_install_failed(
+                self._safe_after(0, lambda: self._on_env_runtime_install_failed(
                     env_name, requested_version, str(exc)))
                 return
             if not result:
-                self.after(0, lambda: self._on_env_runtime_install_failed(
+                self._safe_after(0, lambda: self._on_env_runtime_install_failed(
                     env_name, requested_version, "installation reported failure"))
                 return
             # Verify off the UI thread: listing/installation may take seconds.
             try:
                 executable = provider.get_executable(requested_version)
             except Exception as exc:
-                self.after(0, lambda: self._on_env_runtime_install_failed(
+                self._safe_after(0, lambda: self._on_env_runtime_install_failed(
                     env_name, requested_version, str(exc)))
                 return
             if not executable:
-                self.after(0, lambda: self._on_env_runtime_install_failed(
+                self._safe_after(0, lambda: self._on_env_runtime_install_failed(
                     env_name, requested_version,
                     "installed runtime not found after install"))
                 return
-            self.after(
+            self._safe_after(
                 0,
                 lambda: self._on_env_runtime_installed(
                     env_name, requested_version, executable, upgrade_pip),
@@ -2154,7 +2171,7 @@ class PyEnvStudio(ctk.CTk):
             try:
                 provider = self._get_runtime_provider(provider_name)
             except Exception as exc:
-                self.after(0, lambda: self._show_runtime_unavailable(
+                self._safe_after(0, lambda: self._show_runtime_unavailable(
                     provider_var, default_python_var, status_label,
                     message=str(exc), generation=generation))
                 return
@@ -2174,7 +2191,7 @@ class PyEnvStudio(ctk.CTk):
                 error = str(exc)
                 logging.warning("Failed to load runtime data from %s: %s", provider_name, exc)
 
-            self.after(0, lambda: self._update_runtime_ui(
+            self._safe_after(0, lambda: self._update_runtime_ui(
                 provider_name,
                 installed,
                 available,
@@ -2464,7 +2481,7 @@ class PyEnvStudio(ctk.CTk):
                 )
                 self.refresh_env_runtime_choices()
 
-            self.after(0, on_done)
+            self._safe_after(0, on_done)
 
         threading.Thread(target=task, daemon=True).start()
 
@@ -2940,7 +2957,7 @@ class PyEnvStudio(ctk.CTk):
         state = {"error": None, "source_dir": None, "cleanup_dir": None, "origin": None, "repo_name": None}
 
         def set_status(message: str) -> None:
-            self.after(0, lambda: status_label.configure(text=message))
+            self._safe_after(0, lambda: status_label.configure(text=message))
 
         def task():
             try:
