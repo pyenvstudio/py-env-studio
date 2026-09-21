@@ -30,7 +30,7 @@ nav:
       - Usage: getting-started/usage.md
       - CLI Reference: getting-started/cli.md
   - Reference:
-      - Features: reference/features.md
+      - Features & Implementation: reference/current-implementation.md
       - Architecture: reference/architecture.md
   - Templates:
       - Phase 1: project-templates/phase-1.md

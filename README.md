@@ -93,7 +93,7 @@ See the [v2.0.8 release notes](docs/releases/v2.0.8.md) and the [plugin developm
 - Persisted configuration for default paths, interpreters, tools, themes, scaling, and template defaults
 - Py-Tonic learning challenges and profile-based notifications
 
-See [the complete feature reference](docs/reference/features.md) and [the architecture overview](docs/reference/architecture.md).
+See [the complete feature reference](docs/reference/current-implementation.md) and [the architecture overview](docs/reference/architecture.md).
 
 ### 🛠️ Self-Healing Install System (AutoResolver)
 

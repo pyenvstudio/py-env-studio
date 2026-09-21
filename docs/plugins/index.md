@@ -28,7 +28,7 @@ This index helps you navigate the PyEnvStudio Plugin System documentation and co
   - Common issues
 
 #### Then Read
-- [Main Feature Guide](../reference/features.md) (mentions plugin system)
+- [Main Feature Guide](../reference/current-implementation.md) (mentions plugin system)
 - [Installation Guide](../getting-started/install.md)
 
 ### 2. For Plugin Developers

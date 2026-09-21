@@ -546,3 +546,29 @@ def activate_env(env_name, directory=None, open_with="vscode", open_in_venv_cwd=
 
 def is_exact_env_active(python_exe_path):
     return os.path.abspath(sys.executable).lower() == os.path.abspath(python_exe_path).lower()
+
+
+def get_environment_info(env_name):
+    """Public read-only summary of a single environment for API consumers.
+
+    Used by the MCP control plane (and future LSP layer) so tool handlers
+    do not duplicate discovery logic. Returns None when the environment
+    does not exist.
+    """
+    env_path = os.path.join(VENV_DIR, env_name)
+    if not os.path.isdir(env_path):
+        return None
+    if not os.path.exists(os.path.join(env_path, "pyvenv.cfg")):
+        return None
+    python_exe = get_env_python(env_name)
+    data = get_env_data(env_name)
+    return {
+        "environment_id": env_name,
+        "name": env_name,
+        "path": env_path,
+        "python_executable": python_exe,
+        "python_version": data.get("python_version") or _extract_python_version(python_exe),
+        "package_manager": data.get("package_manager") or get_preferred_package_manager(),
+        "status": "exists",
+        "metadata": data,
+    }

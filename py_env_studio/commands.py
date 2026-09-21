@@ -19,9 +19,6 @@ from py_env_studio.core.runtime_toggle import (
     init_project,
     list_registered_projects,
 )
-from py_env_studio.ui.main_window import PyEnvStudio
-
-
 def _split_two_values(raw_value: str, usage: str) -> Tuple[str, str]:
     try:
         return raw_value.split(",", 1)
@@ -133,7 +130,16 @@ def handle_run(args: argparse.Namespace) -> None:
     sys.exit(result)
 
 
+def handle_mcp(_: argparse.Namespace) -> None:
+    from py_env_studio.core.mcp.server import run_stdio
+
+    sys.exit(run_stdio())
+
+
 def launch_gui(_: argparse.Namespace) -> None:
+    # Imported lazily so headless commands (e.g. `mcp`) work without GUI deps.
+    from py_env_studio.ui.main_window import PyEnvStudio
+
     app = PyEnvStudio()
     app.mainloop()
 
@@ -213,6 +219,10 @@ SUBCOMMANDS = {
         "function": handle_run,
         "help": "Run a script inside the managed environment",
         "extra_values": ("script.py", "[args...]"),
+    },
+    "mcp": {
+        "function": handle_mcp,
+        "help": "Start the PES MCP server over stdio (local, read-only)",
     },
 }
 

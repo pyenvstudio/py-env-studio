@@ -42,6 +42,12 @@ class DatabaseManager:
                     cur.execute(sql.get("schema_core", name))
                 for statement in sql.statements("schema_runtime_cache"):
                     cur.execute(statement)
+                # project_contract.sql mixes DDL with DML templates: only the
+                # create_* statements are schema, the rest are fetched by name
+                # at the call site (see ProjectContractRepository).
+                for name in sql.available("project_contract"):
+                    if name.startswith("create_"):
+                        cur.execute(sql.get("project_contract", name))
 
                 self._migrate_legacy_schema(cur)
                 conn.commit()

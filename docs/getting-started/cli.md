@@ -26,7 +26,6 @@
 
 ## Activating Environments
 Manually activate your environment after creation:
-
 Windows:
 
     .\envs\<environment name>\Scripts\activate
@@ -34,3 +33,9 @@ Windows:
 Linux/macOS:
 
     source envs/<environment name>/bin/activate
+
+## MCP server (local, read-only)
+    py-env-studio mcp
+
+Starts the MCP control plane over stdio for AI clients such as VS Code
+Copilot. No GUI, no network required. See `Reference → Features & Implementation` (section 25).
