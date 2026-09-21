@@ -23,3 +23,59 @@ It makes managing **virtual environments and packages effortless**, without need
 - Cross-platform: **Windows, Linux, macOS**
 
 👉 Explore the docs using the sidebar.
+
+```{toctree}
+---
+maxdepth: 2
+caption: Getting Started
+---
+getting-started/install
+getting-started/usage
+getting-started/cli
+```
+
+```{toctree}
+---
+maxdepth: 2
+caption: Reference
+---
+reference/current-implementation
+reference/architecture
+```
+
+```{toctree}
+---
+maxdepth: 2
+caption: Templates
+---
+project-templates/phase-1
+project-templates/phase-1-2
+project-templates/community-templates
+```
+
+```{toctree}
+---
+maxdepth: 2
+caption: Development
+---
+development/contributing
+```
+
+```{toctree}
+---
+maxdepth: 2
+caption: Plugins
+---
+plugins/index
+plugins/architecture
+plugins/development
+plugins/quick-reference
+```
+
+```{toctree}
+---
+maxdepth: 2
+caption: Releases
+---
+releases/v2.0.8
+```

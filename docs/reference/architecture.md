@@ -2,7 +2,7 @@
 
 This document describes the implemented architecture of Py Env Studio. The application has two entry surfaces: a CustomTkinter desktop GUI and the `pes` command-line interface. Both use the same core services for environments, packages, templates, runtime-managed projects, configuration, and persistence.
 
-```mermaid
+```text
 flowchart TB
     GUI[CustomTkinter GUI: PyEnvStudio] --> UI[ui/main_window.py]
     CLI[CLI aliases: py-env-studio, pyenvstudio, pes] --> Commands[commands.py]

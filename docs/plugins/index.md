@@ -12,7 +12,7 @@ This index helps you navigate the PyEnvStudio Plugin System documentation and co
 | **Creating your first plugin?** | [Plugin Development Guide](development.md) | 30 min |
 | **Understanding the system?** | [Architecture Document](architecture.md) | 20 min |
 | **Seeing an example?** | [Sample Plugin Code](https://github.com/pyenvstudio/py-env-studio/tree/main/examples/sample_plugin) | 10 min |
-| **Quick lookup?** | [This Index](#documentation-map) | 2 min |
+| **Quick lookup?** | <a href="#documentation-map">This Index</a> | 2 min |
 
 ---
 
@@ -59,7 +59,7 @@ This index helps you navigate the PyEnvStudio Plugin System documentation and co
 
 #### Phase 4: Reference
 - [Quick Reference](quick-reference.md) - Templates and patterns
-- [API Reference](#api-reference-section) below
+- <a href="#api-reference-section">API Reference</a> below
 
 ### 3. For System Maintainers
 **Goal**: Understand and extend the plugin system
@@ -76,9 +76,9 @@ This index helps you navigate the PyEnvStudio Plugin System documentation and co
    - `exceptions.py` - Error types
 
 #### Adding Features
-- [How Hooks Work](#hook-system-section)
-- [Plugin Lifecycle](#plugin-lifecycle-section)
-- [Adding New Hooks](#extending-the-system)
+- <a href="#hook-system-section">How Hooks Work</a>
+- <a href="#plugin-lifecycle-section">Plugin Lifecycle</a>
+- <a href="#extending-the-system">Adding New Hooks</a>
 
 ---
 
