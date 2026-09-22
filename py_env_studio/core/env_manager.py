@@ -10,6 +10,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 from .configuration import AppConfig
@@ -119,20 +121,62 @@ def add_tool(name, path=None):
         app_config.set_param("settings", "open_with_tools", ",".join(entries))
 
 
-def _load_env_data():
-    path = Path(ENV_DATA_FILE)
-    if not path.exists():
-        return {}
+# Memoization for hot-path reads --------------------------------------------
+# The GUI reads the registry once per table row while building the environment
+# list (previously N JSON parses + N uv subprocess probes per search keystroke)
+# and probes interpreter paths with subprocesses from click handlers on the Tk
+# main thread. Small stamp/TTL caches keep those off the hot path; every write
+# invalidates so results stay coherent.
+_ENV_DATA_LOCK = threading.Lock()
+_ENV_DATA_CACHE: dict = {"stamp": object(), "data": {}}
+
+_VERSION_PROBES: dict[str, tuple[float, str | bool]] = {}
+_VERSION_PROBE_LOCK = threading.Lock()
+_VERSION_PROBE_TTL = 300.0  # seconds
+
+
+def _env_data_file_stamp():
+    """File identity (path, mtime, size, inode) used to invalidate the cache."""
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+        st = os.stat(ENV_DATA_FILE)
+    except OSError:
+        return None
+    return (ENV_DATA_FILE, st.st_mtime_ns, st.st_size, st.st_ino)
+
+
+def _copy_env_data(raw: dict) -> dict:
+    # One level deep: entries are flat scalar dicts, and callers mutate them
+    # before saving, so the cached original must never be handed out directly.
+    return {k: (dict(v) if isinstance(v, dict) else v) for k, v in raw.items()}
+
+
+def _load_env_data():
+    stamp = _env_data_file_stamp()
+    if stamp is None:
         return {}
+    with _ENV_DATA_LOCK:
+        if _ENV_DATA_CACHE["stamp"] == stamp:
+            return _copy_env_data(_ENV_DATA_CACHE["data"])
+    try:
+        raw = json.loads(Path(ENV_DATA_FILE).read_text(encoding="utf-8"))
+    except Exception:
+        # Don't cache unreadable files: a transient failure must not stick
+        # until the next mtime change.
+        return {}
+    if not isinstance(raw, dict):
+        raw = {}
+    with _ENV_DATA_LOCK:
+        _ENV_DATA_CACHE["stamp"] = stamp
+        _ENV_DATA_CACHE["data"] = raw
+    return _copy_env_data(raw)
 
 
 def _save_env_data(data):
     try:
         payload = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
         _write_atomic(Path(ENV_DATA_FILE), payload)
+        with _ENV_DATA_LOCK:
+            _ENV_DATA_CACHE["stamp"] = object()  # force reload on next read
     except Exception as exc:
         logging.error("Failed to save env data: %s", exc)
 
@@ -162,12 +206,16 @@ def get_env_data(env_name):
 
 
 def calculate_env_size_mb(env_path):
+    # Path.walk (3.12) walks without building path strings up front, and the
+    # old os.path.isfile() + getsize() pair stat'ed every file twice; a single
+    # entry.stat() now suffices.
     total_size = 0
-    for dirpath, _, filenames in os.walk(env_path):
+    for dirpath, _, filenames in Path(env_path).walk(on_error=lambda _err: None):
         for filename in filenames:
-            full_path = os.path.join(dirpath, filename)
-            if os.path.isfile(full_path):
-                total_size += os.path.getsize(full_path)
+            try:
+                total_size += (dirpath / filename).stat().st_size
+            except OSError:
+                pass
     size_mb = total_size // (1024 * 1024)
     return f"{size_mb} MB"
 
@@ -177,11 +225,25 @@ def is_valid_python(python_path):
 
 
 def is_valid_python_version_detected(python_path):
+    """Run ``<python> --version``, memoized per path for a short TTL.
+
+    Called from click handlers and the configuration dialog on the Tk main
+    thread; each probe is a 100-500ms subprocess spawn, so successful answers
+    are reused for 5 minutes. Subprocess failures are never cached.
+    """
+    now = time.monotonic()
+    with _VERSION_PROBE_LOCK:
+        hit = _VERSION_PROBES.get(python_path)
+    if hit is not None and now - hit[0] <= _VERSION_PROBE_TTL:
+        return hit[1]
     try:
         output = subprocess.check_output([python_path, "--version"], text=True).strip()
-        return output if output.startswith("Python ") else False
+        result = output if output.startswith("Python ") else False
     except Exception:
         return False
+    with _VERSION_PROBE_LOCK:
+        _VERSION_PROBES[python_path] = (now, result)
+    return result
 
 
 def is_valid_env_selected(env_name):
@@ -464,12 +526,9 @@ def list_envs():
 
 
 def _extract_python_version(python_path):
-    try:
-        output = subprocess.check_output([python_path, "--version"], text=True).strip()
-        if output.startswith("Python "):
-            return output.split()[1]
-    except Exception:
-        return None
+    detected = is_valid_python_version_detected(python_path)
+    if detected:
+        return detected.split(" ", 1)[1]
     return None
 
 

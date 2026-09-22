@@ -10,7 +10,6 @@ from datetime import datetime as DT
 import webbrowser
 import logging
 from configparser import ConfigParser
-import threading
 import queue
 import datetime
 import tkinter.ttk as ttk
@@ -23,11 +22,15 @@ from py_env_studio.core.env_manager import (
     create_env, rename_env, delete_env, activate_env, search_envs,
     get_env_data, set_env_data, is_valid_env_selected,
     list_pythons, is_valid_python_version_detected,
-    get_available_tools, add_tool, refresh_runtime_paths
+    get_available_tools, add_tool, refresh_runtime_paths,
+    get_package_manager_display
 )
 from py_env_studio.core.package_manager import (
     list_packages, install_package, uninstall_package, update_package,
-    export_requirements, import_requirements, check_outdated_packages)
+    export_requirements, import_requirements, check_outdated_packages,
+    get_env_package_manager)
+from py_env_studio.ui.ui_tasks import (
+    post_to_ui, run_in_background, shutdown_background_tasks)
 from py_env_studio.core.py_tonic import (
     PY_TONIC_LEARNING_MODES,
     PY_TONIC_NOTIFICATION_MODES,
@@ -269,7 +272,9 @@ class PyEnvStudio(ctk.CTk):
 
     def _setup_logging(self):
         # Initialize console logger with queue for UI display
-        self.env_search_var.trace_add('write', lambda *_: self.refresh_env_list())
+        # Debounced: the search box fires on every keystroke, and each refresh
+        # spawns a worker task, so coalesce bursts into one refresh.
+        self.env_search_var.trace_add('write', self._schedule_env_list_refresh)
         self.after(100, self.process_log_queues)
 
     # ===== Widget Factories =====
@@ -528,7 +533,10 @@ class PyEnvStudio(ctk.CTk):
         self.btn_create_env = self.btn(f, "Create Environment", self.create_env, self.icons.get("create-env"))
         self.btn_create_env.grid(row=6, column=0, columnspan=5, padx=10, pady=5)
 
-        self.refresh_env_runtime_choices()
+        # Deferred to the first mainloop tick: the refresh runs on the worker
+        # pool and posts its result back with widget.after(), which needs a
+        # running event loop (this still runs during __init__).
+        self.after(0, self.refresh_env_runtime_choices)
 
     def _env_activate_section(self, parent):
         p = self.frame(parent, corner_radius=12, border_width=1, border_color=self.theme.BORDER_COLOR)
@@ -583,7 +591,10 @@ class PyEnvStudio(ctk.CTk):
         self.env_scrollable_frame = ctk.CTkScrollableFrame(parent, label_text=f"Available Environments",)
         self.env_scrollable_frame.grid(row=5, column=0, columnspan=2, padx=10, pady=5, sticky="nsew")
         self.env_scrollable_frame.grid_columnconfigure(0, weight=1)
-        self.refresh_env_list()
+        # Deferred to the first mainloop tick: refresh_env_list() gathers data
+        # on the worker pool and renders via widget.after(), which needs a
+        # running event loop (this is still __init__ time).
+        self.after(0, self.refresh_env_list)
 
     def _setup_console(self):
 
@@ -911,39 +922,46 @@ class PyEnvStudio(ctk.CTk):
     # === Environment & Package Logic follows (using Treeview for Packages) ===
     # ===== LOGIC: Async, logging, events, environment ops, package ops =====
     def run_async(self, func, success_msg=None, error_msg=None, callback=None, py_tonic_action=None):
-        if py_tonic_action and not self._enforce_strict_py_tonic(py_tonic_action):
-            return
+        """Run ``func`` on the shared worker pool (never on the Tk thread).
 
-        def target():
-            try:
-                func()
-                if py_tonic_action:
-                    self._safe_after(0, lambda action=py_tonic_action: self.notify_py_tonic(action))
-                if success_msg:
-                    self._safe_after(0, lambda: show_info(success_msg))
-            except Exception as e:
-                if error_msg:
-                    self._safe_after(0, lambda e=e: show_error(f"{error_msg}: {str(e)}"))
-            if callback:
-                self._safe_after(0, callback)
-        threading.Thread(target=target, daemon=True).start()
+        ``func`` must not touch widgets — it runs off the main thread.  Every
+        follow-up (notifications, dialogs, ``callback``) is marshalled back to
+        the UI thread by :func:`py_env_studio.ui.ui_tasks.run_in_background`.
+        """
+        if py_tonic_action and not self._enforce_strict_py_tonic(py_tonic_action):
+            return None
+
+        def on_done(_result):
+            if py_tonic_action:
+                self.notify_py_tonic(py_tonic_action)
+            if success_msg:
+                show_info(success_msg)
+
+        def on_error(exc):
+            if error_msg:
+                show_error(f"{error_msg}: {str(exc)}")
+            else:
+                logging.warning("Background task failed: %s", exc, exc_info=exc)
+
+        return run_in_background(
+            func,
+            ui=self,
+            on_done=on_done,
+            on_error=on_error,
+            on_finished=callback,
+        )
 
     def _safe_after(self, delay_ms, func, *args):
         """Schedule ``func`` on the Tk main loop; no-op if the loop is gone.
 
+        This is the only sanctioned way for a worker thread to touch widgets:
+        ``after`` hands the callable to the main thread's event queue.
         Background threads routinely outlive the main window (e.g. a runtime
-        refresh still running when the app is closed). A bare ``self.after``
-        then raises ``RuntimeError: main thread is not in main loop``, which
-        surfaces as an unhandled thread exception. Swallow that (and Tcl
-        errors from torn-down widgets) and return None.
+        refresh still running when the app is closed), so teardown errors
+        (``RuntimeError: main thread is not in main loop``, Tcl errors from
+        destroyed widgets) are swallowed and ``None`` returned.
         """
-        try:
-            return self.after(delay_ms, func, *args)
-        except (RuntimeError, tkinter.TclError):
-            return None
-        except Exception:
-            logging.debug("Failed to schedule UI callback", exc_info=True)
-            return None
+        return post_to_ui(self, func, *args, delay_ms=delay_ms)
 
     def process_log_queues(self):
         self._process_log_queue(self.env_log_queue, self.console_frame)
@@ -974,10 +992,81 @@ class PyEnvStudio(ctk.CTk):
 
     # ===== ENVIRONMENTS TABLE =====
     
+    def _schedule_env_list_refresh(self, *_event) -> None:
+        """Debounce table refreshes — the search box fires on every keystroke."""
+        previous = getattr(self, "_env_list_debounce_id", None)
+        if previous is not None:
+            try:
+                self.after_cancel(previous)
+            except Exception:
+                pass
+        self._env_list_debounce_id = self.after(150, self.refresh_env_list)
+
+    @staticmethod
+    def _collect_env_rows(query: str) -> list[tuple[str, dict, str]]:
+        """Gather environment metadata. Worker-thread safe: never touches Tk.
+
+        ``get_package_manager_display`` probes ``pip``/``uv`` with a
+        subprocess, so running this on the Tk main thread would freeze the
+        window once per environment on every keystroke.
+        """
+        rows: list[tuple[str, dict, str]] = []
+        for env in search_envs(query):
+            data = get_env_data(env)
+            vm_tool = get_package_manager_display(get_env_package_manager(env))
+            rows.append((env, data, vm_tool))
+        return rows
+
     def refresh_env_list(self):
-        for widget in self.env_scrollable_frame.winfo_children():
-            widget.destroy()
-        envs = search_envs(self.env_search_var.get())
+        """Rebuild the environments table without blocking the mainloop.
+
+        Metadata collection runs on the shared worker pool; only widget work
+        happens here. A generation token drops results from refreshes that a
+        newer keystroke (or refresh) has already superseded.
+        """
+        self._env_list_debounce_id = None
+        generation = getattr(self, "_env_list_generation", 0) + 1
+        self._env_list_generation = generation
+        query = self.env_search_var.get()
+
+        self._clear_frame(self.env_scrollable_frame)
+        self.lbl(
+            self.env_scrollable_frame,
+            "Loading environments...",
+            text_color=self.theme.SECONDARY_COLOR,
+        ).grid(row=0, column=0, padx=10, pady=10, sticky="w")
+
+        run_in_background(
+            lambda: self._collect_env_rows(query),
+            ui=self,
+            on_done=lambda rows: self._render_env_list(rows, generation),
+            on_error=lambda exc: self._render_env_list_error(exc, generation),
+        )
+
+    def _current_env_generation(self, generation: int) -> bool:
+        """True while *generation* is still the latest requested refresh."""
+        if generation != getattr(self, "_env_list_generation", generation):
+            return False
+        try:
+            return bool(self.winfo_exists())
+        except Exception:
+            return False
+
+    def _render_env_list_error(self, exc: BaseException, generation: int) -> None:
+        if not self._current_env_generation(generation):
+            return
+        self._clear_frame(self.env_scrollable_frame)
+        self.lbl(
+            self.env_scrollable_frame,
+            f"Failed to list environments: {exc}",
+            text_color=self.theme.ERROR_COLOR,
+        ).grid(row=0, column=0, padx=10, pady=10, sticky="w")
+
+    def _render_env_list(self, rows, generation: int) -> None:
+        """Draw the environment rows (main thread only)."""
+        if not self._current_env_generation(generation):
+            return  # a newer refresh is already pending or rendered
+        self._clear_frame(self.env_scrollable_frame)
         # Updated columns - added VM_TOOL after PYTHON_VERSION
         columns = ("ENVIRONMENT", "PYTHON_VERSION", "VM_TOOL", "LAST_LOCATION", "SIZE", "RENAME", "DELETE", "LAST_SCANNED", "MORE")
         self.env_tree = ttk.Treeview(
@@ -999,14 +1088,7 @@ class PyEnvStudio(ctk.CTk):
         self.env_tree.grid(row=0, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="nsew")
         self.update_treeview_style()
 
-        for env in envs:
-            data = get_env_data(env)
-            # Get the VM tool display - use get_env_package_manager to get the correct manager
-            from py_env_studio.core.env_manager import get_package_manager_display
-            from py_env_studio.core.package_manager import get_env_package_manager
-            manager = get_env_package_manager(env)
-            vm_tool = get_package_manager_display(manager)
-            
+        for env, data, vm_tool in rows:
             self.env_tree.insert("", "end", values=(
                 env,
                 data.get("python_version", "-"),
@@ -1282,8 +1364,16 @@ class PyEnvStudio(ctk.CTk):
         self.refresh_package_list()
 
     def refresh_package_list(self):
+        """List installed packages without blocking the mainloop.
+
+        ``list_packages`` runs ``pip``/``uv list`` in a subprocess, so it runs
+        on the worker pool; a generation token drops superseded loads.
+        """
         for widget in self.packages_list_frame.winfo_children():
             widget.destroy()
+
+        generation = getattr(self, "_package_list_generation", 0) + 1
+        self._package_list_generation = generation
 
         env_name = self.selected_env_var.get().strip()
         if not env_name or not is_valid_env_selected(env_name):
@@ -1294,8 +1384,42 @@ class PyEnvStudio(ctk.CTk):
             self.packages_list_frame.grid_remove()
             return
 
+        self.lbl(
+            self.packages_list_frame,
+            "Loading packages...",
+            text_color=self.theme.SECONDARY_COLOR,
+        ).grid(row=0, column=0, padx=10, pady=10, sticky="w")
+
+        run_in_background(
+            lambda: list_packages(env_name),
+            ui=self,
+            on_done=lambda packages: self._on_packages_loaded(env_name, packages, generation),
+            on_error=lambda exc: self._on_packages_load_failed(exc, generation),
+        )
+
+    def _on_packages_load_failed(self, exc: BaseException, generation: int) -> None:
+        if generation != getattr(self, "_package_list_generation", generation):
+            return
         try:
-            packages = list_packages(env_name)
+            if not self.winfo_exists():
+                return
+        except Exception:
+            return
+        self.packages_list_frame.grid_remove()
+        show_error(f"Failed to list packages: {str(exc)}")
+
+    def _on_packages_loaded(self, env_name, packages, generation: int) -> None:
+        """Draw the package rows (main thread only)."""
+        if generation != getattr(self, "_package_list_generation", generation):
+            return  # a newer refresh already loaded (or is loading) newer data
+        try:
+            if not self.winfo_exists():
+                return
+        except Exception:
+            return
+        for widget in self.packages_list_frame.winfo_children():
+            widget.destroy()
+        try:
             columns = ("PACKAGE", "VERSION", "DELETE", "UPDATE")
             self.pkg_tree = ttk.Treeview(
                 self.packages_list_frame, columns=columns, show="headings", height=10, selectmode="none"
@@ -1419,36 +1543,46 @@ class PyEnvStudio(ctk.CTk):
             
             return successful, failed
 
-        def on_complete(result):
+        # run_async invokes the callback with no arguments, so stash the task
+        # result here for the zero-argument completion handler to pick up.
+        result_holder: dict[str, object] = {}
+
+        def wrapped_task():
+            result = task()
+            result_holder["result"] = result
+            return result
+
+        def on_complete():
             """Show summary after all updates complete"""
+            result = result_holder.get("result")
             if result:
-                successful, failed = result
-                
+                successful, failed = result  # type: ignore[misc]
+
                 # Build summary message
                 summary = "Update Summary:\n\n"
-                
+
                 if successful:
                     summary += f"✓ Updated Successfully ({len(successful)}):\n"
                     for pkg in successful:
                         summary += f"  • {pkg}\n"
-                
+
                 if failed:
                     summary += f"\n✗ Failed ({len(failed)}):\n"
                     for pkg, error in failed:
                         summary += f"  • {pkg}\n"
-                
+
                 # Close parent window if provided
                 if parent_window:
                     parent_window.destroy()
-                
+
                 # Show summary
                 messagebox.showinfo("Update Summary", summary)
-                
+
                 # Refresh package list
                 self.view_installed_packages()
 
         self.run_async(
-            task,
+            wrapped_task,
             success_msg=None,
             error_msg=None,
             callback=on_complete
@@ -1506,7 +1640,39 @@ class PyEnvStudio(ctk.CTk):
 
 
     def show_detected_version(self, path):
-        version = is_valid_python_version_detected(path)
+        """Show the version of the chosen interpreter.
+
+        Detection spawns ``python --version``, so it runs on the worker pool
+        instead of freezing the Tk main thread while the subprocess answers.
+        """
+        if not path:
+            self._apply_detected_version(path, False)
+            return None
+        self.python_version_info.configure(
+            text="USING PYTHON: Detecting...",
+            text_color=self.theme.SECONDARY_COLOR,
+        )
+        run_in_background(
+            lambda: is_valid_python_version_detected(path),
+            ui=self,
+            on_done=lambda version: self._apply_detected_version(path, version),
+            on_error=lambda _exc: self._apply_detected_version(path, False),
+        )
+        return None
+
+    def _apply_detected_version(self, path, version):
+        """Publish an interpreter detection result (main thread only).
+
+        ``path`` guards against stale results: another interpreter may have
+        been picked while this probe was still running.
+        """
+        try:
+            if not self.winfo_exists():
+                return
+            if path and (self.entry_python_path.get().strip() or None) != path:
+                return
+        except Exception:
+            return
         if not version:
             detected_version = "Please choose valid python or leave empty for default"
             # Set error color here for immediate feedback
@@ -1517,13 +1683,11 @@ class PyEnvStudio(ctk.CTk):
             self.entry_python_path.delete(0, tkinter.END)
             self.entry_python_path.insert(0, "")
         else:
-            detected_version = version
             # Set highlight color for success
             self.python_version_info.configure(
-                text=f"USING PYTHON: {detected_version}",
+                text=f"USING PYTHON: {version}",
                 text_color=self.theme.HIGHLIGHT_COLOR,
             )
-        return detected_version
 
     def browse_python_path(self, choice=None):
         if choice:
@@ -1678,7 +1842,7 @@ class PyEnvStudio(ctk.CTk):
 
             self._safe_after(0, apply)
 
-        threading.Thread(target=task, daemon=True).start()
+        run_in_background(task, ui=self)
 
     def create_env(self):
         env_name = self.entry_env_name.get().strip()
@@ -1697,7 +1861,29 @@ class PyEnvStudio(ctk.CTk):
         from py_env_studio.core.env_manager import set_preferred_package_manager
         set_preferred_package_manager(selected_pkg_mgr)
 
-        requested_version = self._version_from_python_path(python_path)
+        upgrade_pip = bool(self.checkbox_upgrade_pip.get())
+        if python_path:
+            # Reading the interpreter's version spawns `python --version`; do
+            # it off-thread and continue once the result is back on this thread.
+            run_in_background(
+                lambda: self._version_from_python_path(python_path),
+                ui=self,
+                on_done=lambda detected: self._finish_create_env(
+                    env_name, python_path, upgrade_pip, detected),
+                on_error=lambda _exc: self._finish_create_env(
+                    env_name, python_path, upgrade_pip, None),
+            )
+            return
+
+        self._finish_create_env(env_name, python_path, upgrade_pip, None)
+
+    def _finish_create_env(self, env_name, python_path, upgrade_pip, detected_version) -> None:
+        """Resolve the requested runtime, then start creation (main thread only).
+
+        Split out of :meth:`create_env` so interpreter version detection can
+        run on the worker pool instead of blocking the click handler.
+        """
+        requested_version = detected_version
         runtime_choice = self.env_runtime_var.get().strip() if hasattr(self, "env_runtime_var") else "System Default"
         if runtime_choice in ("", "Loading..."):
             runtime_choice = "System Default"
@@ -1722,13 +1908,13 @@ class PyEnvStudio(ctk.CTk):
             self._resolve_env_runtime_then_create(
                 env_name=env_name,
                 python_path=python_path,
-                upgrade_pip=bool(self.checkbox_upgrade_pip.get()),
+                upgrade_pip=upgrade_pip,
                 requested_version=requested_version,
                 provider=provider,
             )
             return
 
-        self._start_env_creation(env_name, python_path, bool(self.checkbox_upgrade_pip.get()))
+        self._start_env_creation(env_name, python_path, upgrade_pip)
 
     @staticmethod
     def _version_from_python_path(python_path) -> str | None:
@@ -1817,7 +2003,7 @@ class PyEnvStudio(ctk.CTk):
 
             self._safe_after(0, ask_install)
 
-        threading.Thread(target=task, daemon=True).start()
+        run_in_background(task, ui=self)
 
     def _on_env_runtime_check_failed(self, exc: Exception, env_name=None,
                                      python_path=None, upgrade_pip=False) -> None:
@@ -1867,7 +2053,7 @@ class PyEnvStudio(ctk.CTk):
                     env_name, requested_version, executable, upgrade_pip),
             )
 
-        threading.Thread(target=task, daemon=True).start()
+        run_in_background(task, ui=self)
 
     def _on_env_runtime_installed(self, env_name, requested_version,
                                   executable, upgrade_pip) -> None:
@@ -1947,25 +2133,15 @@ class PyEnvStudio(ctk.CTk):
             value=current.default_python.strip() or "System Default"
         )
 
+        # Each interpreter on PATH is verified with a `python --version`
+        # subprocess, and uv availability with `uv --version`. Probing them
+        # here would stall the dialog for seconds, so the menu opens with a
+        # placeholder and is filled from the worker pool by
+        # _detect_configuration_tools() once the dialog is on screen.
         python_map: dict[str, tuple[str, str]] = {"System Default": ("", "")}
-        python_labels = ["System Default"]
-        for interpreter in list_pythons():
-            detected_version = is_valid_python_version_detected(interpreter)
-            version = ""
-            if detected_version and detected_version.startswith("Python "):
-                version = detected_version.split(" ", 1)[1]
-            label = f"{detected_version or 'Python (unknown)'} - {interpreter}"
-            python_labels.append(label)
-            python_map[label] = (interpreter, version)
+        python_labels = ["System Default", "Detecting interpreters..."]
 
         default_python_label = "System Default"
-        for label, (path_value, version_value) in python_map.items():
-            if current.default_python_path and path_value == current.default_python_path:
-                default_python_label = label
-                break
-            if not current.default_python_path and current.default_python_version and version_value.startswith(current.default_python_version):
-                default_python_label = label
-
         default_python_var = tkinter.StringVar(value=default_python_label)
 
         available_tools = discover_project_open_tools(self.open_with_tools, include_default=True)
@@ -1999,7 +2175,8 @@ class PyEnvStudio(ctk.CTk):
 
         self.lbl(body, "Python", font=("Segoe UI", 14, "bold")).grid(row=5, column=0, columnspan=2, padx=8, pady=(14, 4), sticky="w")
         self.lbl(body, "Explicit Interpreter Override:", font=self.theme.FONT_BOLD).grid(row=6, column=0, padx=8, pady=6, sticky="w")
-        self.optmenu(body, python_labels, var=default_python_var, width=620).grid(row=6, column=1, padx=8, pady=6, sticky="ew")
+        python_menu = self.optmenu(body, python_labels, var=default_python_var, width=620)
+        python_menu.grid(row=6, column=1, padx=8, pady=6, sticky="ew")
 
         # ---- Python Runtime section ----
         self.lbl(body, "Python Runtime", font=("Segoe UI", 14, "bold")).grid(row=7, column=0, columnspan=2, padx=8, pady=(14, 4), sticky="w")
@@ -2029,8 +2206,9 @@ class PyEnvStudio(ctk.CTk):
         pm_row.grid(row=16, column=0, columnspan=2, padx=8, pady=6, sticky="w")
         pip_radio = ctk.CTkRadioButton(pm_row, text="pip", variable=package_manager_var, value="pip")
         pip_radio.grid(row=0, column=0, padx=(0, 18), pady=4, sticky="w")
-        uv_text = "uv" if uv_tools.is_uv_installed() else "uv (Not Installed)"
-        uv_radio = ctk.CTkRadioButton(pm_row, text=uv_text, variable=package_manager_var, value="uv")
+        # Text is finalised by _detect_configuration_tools(); probing uv here
+        # would block the dialog on a subprocess (5s timeout when missing).
+        uv_radio = ctk.CTkRadioButton(pm_row, text="uv", variable=package_manager_var, value="uv")
         uv_radio.grid(row=0, column=1, padx=0, pady=4, sticky="w")
 
         self.lbl(body, "Project / Templates", font=("Segoe UI", 14, "bold")).grid(row=17, column=0, columnspan=2, padx=8, pady=(14, 4), sticky="w")
@@ -2131,8 +2309,72 @@ class PyEnvStudio(ctk.CTk):
         self.btn(footer, "Save", lambda: persist(close_after_save=True), width=100).pack(side="right", padx=8, pady=8)
         self.btn(footer, "Apply", lambda: persist(close_after_save=False), width=100).pack(side="right", padx=8, pady=8)
 
+        # Probe interpreters + uv availability off-thread (subprocess heavy),
+        # then fill in the widgets that need the answers.
+        self._detect_configuration_tools(top, current, python_map, python_menu, default_python_var, uv_radio)
+
         # Load runtime provider data asynchronously
         self._populate_runtime_ui(runtime_provider_var, default_python_rt_var, status_label)
+
+    @staticmethod
+    def _default_python_label(current, python_map: dict[str, tuple[str, str]]) -> str:
+        """Entry in *python_map* matching the saved interpreter override."""
+        default_python_label = "System Default"
+        for label, (path_value, version_value) in python_map.items():
+            if current.default_python_path and path_value == current.default_python_path:
+                default_python_label = label
+                break
+            if not current.default_python_path and current.default_python_version and version_value.startswith(current.default_python_version):
+                default_python_label = label
+        return default_python_label
+
+    def _detect_configuration_tools(
+        self,
+        top,
+        current,
+        python_map: dict[str, tuple[str, str]],
+        python_menu,
+        default_python_var,
+        uv_radio,
+    ) -> None:
+        """Detect interpreters and uv availability without blocking the dialog.
+
+        Verifying every PATH interpreter costs one ``python --version``
+        subprocess each (plus ``uv --version``), so the work runs on the
+        worker pool and only the resulting widget updates happen here, on the
+        Tk main thread.
+        """
+
+        def work() -> tuple[dict[str, tuple[str, str]], list[str], bool]:
+            detected_map: dict[str, tuple[str, str]] = {"System Default": ("", "")}
+            detected_labels = ["System Default"]
+            for interpreter in list_pythons():
+                detected_version = is_valid_python_version_detected(interpreter)
+                version = ""
+                if detected_version and detected_version.startswith("Python "):
+                    version = detected_version.split(" ", 1)[1]
+                label = f"{detected_version or 'Python (unknown)'} - {interpreter}"
+                detected_labels.append(label)
+                detected_map[label] = (interpreter, version)
+            return detected_map, detected_labels, uv_tools.is_uv_installed()
+
+        def apply(result) -> None:
+            detected_map, detected_labels, uv_installed = result
+            try:
+                if not top.winfo_exists():
+                    return  # dialog closed while the probe was running
+            except Exception:
+                return
+            # collect_preferences() closes over python_map, so update it in
+            # place: a Save during detection then still sees the real paths.
+            python_map.clear()
+            python_map.update(detected_map)
+            if default_python_var.get().strip() not in detected_labels:
+                default_python_var.set(self._default_python_label(current, detected_map))
+            python_menu.configure(values=detected_labels)
+            uv_radio.configure(text="uv" if uv_installed else "uv (Not Installed)")
+
+        run_in_background(work, ui=self, on_done=apply)
 
     def _get_runtime_provider(self, provider_name: str) -> "RuntimeProvider":
         """Return the configured runtime provider instance (never None)."""
@@ -2307,7 +2549,7 @@ class PyEnvStudio(ctk.CTk):
                 error=error, generation=generation,
             ))
 
-        threading.Thread(target=task, daemon=True).start()
+        run_in_background(task, ui=self)
 
     def _show_runtime_unavailable(self, provider_var, default_python_var, status_label,
                                   message=None, generation=None) -> None:
@@ -2679,7 +2921,7 @@ class PyEnvStudio(ctk.CTk):
 
             self._safe_after(0, on_done)
 
-        threading.Thread(target=task, daemon=True).start()
+        run_in_background(task, ui=self)
 
     def _update_python(
         self,
@@ -2779,7 +3021,7 @@ class PyEnvStudio(ctk.CTk):
 
             self._safe_after(0, on_done)
 
-        threading.Thread(target=task, daemon=True).start()
+        run_in_background(task, ui=self)
 
     def _uninstall_python(
         self,
@@ -2898,7 +3140,7 @@ class PyEnvStudio(ctk.CTk):
 
             self._safe_after(0, on_done)
 
-        threading.Thread(target=task, daemon=True).start()
+        run_in_background(task, ui=self)
 
     def _clear_frame(self, frame) -> None:
         """Remove all widgets from a frame."""
@@ -3098,13 +3340,20 @@ class PyEnvStudio(ctk.CTk):
             status_label.configure(text="Searching GitHub community templates...")
             render_results()
 
+            # Read Tk variables on the main thread before handing work to the
+            # worker: touching tkinter off-thread is undefined behaviour.
+            query = query_var.get()
+            category = category_var.get()
+            sort = sort_var.get()
+            page = state["page"]
+
             def task() -> None:
                 try:
                     found = self.community_template_service.search(
-                        query=query_var.get(),
-                        category=category_var.get(),
-                        sort=sort_var.get(),
-                        page=state["page"],
+                        query=query,
+                        category=category,
+                        sort=sort,
+                        page=page,
                     )
                     state["found"] = found
                 except Exception as exc:
@@ -4160,7 +4409,11 @@ class PyEnvStudio(ctk.CTk):
             logging.info("✓ Executed on_app_shutdown hook for all plugins")
         except Exception as e:
             logging.error(f"Error executing on_app_shutdown hook: {e}")
-        
+
+        # Cancel queued background work; in-flight tasks finish so pip/venv
+        # operations are not interrupted mid-write.
+        shutdown_background_tasks()
+
         self.destroy()
 
 # ===== RUN APP =====

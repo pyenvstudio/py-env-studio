@@ -1,8 +1,6 @@
 import json
 import logging
-import queue
 import re
-import threading
 import webbrowser
 import customtkinter as ctk
 from tkinter import messagebox, ttk
@@ -14,6 +12,7 @@ from .version_utils import version_key, vuln_status
 from .db_status import ensure_vulnerability_statuses, mark_package_fixed
 from .app_icon import schedule_window_icon
 from py_env_studio.core.package_manager import install_package
+from py_env_studio.ui.ui_tasks import run_in_background
 
 # Set customtkinter appearance
 ctk.set_appearance_mode("dark")
@@ -49,7 +48,9 @@ class VulnerabilityInsightsApp:
         self.current_vuln = None
         self.current_update_button = None
         self._updating = False
-        self._update_queue = queue.Queue()
+        # Set once the dashboard window is gone; completion handlers that were
+        # already queued must not touch destroyed widgets or pop dialogs.
+        self._closed = False
 
         # Precompute packages map once
         self.packages_map = self._packages_map()
@@ -69,6 +70,7 @@ class VulnerabilityInsightsApp:
     # ---------------------- Core Methods ----------------------
 
     def _on_close(self):
+        self._closed = True
         self.root.quit()
         self.root.destroy()
 
@@ -488,40 +490,21 @@ class VulnerabilityInsightsApp:
         self.update_status_label.configure(
             text=f"Upgrading {package} to {target}..."
         )
-        threading.Thread(
-            target=self._do_update,
-            args=(package, target, btn),
-            daemon=True,
-        ).start()
-        self.root.after(100, self._poll_update_result)
-
-    def _do_update(self, package, target, btn=None):
-        # Runs in a worker thread: NEVER touch tkinter here.
-        try:
-            install_package(
+        # The blocking pip install runs on the shared worker pool; on_done /
+        # on_error are marshalled back onto the Tk main thread by
+        # run_in_background, so no polling loop is needed.
+        run_in_background(
+            lambda: install_package(
                 self.env_name,
                 f"{package}=={target}",
                 log_callback=lambda msg: None,
-            )
-            self._update_queue.put(("single_success", (btn, package, target)))
-        except Exception as e:
-            self._update_queue.put(("single_failure", (btn, package, target, str(e))))
-
-    def _poll_update_result(self):
-        """Main-thread poller that reads the worker thread's result safely."""
-        if not self._updating:
-            return
-        try:
-            outcome, payload = self._update_queue.get_nowait()
-        except queue.Empty:
-            self.root.after(100, self._poll_update_result)
-            return
-        if outcome == "single_success":
-            self._on_update_success(*payload)
-        elif outcome == "single_failure":
-            self._on_update_failure(*payload)
-        elif outcome == "upgrade_all_done":
-            self._on_upgrade_all_done(*payload)
+            ),
+            ui=self.root,
+            on_done=lambda _result: self._on_update_success(btn, package, target),
+            on_error=lambda exc: self._on_update_failure(
+                btn, package, target, str(exc)
+            ),
+        )
 
     def _configure_embedded_buttons(self, text, state):
         """Update every live embedded 'Update Now' button instance."""
@@ -536,6 +519,8 @@ class VulnerabilityInsightsApp:
                 pass
 
     def _on_update_success(self, btn, package, target):
+        if self._closed:
+            return
         self._updating = False
         self._configure_embedded_buttons("✓ Updated", "disabled")
         self.current_vuln = None
@@ -557,6 +542,8 @@ class VulnerabilityInsightsApp:
         self._refresh_from_db()
 
     def _on_update_failure(self, btn, package, target, error):
+        if self._closed:
+            return
         self._updating = False
         self._configure_embedded_buttons("Update Now", "normal")
         self.update_status_label.configure(
@@ -623,15 +610,17 @@ class VulnerabilityInsightsApp:
         self.update_status_label.configure(
             text=f"Upgrading {len(plan)} package(s) to recommended versions..."
         )
-        threading.Thread(
-            target=self._do_upgrade_all,
-            args=(plan,),
-            daemon=True,
-        ).start()
-        self.root.after(100, self._poll_update_result)
+        # All blocking pip installs run off the Tk thread; results come back
+        # through the marshalled on_done / on_error handlers.
+        run_in_background(
+            lambda: self._do_upgrade_all(plan),
+            ui=self.root,
+            on_done=lambda result: self._on_upgrade_all_done(*result),
+            on_error=self._on_upgrade_all_error,
+        )
 
     def _do_upgrade_all(self, plan):
-        # Runs in a worker thread: NEVER touch tkinter here.
+        # Runs on a worker thread: NEVER touch tkinter here.
         successful, failed = [], []
         for package, target in plan.items():
             try:
@@ -643,9 +632,11 @@ class VulnerabilityInsightsApp:
                 successful.append((package, target))
             except Exception as e:
                 failed.append((package, target, str(e)))
-        self._update_queue.put(("upgrade_all_done", (successful, failed)))
+        return successful, failed
 
     def _on_upgrade_all_done(self, successful, failed):
+        if self._closed:
+            return
         self._updating = False
         parts = []
         if successful:
@@ -674,6 +665,15 @@ class VulnerabilityInsightsApp:
             except Exception as e:
                 logging.warning(f"Failed to persist fixed status for {package}: {e}")
         self._refresh_from_db()
+
+    def _on_upgrade_all_error(self, error):
+        """Surface an unexpected failure from the upgrade-all worker task."""
+        if self._closed:
+            return
+        self._updating = False
+        self.update_status_label.configure(text=f"Upgrade failed — {error}")
+        self._refresh_upgrade_all_button()
+        messagebox.showerror("Upgrade Failed", f"Upgrading packages failed:\n\n{error}")
 
     def _refresh_from_db(self):
         """Reload the latest scan data from the DB (e.g., after a successful

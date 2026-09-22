@@ -212,7 +212,8 @@ class ConfigurationService:
         if preferences.default_package_manager == "uv":
             from . import uv_tools
 
-            if not uv_tools.is_uv_installed():
+            # Fresh probe: the user may have installed uv since the last check.
+            if not uv_tools.is_uv_installed(refresh=True):
                 raise ConfigurationError("Selected package manager 'uv' is not installed.")
 
         if preferences.appearance_mode not in self.SUPPORTED_APPEARANCE_MODES:

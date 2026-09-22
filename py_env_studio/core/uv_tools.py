@@ -8,12 +8,14 @@ Documentation: https://docs.astral.sh/uv/
 
 import subprocess
 import logging
+import time
 from typing import List, Tuple, Optional
 import json
 import re
 import os
 from pathlib import Path
 from . import auto_resolve
+from . import tool_probe
 
 logger = logging.getLogger(__name__)
 
@@ -37,12 +39,22 @@ def _get_venv_dir_from_python_path(python_path: str) -> str:
     return str(venv_dir)
 
 
-def is_uv_installed() -> bool:
+def is_uv_installed(refresh: bool = False) -> bool:
     """Check if uv is installed on the system.
-    
+
+    Spawns ``uv --version`` (5s timeout), so the answer is memoised for a
+    short window — it is probed once per environment row otherwise.
+
+    Args:
+        refresh: Bypass the cache and probe again.
+
     Returns:
         True if uv is installed, False otherwise
     """
+    return tool_probe.probe("uv.installed", _probe_uv_installed, refresh=refresh)
+
+
+def _probe_uv_installed() -> bool:
     try:
         result = subprocess.run(
             ["uv", "--version"],
@@ -55,12 +67,19 @@ def is_uv_installed() -> bool:
         return False
 
 
-def get_uv_version() -> Optional[str]:
-    """Get the installed uv version.
-    
+def get_uv_version(refresh: bool = False) -> Optional[str]:
+    """Get the installed uv version (cached probe, see :func:`is_uv_installed`).
+
+    Args:
+        refresh: Bypass the cache and probe again.
+
     Returns:
         Version string (e.g., "0.9.0") or None if uv not installed
     """
+    return tool_probe.probe("uv.version", _probe_uv_version, refresh=refresh)
+
+
+def _probe_uv_version() -> Optional[str]:
     try:
         result = subprocess.run(
             ["uv", "--version"],

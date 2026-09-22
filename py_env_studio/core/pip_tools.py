@@ -4,13 +4,24 @@ import logging
 import re
 from .env_manager import get_env_python
 from . import auto_resolve
+from . import tool_probe
 
-def get_pip_version() -> str:
+def get_pip_version(refresh: bool = False) -> str:
     """Get the version of pip installed on the system.
-    
+
+    Spawns ``pip --version`` (5s timeout), so the result is memoised — it is
+    otherwise probed once per environment row on every table refresh.
+
+    Args:
+        refresh: Bypass the cache and probe again.
+
     Returns:
         Version string (e.g., "25.5") or empty string if pip not available
     """
+    return tool_probe.probe("pip.version", _probe_pip_version, refresh=refresh)
+
+
+def _probe_pip_version() -> str:
     try:
         result = subprocess.run(
             ["pip", "--version"],

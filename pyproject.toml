@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "py-env-studio"
 version = "2.0.8"
 description = "A comprehensive cross-platform GUI and CLI tool for managing Python virtual environments and packages with advanced features including environment lifecycle management, package operations, vulnerability scanning, security insights, Py-Tonic interactive learning mode, and an extensible plugin system for custom functionality."
-requires-python = ">=3.7"
+requires-python = ">=3.12"
 authors = [
     { name = "Py Env Studio Team", email = "contact.shaikh.wasim@gmail.com" }
 ]
@@ -43,10 +43,6 @@ classifiers = [
     "Intended Audience :: System Administrators",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",

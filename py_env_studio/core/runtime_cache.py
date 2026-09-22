@@ -421,11 +421,27 @@ class RuntimeCache:
         provider_name: str = _PROVIDER_DEFAULT,
         *,
         on_refreshed: Callable[[RuntimeOverview], None] | None = None,
+        dispatcher: Callable[[Callable[[], None]], object] | None = None,
     ) -> RuntimeOverview:
         """Return stale cache immediately; refresh expired cache in background.
 
         Used by the UI thread so opening Configuration never blocks on the
         network (spec sections 7/14).
+
+        Threading contract: the background refresh runs on a worker thread, so
+        ``on_refreshed`` is invoked **off the Tk main thread** and must not
+        touch widgets directly.  UI callers pass ``dispatcher`` — a callable
+        that schedules a zero-argument callback on the main thread, e.g.
+        ``lambda cb: post_to_ui(self, cb)`` — and the fresh overview is
+        delivered through it::
+
+            cache.get_overview_stale_while_revalidate(
+                on_refreshed=self._apply_overview,
+                dispatcher=lambda cb: post_to_ui(self, cb),
+            )
+
+        Without a dispatcher the callback runs on the worker thread, which is
+        only appropriate for non-UI consumers (CLI/MCP).
         """
         import threading
 
@@ -437,6 +453,13 @@ class RuntimeCache:
         # when cache was missing entirely (unavoidable single query).
         if overview.cache_present and overview.stale and on_refreshed is not None:
             prov = provider
+            cb = on_refreshed
+
+            def _deliver(fresh: RuntimeOverview) -> None:
+                if dispatcher is None:
+                    cb(fresh)
+                else:
+                    dispatcher(lambda: cb(fresh))
 
             def _bg() -> None:
                 try:
@@ -445,7 +468,7 @@ class RuntimeCache:
                     LOGGER.debug("Background metadata refresh failed: %s", exc)
                     return
                 try:
-                    on_refreshed(fresh)
+                    _deliver(fresh)
                 except Exception:
                     LOGGER.debug("Refresh callback failed", exc_info=True)
 
