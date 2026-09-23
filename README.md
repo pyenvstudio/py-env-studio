@@ -249,6 +249,7 @@ This project uses public APIs for core features:
 | PyPI | Package metadata | [pypi.org](https://pypi.org) |
 | deps.dev | Dependency data | [deps.dev](https://deps.dev) |
 | OSV.dev | Vulnerability info | [osv.dev](https://osv.dev) |
+| Github | Community templates | [github.com](https://github.com) |
 
 Ensure HTTPS access to these domains.  
 APIs are public, read-only, no auth required.  
