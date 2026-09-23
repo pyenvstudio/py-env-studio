@@ -160,6 +160,9 @@ If you find **Py Env Studio** helpful, consider supporting me:
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20me-ff5e5b?logo=ko-fi&logoColor=white&style=for-the-badge)](https://ko-fi.com/contactshaikhwasim)
 [![PayPal](https://img.shields.io/badge/Donate-PayPal-blue?logo=paypal&style=for-the-badge)](https://www.paypal.me/paypalwasimshaikh)
 
+<p align="center">
+  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/bmc-qr-code.png?raw=true" alt="Buy Me a Coffee QR Code" width="200">
+</p>
 
 ---
 
@@ -182,13 +185,21 @@ The same aliases apply to every CLI command shown in the documentation
 
 Refer usage documentation here: https://py-env-studio.readthedocs.io/en/latest/
 
+## 📸 Screenshots
+
 <p align="center">
   <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/1.environment-screen.PNG?raw=true" alt="Environment Screen" width="400">
-
-  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/plugin-screen.PNG?raw=true" alt="Plugin Screen" width="400">
+  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/1.1.more_options.PNG?raw=true" alt="Environment More Options" width="400"><br>
+  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/1.2.1_vulneribility_scan_report.PNG?raw=true" alt="Vulnerability Scan Report" width="400">
+  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/1.2.2_vulneribility_scan_report.PNG?raw=true" alt="Vulnerability Scan Report Details" width="400"><br>
+  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/1.2.3_vulneribility_scan_report.PNG?raw=true" alt="Vulnerability Scan Report Insights" width="400">
   <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/2.0.package-screen.PNG?raw=true" alt="Package Screen" width="400"><br>
-  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/1.2.1_vulneribility_scan_report.PNG?raw=true" alt="Package Screen" width="400">
-  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/1.2.2_vulneribility_scan_report.PNG?raw=true" alt="Package Screen" width="400">
+  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/2.1.package-screen.PNG?raw=true" alt="Package Screen Details" width="400">
+  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/plugin-screen.PNG?raw=true" alt="Plugin Screen" width="400"><br>
+  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/templates.PNG?raw=true" alt="Templates Screen" width="400">
+  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/python-manager.PNG?raw=true" alt="Python Manager Screen" width="400"><br>
+  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/configuration.PNG?raw=true" alt="Configuration Screen" width="400">
+  <img src="https://github.com/pyenvstudio/py-env-studio/blob/main/screenshots/3.about-sceeen.PNG?raw=true" alt="About Screen" width="400">
 </p>
 
 **📁 Project Structure**
