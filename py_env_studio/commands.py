@@ -293,7 +293,7 @@ SUBCOMMANDS = {
     },
     "mcp": {
         "function": handle_mcp,
-        "help": "Start the PES MCP server over stdio (local, read-only)",
+        "help": "Start the PES MCP server over stdio (BETA, local, read-only)",
     },
 }
 

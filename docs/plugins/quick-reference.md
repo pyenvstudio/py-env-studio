@@ -66,6 +66,9 @@ class MyPlugin(BasePlugin):
 - `on_app_shutdown`
 - `on_scan_complete`
 
+### Project templates
+- `after_template_created`
+
 ## Hook Context
 
 ```python
@@ -88,6 +91,14 @@ class MyPlugin(BasePlugin):
     "env_name": "my_env",
     "vulnerabilities": [...],
     "severity_counts": {...}
+}
+
+# Template created
+{
+    "template_id": "python-cli",
+    "project_path": "C:/work/my-cli",
+    "created_environment": "my-cli-env",
+    "dependencies": ["click"]
 }
 ```
 
@@ -195,8 +206,8 @@ result = plugin.execute("after_create_env", {"env_name": "test"})
 
 ## Resources
 
-- **Developer Guide**: `docs/development.md`
-- **Architecture**: `docs/architecture.md`
+- **Developer Guide**: `docs/plugins/development.md`
+- **Architecture**: `docs/plugins/architecture.md`
 - **Example Plugin**: `examples/sample_plugin/`
 - **API Reference**: `py_env_studio.core.plugins`
 

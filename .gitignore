@@ -151,7 +151,7 @@ venv.bak/
 # Rope project settings
 .ropeproject
 
-# mkdocs documentation
+# documentation build output (Sphinx / Read the Docs)
 /site
 
 # mypy

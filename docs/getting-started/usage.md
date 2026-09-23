@@ -7,9 +7,9 @@ This manual provides a comprehensive guide for using the Py Env Studio (PES) app
 ## Main Screen Overview
 
 The main screen consists:
-- **Side Bar** - Customize UI of PES tool 
 - **Environment Tab** - Manage Python virtual environments
 - **Package Tab** - Handle package installation and management
+- **Menu Bar** - File, View, Tools, Templates, and Help menus
 - **Status Bar** - Fixed strip below the tabs showing current activity
 - **Console** - On-screen log of task output
 
@@ -34,11 +34,6 @@ platform data directory) and, for warnings and errors, mirrored to the console
 at the bottom of the window.
 
 ---
-### Appearance Mode
-Customize the theme mode with Light mode, Dark mode, or System mode.
-
-### UI Scaling
-As per your screen size and your needs you can modify the font and view size. 
 
 ## Environment Tab
 
@@ -184,7 +179,9 @@ Displays detailed vulnerability and dependency information for packages:
    - **Dependencies** - Shows the dependency tree and relationships
    - **Basic Details** - Displays package metadata and basic information
    - **Scan Details** - *(enterprise level external tool integration option [Compliance/ Training/ Incident Response]Currently not implemented)*
-5. An interactive graph visualizes dependencies and vulnerabilities
+4. The dashboard also renders a severity breakdown and a package trend chart
+   natively (no external plotting dependency); the charts follow the active
+   appearance mode and show a placeholder when a package has no scan history.
 
 #### Remediate Vulnerabilities
 
@@ -214,6 +211,139 @@ Identifies outdated packages and enables batch updating:
    - **Ctrl + Click** to select multiple specific packages
    - **Ctrl + A** to select all packages
 4. Click **Update Selected** to upgrade the chosen packages to their latest versions.
+
+---
+
+#### Configuration (Tools → Configuration)
+
+The Configuration dialog is the single place to set persistent preferences.
+
+1. Go to **Menu → Tools → Configuration**.
+2. Set the values you need:
+   - **Default virtual environment path** - shown **read-only**: it displays
+     where new environments are created (`venv_dir` in the PES `config.ini`
+     in the platform user-data directory). To relocate environments, edit
+     `venv_dir` in that file directly; the dialog keeps the field read-only so
+     existing environments are never orphaned by a GUI edit.
+   - **Default Python / runtime** - preferred interpreter and runtime provider
+     (Python Install Manager, System, or Custom)
+   - **Default package manager** - `pip` or `uv` (unavailable managers are
+     rejected with a message)
+   - **Default project tool** and the **Open with** tool list
+   - **Template defaults** - create a virtual environment and/or initialize Git
+   - **Appearance mode** - Light, Dark, or System
+   - **UI scaling** - 80 % to 120 %
+3. Use **Apply** to preview the change, **Save** to persist it, **Cancel** to
+   discard, or **Reset** to restore defaults. Environment and runtime views
+   refresh after saving.
+
+Preferences are validated before they are written, and saved atomically to the
+PES `config.ini` in the platform user-data directory.
+
+---
+
+#### Plugins (Tools → Plugins)
+
+1. Go to **Menu → Tools → Plugins** to open the plugin manager.
+2. Place a plugin folder containing `plugin.json` in the PES plugins directory
+   (`~/.py_env_studio/plugins/<plugin_name>/`).
+3. Enable the plugin in the dialog; enablement is persisted across restarts.
+4. Startup and shutdown hooks run automatically, and plugin messages appear in
+   the console and the log file.
+
+Plugin code runs inside the PES process, so review a plugin's source before
+enabling it. See the [plugin overview](../plugins/index.md) and
+[plugin development guide](../plugins/development.md).
+
+---
+
+### Templates Menu
+
+The **Templates** menu creates new projects from reusable template definitions.
+
+#### Create a project from a template
+
+1. Go to **Menu → Templates** and pick **Python Script**, **Python CLI**, or
+   **Python Package**.
+2. In the wizard, fill in the fields:
+   - **Project Name** and **Project Location** (use **Browse** to pick a
+     directory)
+   - **Python Version**
+   - **Package Name** (optional, defaults to a sanitized project name),
+     **CLI Command Name** (optional), **Author** (optional), and **License**
+3. Review the **Template Preview** pane, which lists the files that will be
+   generated.
+4. Choose the optional steps: **Create Virtual Environment** and/or
+   **Initialize Git**.
+5. Select **Create Project**. Creation runs in the background (the window
+   minimizes while it works, and the status bar tracks progress); when it
+   finishes, PES reports success or failure and offers to open the project in
+   your preferred editor.
+
+#### Manage Templates
+
+1. Go to **Menu → Templates → Manage Templates**.
+2. Use **+ Add Template** to save a template from:
+   - **Local Project** - pick an existing project directory.
+   - **GitHub Repository** - paste a public repository URL; PES validates the
+     URL, clones it into a temporary directory, inspects it, and shows a
+     preview before saving.
+3. Review the detected metadata, adjust the template name/ID, and save.
+4. Imported templates appear under **My Templates** and can be used or deleted
+   like built-in templates.
+
+#### Community Templates
+
+1. Go to **Menu → Templates → Community Templates**.
+2. Search GitHub (`FastAPI`, `Django`, `CLI`, …), pick a category and sort
+   order, then choose **Search**.
+3. Use **Preview** to inspect a candidate (README excerpt, project structure,
+   dependency files, sensitive files that will be excluded) - nothing is
+   executed.
+4. Select **Import as Template**, name the template, and then use it through
+   the normal project creation wizard.
+
+See [Community Templates](../project-templates/community-templates.md) for the
+full safety model.
+
+---
+
+## Runtime-Managed Projects
+
+PES can own the Python environment of an existing project directory and run
+scripts inside it:
+
+1. Open a terminal in the project directory.
+2. Run `pes init` to create `pes.config` and the managed environment.
+3. Run `pes on` to enable runtime interception, or `pes off` to disable it.
+4. Run `pes status` to inspect the project and `pes list-projects` to list every
+   registered project.
+5. Run scripts with `pes run app.py --debug` (or simply `pes app.py --debug`).
+
+Dynamic data (installed packages, scan results, sizes, timestamps) is never
+stored in `pes.config`; it stays in the runtime and the PES database.
+
+---
+
+## AI Coding Agents (MCP, Beta)
+
+🧪 **Beta.** PES can expose a local, read-only MCP server so an AI coding agent
+such as VS Code Copilot can read authoritative environment and project state
+instead of guessing it.
+
+1. Confirm the CLI works: `py-env-studio --list` (the aliases `pes --list` and
+   `pyenvstudio --list` are equivalent).
+2. Run `py-env-studio mcp` (or `pes mcp`) once from a terminal to verify
+   startup, then stop it with `Ctrl+C`.
+3. Register the server in your MCP client - for VS Code, either run
+   **MCP: Add Server** (stdio → `py-env-studio` → `mcp`) or create
+   `.vscode/mcp.json` with a `servers` entry.
+4. Start the server from **MCP: List Servers**, trust it, then enable the
+   `pyenv_*` tools in chat.
+
+MCP is read-only, stdio-only, and never triggers a network scan. Full steps,
+client snippets, tunable settings, and troubleshooting are in the
+[MCP reference](../reference/mcp.md).
 
 ---
 
@@ -250,6 +380,20 @@ Identifies outdated packages and enables batch updating:
 1. Select environment
 2. Export Packages (File → Export Packages)
 3. Share the generated requirements.txt file
+
+**Bootstrapping a New Project from a Template:**
+1. Templates → Python Script / CLI / Package (or Community Templates)
+2. Fill in the wizard, preview the files, and choose the optional venv/Git steps
+3. Open the generated project in your preferred editor
+
+**Connecting an AI Coding Agent (Beta):**
+1. Check `py-env-studio --list` works (aliases: `pes`, `pyenvstudio`)
+2. Register `py-env-studio mcp` (or `pes mcp`) as a stdio MCP server in your client
+3. Start and trust the server, then enable the `pyenv_*` tools in chat
+
+**Keeping PES Current:**
+1. `pip install --upgrade py-env-studio`
+2. Tools → Configuration to review defaults after an upgrade
 
 ---
 

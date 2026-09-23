@@ -10,12 +10,20 @@ flowchart TB
     Commands --> Env
     Commands --> Packages
     Commands --> Runtime
+    Commands --> McpServer[core.mcp: beta read-only stdio server]
+    Agent[MCP client: VS Code Copilot or other agent] --> McpServer
+    McpServer --> Env
+    McpServer --> Packages
+    McpServer --> Runtime
+    McpServer --> Intelligence[project_intelligence: aggregate project report]
+    McpServer --> SecurityCache[(SQLite cached vulnerabilities)]
     UI --> Env
     UI --> Packages
     UI --> Templates
     UI --> Config
     UI --> Plugins
     UI --> Learning
+    UI --> StatusBar[ui/status_bar.py: activity and progress gauge]
 
     subgraph Core[Core services]
         Env[env_manager: environment lifecycle and launch]
@@ -72,12 +80,18 @@ flowchart TB
 | `py_env_studio.core.configuration` and `runtime` | Load, validate, and persist preferences and determine application data paths. |
 | `py_env_studio.core.plugins` | Discovers plugins, persists enablement, loads plugin classes, and dispatches lifecycle hooks. |
 | `py_env_studio.utils.vulneribility_scanner` | Aggregates package, dependency, and vulnerability information from external public APIs. |
-| `py_env_studio.utils.vulneribility_insights` | Presents stored scan data as an interactive vulnerability report. |
+| `py_env_studio.utils.vulneribility_insights` | Presents stored scan data as an interactive vulnerability report, including native `tkinter-dash` charts and remediation actions. |
+| `py_env_studio.ui.status_bar` | Fixed status strip between the tabs and the console with the activity text and the progress gauge. |
+| `py_env_studio.core.mcp` | Beta, read-only MCP control plane: JSON-RPC dispatcher plus stdio runner and thin tool adapters over the core services. |
+| `py_env_studio.core.project_intelligence` | Aggregates project, environment, package, dependency, outdated, and cached security state into one factual report. |
+| `py_env_studio.core.project_contract` | Loads, saves, resolves, and structurally validates the portable `pes.config` project contract. |
+| `py_env_studio.core.runtime_providers` | Python runtime provider layer (official Python Install Manager, System, Custom) with a metadata cache. |
 
 ## Persistence and integrations
 
 - The startup bootstrap ensures application setup state and the SQLite database are ready before GUI or CLI work begins.
 - Environment metadata and preferences are stored under the application runtime data location resolved by the configuration service.
-- Runtime-managed projects use a project-local `pes.config` plus a global JSON registry.
+- Runtime-managed projects use a project-local `pes.config` plus a global JSON registry; the registered contract state is mirrored into the `project_contract` table.
 - Template, plugin, and Py-Tonic data are persisted separately in their respective managed storage locations.
 - Package and security workflows use local virtual environments plus public PyPI, deps.dev, and OSV services.
+- The beta MCP server adds no persistence of its own: it reads existing services, the SQLite cache, and project metadata over local stdio. See [MCP](mcp.md).

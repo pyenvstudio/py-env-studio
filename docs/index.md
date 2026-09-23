@@ -18,8 +18,10 @@ It makes managing **virtual environments and packages effortless**, without need
 ## ✨ Highlights
 - One-click **create, activate, delete environments**
 - Built-in **package manager** (install, update, remove)
-- **Security scanner** with insights dashboard
+- **Security scanner** with insights dashboard and one-click remediation
 - Launch environments in **CMD, VSCode, PyCharm**
+- Project **templates** and GitHub **Community Templates**
+- 🧪 **Beta:** local, read-only **MCP control plane** for AI coding agents
 - Cross-platform: **Windows, Linux, macOS**
 
 👉 Explore the docs using the sidebar.
@@ -40,6 +42,7 @@ maxdepth: 2
 caption: Reference
 ---
 reference/current-implementation
+reference/mcp
 reference/architecture
 ```
 
@@ -77,5 +80,6 @@ plugins/quick-reference
 maxdepth: 2
 caption: Releases
 ---
+releases/v2.1.0
 releases/v2.0.8
 ```

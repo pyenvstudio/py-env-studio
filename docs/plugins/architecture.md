@@ -219,6 +219,9 @@ class PluginMetadata:
 - `on_app_shutdown`
 - `on_scan_complete`
 
+#### Project Template Hooks
+- `after_template_created` (fires once per successfully created template project)
+
 ### Hook Context
 
 Each hook provides context-specific data:

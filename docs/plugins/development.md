@@ -127,6 +127,12 @@ Plugins can subscribe to the following hooks:
 - `on_app_shutdown`: On application shutdown
 - `on_scan_complete`: After vulnerability scan completes
 
+### Project Template Hooks
+- `after_template_created`: After a project is created from a template
+
+`PluginHook` declares 18 hooks in total. A plugin only receives the hooks it
+lists in its manifest `hooks` array.
+
 ## Hook Context
 
 Each hook receives a `context` dictionary with relevant data:
@@ -151,6 +157,14 @@ Each hook receives a `context` dictionary with relevant data:
     "env_name": "my_env",
     "vulnerabilities": [...],
     "severity_counts": {"critical": 0, "high": 1, ...}
+}
+
+# after_template_created context
+{
+    "template_id": "python-cli",
+    "project_path": "C:/work/my-cli",
+    "created_environment": "my-cli-env",
+    "dependencies": ["click"]
 }
 ```
 

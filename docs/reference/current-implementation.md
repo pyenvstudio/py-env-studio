@@ -6,6 +6,12 @@
 >
 > Py Env Studio provides a desktop GUI and command-line interface for managing
 > Python environments, packages, projects, and related developer workflows.
+>
+> **Current release: v2.1.0.** New in this release: project templates and
+> Community Templates, the configuration center, official Python Install
+> Manager runtime integration, dashboard remediation actions, native chart
+> widgets, informative CLI/GUI progress, and the **beta** MCP control plane for
+> AI coding agents. See the [v2.1.0 release notes](../releases/v2.1.0.md).
 
 ## 1. Virtual Environment Management
 
@@ -205,6 +211,11 @@ refreshes the scan data when the operation finishes. Remediation actions
 are disabled when no fixed version is available or the installed package
 version already satisfies the recommended fix.
 
+Severity breakdown and trend charts are rendered with native `tkinter-dash`
+widgets (`BarChart` / `LineChart`) directly in the CustomTkinter dashboard,
+follow the active appearance mode, and show a placeholder label when a
+package has no scan history. `matplotlib` is no longer a dependency.
+
 Conceptual flow:
 
 ``` text
@@ -268,7 +279,13 @@ Application hooks include:
 -   `on_app_shutdown`
 -   `on_scan_complete`
 
-Plugins can also handle template creation completion.
+Project template hooks include:
+
+-   `after_template_created` (emitted after a template project is created
+    successfully, with project and template context)
+
+The `PluginHook` enumeration declares all 18 hooks; plugin manifests may
+subscribe to any of them through their `hooks` list.
 
 ------------------------------------------------------------------------
 
@@ -510,7 +527,14 @@ Core environment and requirements operations use the flag form
 [args...]` runs a script in its managed environment, `pes status` and
 `pes list-projects` inspect the current and all registered projects,
 and `pes mcp` starts the local read-only MCP control plane over stdio
-for AI clients (see section 25 below).
+for AI clients (beta — see section 25 below and
+[the MCP reference](mcp.md)).
+
+The CLI shares common output controls (`-v`/`--verbose`, `-q`/`--quiet`,
+`--no-progress`, plus `PES_LOG_LEVEL`, `PES_NO_PROGRESS`, and `PES_PROGRESS`)
+and draws a single-line progress gauge on stderr for long-running commands when
+stderr is a TTY. Failures print one `ERROR <component>: …` line on stderr and
+exit with status `1`; the full traceback stays in the rotating log file.
 
 This gives the GUI and CLI complementary workflows.
 
@@ -521,7 +545,8 @@ This gives the GUI and CLI complementary workflows.
 The configuration service provides persistent application preferences
 including:
 
--   Default virtual-environment path
+-   Default virtual-environment path (read-only in the configuration dialog;
+    change `venv_dir` in the PES `config.ini` instead)
 -   Default package manager
 -   Default Python
 -   Default project tool/editor
@@ -701,6 +726,8 @@ Python platforms and includes:
 
 -   Sidebar
 -   Tabs
+-   Status bar with a live activity gauge (determinate for known step counts,
+    marquee for unknown durations)
 -   Dark/Light/System appearance
 -   UI scaling
 -   Custom icons
@@ -710,7 +737,7 @@ Python platforms and includes:
 -   Template dialogs
 -   Community-template browser
 -   Plugin management
--   Vulnerability insights
+-   Vulnerability insights (with native severity/trend charts)
 -   Console/log output
 -   Notifications
 -   Async operations
@@ -773,7 +800,17 @@ Conceptual architecture:
 
 ------------------------------------------------------------------------
 
-## 25. MCP Control Plane for AI Agents
+## 25. MCP Control Plane for AI Agents (Beta)
+
+```{admonition} Beta feature
+:class: warning
+
+MCP support is **beta**. It is read-only, stdio-only and local-first: no tool
+mutates environments, packages or projects, and no MCP call performs a network
+request. Tool names, schemas and response envelopes can change until the
+interface is declared stable. Setup steps for VS Code and other clients are in
+[the MCP reference](mcp.md).
+```
 
 Py Env Studio exposes a local, read-only MCP server so AI coding agents
 (such as VS Code Copilot) can consume authoritative environment,
@@ -801,7 +838,9 @@ py-env-studio mcp        # stdio transport, no GUI, no network required
 ```
 
 Configure VS Code Copilot (or any MCP client) to launch that command over
-stdio. Defaults favour `local / stdio / read-only`:
+stdio — the ready-to-paste client configuration, trust steps and
+troubleshooting are in [the MCP reference](mcp.md). Defaults favour
+`local / stdio / read-only`:
 
 | Setting (`config.ini [mcp]`) | Default |
 |---|---|
@@ -812,7 +851,7 @@ stdio. Defaults favour `local / stdio / read-only`:
 
 Logs always go to **stderr** — stdout is reserved for MCP protocol traffic.
 
-### Phase 1 tools (read-only)
+### Beta toolset (read-only)
 
 | Tool | Input | Source service |
 |---|---|---|
@@ -871,8 +910,10 @@ layer can share the same core services:
    AI Agent    IDE
 ```
 
-Phase 2 mutation tools (`install_package`, `create_environment`, …) are
-intentionally absent; the registry test asserts no such capability exists.
+Mutation tools (`install_package`, `create_environment`, …) are intentionally
+absent from the beta; the registry test asserts that no such capability exists.
+A future release can add them behind explicit opt-in once the read-only surface
+is stable.
 
 ------------------------------------------------------------------------
 
@@ -975,6 +1016,7 @@ It combines several major areas:
                     PyManager
                     Project runtime
                     CLI
+                    MCP (beta, read-only)
 ```
 
 For the relationships between these components, see
@@ -999,6 +1041,8 @@ The substantial implementation areas are:
 13. PyTonic interactive Python learning
 14. SQLite persistence + migrations
 15. Official Python Install Manager integration
+16. Configuration service with validation and atomic writes
+17. Read-only MCP control plane + project intelligence (beta)
 
 These are backed by dedicated core modules, workflows, validation,
 persistence, and/or tests rather than being purely documentation-level

@@ -2402,13 +2402,18 @@ class PyEnvStudio(ctk.CTk):
         venv_row = ctk.CTkFrame(body, fg_color="transparent")
         venv_row.grid(row=4, column=1, padx=8, pady=6, sticky="ew")
         venv_row.grid_columnconfigure(0, weight=1)
-        self.entry(venv_row, var=default_venv_var, width=420).grid(row=0, column=0, padx=(0, 6), sticky="ew")
-        self.btn(
+        # Read-only: relocating the root from the dialog could orphan
+        # environments that already exist under the configured path.
+        # Change venv_dir in the PES config.ini instead.
+        self.entry(venv_row, var=default_venv_var, width=420, state="readonly").grid(
+            row=0, column=0, padx=(0, 6), sticky="ew"
+        )
+        self.lbl(
             venv_row,
-            "Browse",
-            lambda: default_venv_var.set(filedialog.askdirectory() or default_venv_var.get()),
-            width=90,
-        ).grid(row=0, column=1, padx=0, pady=0)
+            "Read-only — edit venv_dir in config.ini to change it",
+            font=("Segoe UI", 10),
+            text_color=self.theme.SECONDARY_COLOR,
+        ).grid(row=1, column=0, padx=2, pady=(2, 0), sticky="w")
 
         self.lbl(body, "Python", font=("Segoe UI", 14, "bold")).grid(row=5, column=0, columnspan=2, padx=8, pady=(14, 4), sticky="w")
         self.lbl(body, "Explicit Interpreter Override:", font=self.theme.FONT_BOLD).grid(row=6, column=0, padx=8, pady=6, sticky="w")

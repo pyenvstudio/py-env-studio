@@ -38,6 +38,9 @@ class PluginHook(str, Enum):
     ON_APP_SHUTDOWN = "on_app_shutdown"
     ON_SCAN_COMPLETE = "on_scan_complete"
 
+    # Project template hooks
+    AFTER_TEMPLATE_CREATED = "after_template_created"
+
 
 @dataclass
 class PluginMetadata:

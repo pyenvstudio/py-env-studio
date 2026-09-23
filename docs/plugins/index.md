@@ -86,12 +86,14 @@ This index helps you navigate the PyEnvStudio Plugin System documentation and co
 
 ### Documentation Files
 ```
-docs/
+docs/plugins/
 ├── development.md       # ⭐ Start here for plugin creation
-├── architecture.md     # Technical deep-dive
+├── architecture.md      # Technical deep-dive
 ├── quick-reference.md   # Quick lookup tables
-├── PLUGIN_SYSTEM_SUMMARY.md    # Implementation overview
-└── index.md (this file)
+└── index.md             # This index
+
+.github/agent-context/archive/changelogs/14Feb2026/
+└── PLUGIN_SYSTEM_SUMMARY.md    # Historical implementation overview
 
 examples/
 └── sample_plugin/
@@ -220,6 +222,13 @@ class PluginManager:
 - `on_app_start`
 - `on_app_shutdown`
 - `on_scan_complete`
+
+### Project Template Hooks
+- `after_template_created` — fired after a template project is created
+  successfully, with `template_id`, `project_path`, `created_environment`, and
+  `dependencies` in the context
+
+The `PluginHook` enumeration declares all 18 hooks.
 
 **See**: [Architecture - Hook System](architecture.md#hook-system)
 
@@ -350,7 +359,7 @@ The PyEnvStudio Plugin System provides:
 
 ✅ **Complete Framework** - Base classes, manager, exceptions  
 ✅ **User Interface** - Tools > Plugins menu for management  
-✅ **17 Hooks** - Cover all major operations  
+✅ **18 Hooks** - Cover all major operations including template creation  
 ✅ **Example Plugin** - Working code to learn from  
 ✅ **Comprehensive Docs** - 3 documents + quick reference  
 ✅ **Design Patterns** - Factory, Observer, Strategy, Template Method  
@@ -361,6 +370,6 @@ The PyEnvStudio Plugin System provides:
 
 ---
 
-**Version**: 1.0.0  
-**Last Updated**: February 14, 2026  
+**Version**: 1.1.0  
+**Last Updated**: September 23, 2026  
 **Status**: Production Ready ✅

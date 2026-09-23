@@ -29,6 +29,29 @@ Perfect for:
 
 ---
 
+## 🆕 What's new in v2.1.0
+
+- 🧪 **MCP control plane (beta)** — a local, read-only MCP server lets AI coding
+  agents (VS Code Copilot and other MCP clients) read authoritative
+  environment, package, dependency, security, and project state.
+  → [Setup steps](docs/reference/mcp.md)
+- 🧩 **Project templates** — built-in Python Script / CLI / Package templates,
+  your own templates from a local folder or GitHub, and GitHub
+  **Community Templates** discovery.
+- ⚙️ **Configuration center** (Tools → Configuration) — default venv path,
+  interpreter/runtime, package manager, project tool, template defaults,
+  appearance, and UI scaling in one validated dialog.
+- 🐍 **Official Python Install Manager integration** — detect, list, install,
+  and select official runtimes, with System/Custom providers alongside.
+- 🛡️ **Remediate from the dashboard** — `Update Now` per vulnerability and
+  `Upgrade all Packages` per environment, with partial-failure reporting.
+- 📊 **Native dashboard charts** (`tkinter-dash`, no matplotlib), 📶 a CLI
+  progress gauge and GUI status gauge, and consistent application icons.
+
+→ [Full v2.1.0 release notes](docs/releases/v2.1.0.md)
+
+---
+
 ## 🌟 GUI Key Features
 
 - ➕ Create and delete virtual environments
@@ -77,12 +100,12 @@ Perfect for:
 
 PyEnvStudio now features a powerful plugin system that allows developers to extend functionality:
 
-- **17 Available Hooks** - Respond to environment and package operations
+- **18 Available Hooks** - Respond to environment, package, application, and template operations
 - **State Management** - Plugins persist across application restarts
 - **Easy Development** - Simple plugin API with lifecycle management
 - **Examples Included** - Full working sample plugin with documentation
 
-See the [v2.0.8 release notes](docs/releases/v2.0.8.md) and the [plugin development guide](docs/plugins/development.md).
+See the [v2.1.0 release notes](docs/releases/v2.1.0.md) and the [plugin development guide](docs/plugins/development.md).
 
 ### Additional implemented capabilities
 
@@ -90,10 +113,14 @@ See the [v2.0.8 release notes](docs/releases/v2.0.8.md) and the [plugin developm
 - Dependency-impact preview and AutoResolver install recovery
 - Project templates, reusable local/GitHub templates, and guided project creation
 - Runtime-managed projects through `pes init`, `pes on`, `pes off`, and `pes run`
-- Persisted configuration for default paths, interpreters, tools, themes, scaling, and template defaults
+- Persisted configuration for default paths, interpreters, tools, package manager, themes, scaling, template defaults, and runtime provider
 - Py-Tonic learning challenges and profile-based notifications
+- GitHub Community Templates discovery with static preview before import
+- Vulnerability remediation (`Update Now`, `Upgrade all Packages`) with native dashboard charts
+- Informative CLI progress gauge plus `-v` / `-q` / `--no-progress` output controls
+- 🧪 **Beta:** a local, read-only **MCP control plane** for AI coding agents
 
-See [the complete feature reference](docs/reference/current-implementation.md) and [the architecture overview](docs/reference/architecture.md).
+See [the complete feature reference](docs/reference/current-implementation.md), [the architecture overview](docs/reference/architecture.md), and the [MCP reference (beta)](docs/reference/mcp.md).
 
 ### 🛠️ Self-Healing Install System (AutoResolver)
 
@@ -105,6 +132,24 @@ PES now includes **AutoResolver**, a self-healing install system for pip/uv work
 - No other major Python tool (pip, uv, poetry, hatch, pixi) does this natively
 
 Because when installs stop breaking, **PES finally means peace.🤗**
+
+## 🧪 MCP Control Plane (Beta)
+
+Py Env Studio can expose a **local, read-only MCP server** so AI coding agents
+(Copilot or any MCP client) consume authoritative Python environment state
+instead of guessing it. PES is the infrastructure, not the model.
+
+```bash
+py-env-studio mcp        # stdio transport, no GUI, no network required
+```
+
+- **Read-only beta** — 8 tools covering environments, packages, dependencies,
+  cached vulnerabilities, project context, and one aggregate project report.
+- **Local-first** — stdio only, no ports, no network calls from MCP.
+- **Opt-out** — set `enabled = false` in the `[mcp]` section of `config.ini`.
+
+Setup steps for VS Code, portable client configs, the tool list, and
+troubleshooting: [docs/reference/mcp.md](docs/reference/mcp.md).
 
 ## ☕ Support  
 
@@ -132,6 +177,9 @@ You can also launch the same utility with these aliases:
     pyenvstudio
     pes
 
+The same aliases apply to every CLI command shown in the documentation
+(`pes --list`, `pes mcp`, `pyenvstudio init`, …).
+
 Refer usage documentation here: https://py-env-studio.readthedocs.io/en/latest/
 
 <p align="center">
@@ -145,28 +193,40 @@ Refer usage documentation here: https://py-env-studio.readthedocs.io/en/latest/
 
 **📁 Project Structure**
 
-    py-env-studio/
+    py_env_studio/
     ├── __init__.py
-    ├──resources
+    ├── commands.py                 # CLI flags, subcommands, output controls
+    ├── config.ini                  # packaged defaults (version, settings, [mcp])
+    ├── main.py                     # application entry helpers
     ├── core/
-    │   ├── __init__.py
-    │   ├── env_manager.py
-    │   └── pip_tools.py
+    │   ├── env_manager.py          # environment lifecycle and metadata
+    │   ├── package_manager.py      # unified pip/uv routing
+    │   ├── pip_tools.py / uv_tools.py
+    │   ├── auto_resolve.py         # dependency-conflict recovery
+    │   ├── dependency_preview.py   # pre-install impact analysis
+    │   ├── configuration.py        # preferences service
+    │   ├── runtime_toggle.py       # managed project runtime (pes.config)
+    │   ├── runtime_providers.py    # Python Install Manager / System / Custom
+    │   ├── project_intelligence.py # aggregate project report
+    │   ├── project_contract.py     # pes.config contract service
+    │   ├── database.py + schema/   # SQLite manager and SQL templates
+    │   ├── mcp/                    # beta read-only MCP server (stdio)
+    │   ├── plugins/                # plugin framework and hooks
+    │   └── templates/              # template engine, registry, user store
     ├── utils/
-    │   ├── __init__.py
     │   ├── handlers.py
-    │   └── vulneribility_scanner.py
-    │   └── vulneribility_insights.py  
+    │   ├── vulneribility_scanner.py
+    │   ├── vulneribility_insights.py
+    │   ├── app_logging.py / progress.py
+    │   └── version_utils.py
     ├── ui/
-    │   ├── __init__.py
-    │   └── main_window.py
-    └── static/
-        └── icons/
-    ├── main.py
-    ├── config.ini
-    ├── requirements.txt
-    ├── README.md
-    └── pyproject.toml
+    │   ├── main_window.py          # CustomTkinter application
+    │   ├── status_bar.py           # activity text + progress gauge
+    │   ├── ui_tasks.py             # background task helpers
+    │   └── static/icons/
+    └── main.py
+
+    docs/ · examples/ · tests/ · pyproject.toml · README.md
 
 **🚀 Roadmap**
 

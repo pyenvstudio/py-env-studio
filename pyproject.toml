@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "py-env-studio"
-version = "2.0.8"
-description = "A comprehensive cross-platform GUI and CLI tool for managing Python virtual environments and packages with advanced features including environment lifecycle management, package operations, vulnerability scanning, security insights, Py-Tonic interactive learning mode, and an extensible plugin system for custom functionality."
+version = "2.1.0"
+description = "A comprehensive cross-platform GUI and CLI tool for managing Python virtual environments and packages with advanced features including environment lifecycle management, package operations, vulnerability scanning, security insights, project templates, Py-Tonic interactive learning mode, an extensible plugin system for custom functionality, and a local read-only MCP control plane (beta) for AI coding agents."
 requires-python = ">=3.12"
 authors = [
     { name = "Py Env Studio Team", email = "contact.shaikh.wasim@gmail.com" }
 ]
-readme = "README.md"
+readme = "PYPI_README.md"
 license = { file = "LICENSE" }
 keywords = [
     "python",
