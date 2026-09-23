@@ -12,6 +12,7 @@ import logging
 from configparser import ConfigParser
 import queue
 import datetime
+import time
 import tkinter.ttk as ttk
 from pathlib import Path
 import tempfile
@@ -31,6 +32,8 @@ from py_env_studio.core.package_manager import (
     get_env_package_manager)
 from py_env_studio.ui.ui_tasks import (
     post_to_ui, run_in_background, shutdown_background_tasks)
+from py_env_studio.ui.status_bar import ProgressCoordinator
+from py_env_studio.utils.app_logging import configure_logging, resolve_verbosity
 from py_env_studio.core.py_tonic import (
     PY_TONIC_LEARNING_MODES,
     PY_TONIC_NOTIFICATION_MODES,
@@ -80,6 +83,9 @@ from py_env_studio.core.runtime_providers import (
     RuntimeProvider,
     get_runtime_provider,
 )
+
+logger = logging.getLogger(__name__)
+
 # ===== THEME & CONSTANTS =====
 class Theme:
     PADDING = 10
@@ -190,9 +196,12 @@ class MoreActionsDialog(ctk.CTkToplevel):
 
 
 class PyEnvStudio(ctk.CTk):
-    def __init__(self):
+    def __init__(self, verbosity: str | None = None):
         super().__init__()
         self.theme = Theme()
+        # Console log verbosity for this session ("debug"/"info"/...); the
+        # file log always keeps DEBUG regardless.
+        self.verbosity = verbosity
         self._setup_config()
         self._setup_vars()
         self._setup_window()
@@ -223,6 +232,11 @@ class PyEnvStudio(ctk.CTk):
         self.open_with_var = tkinter.StringVar(value=self.open_with_tools[0] if self.open_with_tools else "CMD")
         self.choosen_python_var = tkinter.StringVar()
         self.env_log_queue = queue.Queue()
+        # Thread-safe state for the fixed status-bar gauge; worker threads
+        # write, the Tk poll loop only reads snapshot().
+        self.progress = ProgressCoordinator()
+        self._status_render_key = None
+        self._runtime_install_token = None
         self.py_tonic_profile = load_py_tonic_profile()
         self.py_tonic_profile = save_py_tonic_profile(self.py_tonic_profile)
 
@@ -247,7 +261,7 @@ class PyEnvStudio(ctk.CTk):
                 myappid = 'pyenvstudio.application.1.0'
                 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
             except Exception as e:
-                logging.warning(f"Could not set Windows AppUserModelID: {e}")
+                logger.warning(f"Could not set Windows AppUserModelID: {e}")
 
         # Make every window created from now on (dialogs, plugin windows, the
         # Vulnerability Insights Dashboard, ...) use the Py Env Studio icon.
@@ -271,7 +285,15 @@ class PyEnvStudio(ctk.CTk):
 
 
     def _setup_logging(self):
-        # Initialize console logger with queue for UI display
+        # One shared setup writes to the rotating file (DEBUG), stderr
+        # (verbosity-driven) and the on-screen console (WARNING+ so pip output
+        # already shown through log_callback is never duplicated).
+        configure_logging(self.verbosity, ui_queue=self.env_log_queue)
+        logger.info(
+            "PyEnvStudio %s started (verbosity=%s)",
+            self.version,
+            resolve_verbosity(self.verbosity),
+        )
         # Debounced: the search box fires on every keystroke, and each refresh
         # spawns a worker task, so coalesce bursts into one refresh.
         self.env_search_var.trace_add('write', self._schedule_env_list_refresh)
@@ -312,19 +334,19 @@ class PyEnvStudio(ctk.CTk):
         
         # Discover plugins and auto-load only enabled ones
         discovered = self.plugin_manager.discover_plugins()
-        logging.info(f"Discovered {len(discovered)} plugins: {discovered}")
+        logger.info(f"Discovered {len(discovered)} plugins: {discovered}")
         
         # Get list of enabled plugins from saved state
         enabled_plugins = self.plugin_manager.get_enabled_plugins_list()
-        logging.info(f"Enabled plugins (from state): {enabled_plugins}")
+        logger.info(f"Enabled plugins (from state): {enabled_plugins}")
         
         # Auto-load only enabled plugins on startup
         for plugin_name in enabled_plugins:
             try:
                 self.plugin_manager.load_plugin(plugin_name)
-                logging.info(f"✓ Auto-loaded plugin: {plugin_name}")
+                logger.info(f"✓ Auto-loaded plugin: {plugin_name}")
             except Exception as e:
-                logging.error(f"✗ Failed to auto-load plugin '{plugin_name}': {e}")
+                logger.error(f"✗ Failed to auto-load plugin '{plugin_name}': {e}")
         
         # Execute on_app_start hook for all loaded plugins
         try:
@@ -332,9 +354,9 @@ class PyEnvStudio(ctk.CTk):
                 "app": self,
                 "version": self.version
             })
-            logging.info("✓ Executed on_app_start hook for all plugins")
+            logger.info("✓ Executed on_app_start hook for all plugins")
         except Exception as e:
-            logging.error(f"Error executing on_app_start hook: {e}")
+            logger.error(f"Error executing on_app_start hook: {e}")
 
     # ===== ICONS =====
     def _load_icons(self):
@@ -354,9 +376,126 @@ class PyEnvStudio(ctk.CTk):
         self._setup_menubar()
         self._setup_sidebar()
         self._setup_tabview()
+        self._setup_status_bar()
         self._setup_env_tab()
         self._setup_pkg_tab()
         self._setup_console()
+
+    # ===== STATUS BAR (fixed progress gauge) =====
+    def _setup_status_bar(self):
+        """Build the always-visible status bar: activity text + progress gauge.
+
+        It sits in its own fixed grid row between the tab area and the log
+        console and keeps a constant height, so starting or finishing a task
+        never shifts the layout (or the pointer target) under the user.
+
+        The strip itself is permanent; the gauge widgets inside it are not.
+        They are created un-gridded and only appear while a task is actually
+        running (``snapshot()["show_gauge"]``) — an idle strip shows the
+        activity text alone instead of an empty bar pretending to measure
+        something.  The status *text* carries every state: live work, then the
+        green/red outcome of the last finished task.
+        """
+        bar = self.frame(self, corner_radius=8, height=34)
+        bar.grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="ew")
+        bar.grid_propagate(False)  # fixed height regardless of label content
+        bar.grid_columnconfigure(0, weight=1)
+
+        self.status_label = self.lbl(bar, "Ready", anchor="w")
+        self.status_label.grid(row=0, column=0, padx=(12, 8), pady=6, sticky="ew")
+        # Theme default, remembered so the done/error outcome colour can be
+        # reverted when the next task (or plain idle) takes over the text.
+        self._status_label_color = self.status_label.cget("text_color")
+
+        self.progress_gauge = ctk.CTkProgressBar(
+            bar,
+            width=200,
+            height=10,
+            corner_radius=5,
+            progress_color=self.theme.PRIMARY_COLOR,
+        )
+        self.progress_gauge.set(0)
+
+        self.progress_percent = self.lbl(bar, "0%", width=56, anchor="e")
+        # Hidden until a task starts; _set_gauge_visible griddes them in.
+        self._gauge_visible = False
+
+    def _set_gauge_visible(self, visible: bool) -> None:
+        """Show or hide the gauge widgets inside the fixed status strip.
+
+        Grid options are passed explicitly on show (rather than relying on
+        ``grid_remove``'s option memory) so the placement is identical every
+        time.  Hiding also stops the marquee: a stopped gauge schedules no
+        ``after`` callbacks while off screen.
+        """
+        if visible == self._gauge_visible:
+            return
+        self._gauge_visible = visible
+        if visible:
+            self.progress_gauge.grid(row=0, column=1, padx=8, pady=12, sticky="e")
+            self.progress_percent.grid(row=0, column=2, padx=(4, 12), pady=6, sticky="e")
+        else:
+            self.progress_gauge.stop()
+            self.progress_gauge.grid_remove()
+            self.progress_percent.grid_remove()
+
+    @staticmethod
+    def _shorten(text, width: int = 110) -> str:
+        text = " ".join(str(text or "").split())
+        return text if len(text) <= width else text[: width - 1] + "…"
+
+    def _render_status_bar(self):
+        """Paint the status strip from the coordinator snapshot (main thread).
+
+        Called from the 100ms poll loop; reconfigures widgets only when the
+        snapshot actually changed, and delegates the unknown-length marquee to
+        CustomTkinter's built-in indeterminate mode.  The gauge widgets follow
+        ``snapshot()["show_gauge"]``: on screen only while a task runs, gone
+        again the moment it finishes — the outcome then lives in the colour of
+        the status text (green/red) during the coordinator's retention window.
+        """
+        try:
+            state = self.progress.snapshot()
+            key = (
+                state["state"],
+                state["label"],
+                state["detail"],
+                state["percent"],
+                state["show_gauge"],
+                round(state["fraction"], 3) if state["fraction"] is not None else None,
+            )
+            if key != self._status_render_key:
+                self._status_render_key = key
+                text = state["label"]
+                if state["detail"] and state["detail"] != state["label"]:
+                    text = f"{text} — {state['detail']}"
+                outcome_color = {
+                    "done": self.theme.SUCCESS_COLOR,
+                    "error": self.theme.ERROR_COLOR,
+                }.get(state["state"], self._status_label_color)
+                self.status_label.configure(
+                    text=self._shorten(text), text_color=outcome_color
+                )
+
+                self._set_gauge_visible(bool(state["show_gauge"]))
+                if state["show_gauge"]:
+                    self.progress_percent.configure(
+                        text=state["percent"], text_color=self.theme.HIGHLIGHT_COLOR
+                    )
+                    indeterminate = state["fraction"] is None
+                    if indeterminate:
+                        self.progress_gauge.configure(mode="indeterminate")
+                        self.progress_gauge.start()
+                    else:
+                        self.progress_gauge.stop()
+                        self.progress_gauge.configure(
+                            mode="determinate",
+                            progress_color=self.theme.PRIMARY_COLOR,
+                        )
+                        self.progress_gauge.set(state["fraction"] or 0.0)
+        except Exception:
+            # The window may be mid-teardown while the poll loop still fires.
+            logger.debug("Status bar render skipped", exc_info=True)
 
 
     def _setup_menubar(self):
@@ -921,27 +1060,55 @@ class PyEnvStudio(ctk.CTk):
 
     # === Environment & Package Logic follows (using Treeview for Packages) ===
     # ===== LOGIC: Async, logging, events, environment ops, package ops =====
-    def run_async(self, func, success_msg=None, error_msg=None, callback=None, py_tonic_action=None):
+    def run_async(self, func, success_msg=None, error_msg=None, callback=None, py_tonic_action=None,
+                  progress_label=None, progress_total=None, progress_token=None):
         """Run ``func`` on the shared worker pool (never on the Tk thread).
 
         ``func`` must not touch widgets — it runs off the main thread.  Every
         follow-up (notifications, dialogs, ``callback``) is marshalled back to
         the UI thread by :func:`py_env_studio.ui.ui_tasks.run_in_background`.
+
+        ``progress_label`` opens a session on the fixed status-bar gauge for
+        the duration of the task (indeterminate unless ``progress_total`` is
+        given); ``progress_token`` reuses a session the caller already opened
+        so a worker can step it precisely (batch operations).
         """
         if py_tonic_action and not self._enforce_strict_py_tonic(py_tonic_action):
             return None
 
+        token = progress_token
+        if token is None and progress_label:
+            token = self.progress.begin(progress_label, progress_total)
+        started = time.monotonic()
+
         def on_done(_result):
+            elapsed = time.monotonic() - started
+            if token is not None:
+                self.progress.finish(token, success_msg or progress_label, ok=True)
+            if progress_label:
+                logger.debug("%s finished in %.1fs", progress_label, elapsed)
             if py_tonic_action:
                 self.notify_py_tonic(py_tonic_action)
             if success_msg:
                 show_info(success_msg)
 
         def on_error(exc):
+            elapsed = time.monotonic() - started
+            if token is not None:
+                self.progress.finish(
+                    token,
+                    f"{progress_label or error_msg or 'Task'} failed: {exc}",
+                    ok=False,
+                )
+            if progress_label:
+                # The readable line reaches console/status bar; the traceback
+                # goes to the file log through exc_info.
+                logger.error("%s failed after %.1fs: %s", progress_label, elapsed, exc,
+                              exc_info=exc)
+            else:
+                logger.warning("Background task failed: %s", exc, exc_info=exc)
             if error_msg:
                 show_error(f"{error_msg}: {str(exc)}")
-            else:
-                logging.warning("Background task failed: %s", exc, exc_info=exc)
 
         return run_in_background(
             func,
@@ -965,7 +1132,24 @@ class PyEnvStudio(ctk.CTk):
 
     def process_log_queues(self):
         self._process_log_queue(self.env_log_queue, self.console_frame)
+        self._render_status_bar()
         self.after(100, self.process_log_queues)
+
+    def _task_log(self, msg, prefix=""):
+        """Route a worker's log line to the console *and* the status bar.
+
+        Workers must not touch widgets, and both sinks are thread-safe here:
+        the queue is drained by the Tk poll loop and the status bar reads the
+        coordinator snapshot.  It replaces the ad-hoc per-call-site lambda
+        that only pushed into the log queue.
+        """
+        if msg is None:
+            return
+        line = f"{prefix}{msg}" if prefix else str(msg)
+        self.env_log_queue.put(line)
+        # Updates the running task's detail (or the idle activity line) so the
+        # status bar always shows the live step behind the gauge.
+        self.progress.update(status=line)
 
     def _process_log_queue(self, q, console):
         try:
@@ -1028,6 +1212,7 @@ class PyEnvStudio(ctk.CTk):
         generation = getattr(self, "_env_list_generation", 0) + 1
         self._env_list_generation = generation
         query = self.env_search_var.get()
+        self.progress.set_status("Refreshing environments…")
 
         self._clear_frame(self.env_scrollable_frame)
         self.lbl(
@@ -1055,6 +1240,8 @@ class PyEnvStudio(ctk.CTk):
     def _render_env_list_error(self, exc: BaseException, generation: int) -> None:
         if not self._current_env_generation(generation):
             return
+        self.progress.set_status(f"Environment refresh failed: {exc}")
+        logger.warning("Failed to refresh environment list: %s", exc)
         self._clear_frame(self.env_scrollable_frame)
         self.lbl(
             self.env_scrollable_frame,
@@ -1066,6 +1253,9 @@ class PyEnvStudio(ctk.CTk):
         """Draw the environment rows (main thread only)."""
         if not self._current_env_generation(generation):
             return  # a newer refresh is already pending or rendered
+        self.progress.set_status(
+            f"{len(rows)} environment{'s' if len(rows) != 1 else ''} listed"
+        )
         self._clear_frame(self.env_scrollable_frame)
         # Updated columns - added VM_TOOL after PYTHON_VERSION
         columns = ("ENVIRONMENT", "PYTHON_VERSION", "VM_TOOL", "LAST_LOCATION", "SIZE", "RENAME", "DELETE", "LAST_SCANNED", "MORE")
@@ -1150,21 +1340,23 @@ class PyEnvStudio(ctk.CTk):
                     self.run_async(
                         lambda: rename_env(
                             env, new_name,
-                            log_callback=lambda msg: self.env_log_queue.put(msg)
+                            log_callback=self._task_log
                         ),
                         success_msg=f"Environment '{env}' renamed to '{new_name}'.",
                         error_msg="Failed to rename environment",
                         callback=self.refresh_env_list,
                         py_tonic_action="rename_env",
+                        progress_label=f"Renaming environment '{env}'",
                     )
             elif col == "#7":  # Delete
                 if messagebox.askyesno("Confirm", f"Delete environment '{env}'?"):
                     self.run_async(
-                        lambda: delete_env(env, log_callback=lambda msg: self.env_log_queue.put(msg)),
+                        lambda: delete_env(env, log_callback=self._task_log),
                         success_msg=f"Environment '{env}' deleted successfully.",
                         error_msg="Failed to delete environment",
                         callback=self.refresh_env_list,
                         py_tonic_action="delete_env",
+                        progress_label=f"Deleting environment '{env}'",
                     )
             elif col == "#9":  # More
                 self.show_more_actions_dialog(env)
@@ -1237,7 +1429,7 @@ class PyEnvStudio(ctk.CTk):
 
             # start scan
             scanner = SecurityMatrix()
-            if not scanner.scan_env(env_name, log_callback=lambda msg: self.env_log_queue.put(msg)):
+            if not scanner.scan_env(env_name, log_callback=self._task_log):
                 raise RuntimeError("Scanner failed to start.")
             # update last scanned time
             set_env_data(env_name, last_scanned=DT.now().isoformat())
@@ -1250,6 +1442,7 @@ class PyEnvStudio(ctk.CTk):
             error_msg="Failed to scan environment",
             callback=self.refresh_env_list,
             py_tonic_action="general",
+            progress_label=f"Scanning environment '{env_name}'",
         )
 
     def show_updatable_packages(self, updatable_packages):
@@ -1334,7 +1527,7 @@ class PyEnvStudio(ctk.CTk):
         def task():
             try:
                 # check_outdated_packages returns a JSON string
-                result_json = check_outdated_packages(env_name, log_callback=lambda msg: self.env_log_queue.put(msg))
+                result_json = check_outdated_packages(env_name, log_callback=self._task_log)
                 updatable_packages = []
                 if result_json:
                     data = json.loads(result_json)
@@ -1354,7 +1547,8 @@ class PyEnvStudio(ctk.CTk):
             task,
             success_msg=None,
             error_msg=None,
-            callback=None
+            callback=None,
+            progress_label=f"Checking updates for '{env_name}'",
         )
 
     # ===== PACKAGES TABLE =====
@@ -1384,6 +1578,7 @@ class PyEnvStudio(ctk.CTk):
             self.packages_list_frame.grid_remove()
             return
 
+        self.progress.set_status(f"Loading packages of '{env_name}'…")
         self.lbl(
             self.packages_list_frame,
             "Loading packages...",
@@ -1406,6 +1601,7 @@ class PyEnvStudio(ctk.CTk):
         except Exception:
             return
         self.packages_list_frame.grid_remove()
+        self.progress.set_status(f"Failed to list packages: {exc}")
         show_error(f"Failed to list packages: {str(exc)}")
 
     def _on_packages_loaded(self, env_name, packages, generation: int) -> None:
@@ -1417,6 +1613,9 @@ class PyEnvStudio(ctk.CTk):
                 return
         except Exception:
             return
+        self.progress.set_status(
+            f"{len(packages)} package{'s' if len(packages) != 1 else ''} in '{env_name}'"
+        )
         for widget in self.packages_list_frame.winfo_children():
             widget.destroy()
         try:
@@ -1470,7 +1669,7 @@ class PyEnvStudio(ctk.CTk):
             button_widget.configure(state="disabled")
         self.run_async(
             lambda: install_package(env_name, package_name,
-                                    log_callback=lambda msg: self.env_log_queue.put(msg)),
+                                    log_callback=self._task_log),
             success_msg=f"Package '{package_name}' installed in '{env_name}'.",
             error_msg="Failed to install package",
             callback=lambda: [
@@ -1479,6 +1678,7 @@ class PyEnvStudio(ctk.CTk):
                 self.view_installed_packages() if on_complete is None else on_complete()
             ],
             py_tonic_action="install_package",
+            progress_label=f"Installing {package_name} into '{env_name}'",
         )
 
     def install_package(self):
@@ -1498,21 +1698,23 @@ class PyEnvStudio(ctk.CTk):
             return
         self.run_async(
             lambda: uninstall_package(env_name, package_name,
-                                      log_callback=lambda msg: self.env_log_queue.put(msg)),
+                                      log_callback=self._task_log),
             success_msg=f"Package '{package_name}' uninstalled from '{env_name}'.",
             error_msg="Failed to uninstall package",
             callback=lambda: self.view_installed_packages(),
             py_tonic_action="uninstall_package",
+            progress_label=f"Uninstalling {package_name} from '{env_name}'",
         )
 
     def update_installed_package(self, env_name, package_name):
         self.run_async(
             lambda: update_package(env_name, package_name,
-                                   log_callback=lambda msg: self.env_log_queue.put(msg)),
+                                   log_callback=self._task_log),
             success_msg=f"Package '{package_name}' updated in '{env_name}'.",
             error_msg="Failed to update package",
             callback=lambda: self.view_installed_packages(),
             py_tonic_action="update_package",
+            progress_label=f"Updating {package_name} in '{env_name}'",
         )
 
     def batch_update_packages(self, env_name, package_names, parent_window=None):
@@ -1527,19 +1729,30 @@ class PyEnvStudio(ctk.CTk):
             show_error("No packages to update.")
             return
 
+        total = len(package_names)
+        progress_label = f"Updating {total} package{'s' if total != 1 else ''} in '{env_name}'"
+        # Open the gauge session up front so the worker can step it per
+        # package (determinate n/total) instead of only animating.
+        token = self.progress.begin(progress_label, total)
+
         def task():
             """Execute updates and collect results"""
             successful = []
             failed = []
             
-            for pkg_name in package_names:
+            for index, pkg_name in enumerate(package_names, start=1):
                 try:
                     update_package(env_name, pkg_name,
-                                 log_callback=lambda msg: self.env_log_queue.put(msg))
+                                 log_callback=self._task_log)
                     successful.append(pkg_name)
                 except Exception as e:
                     failed.append((pkg_name, str(e)))
-                    logging.error(f"Failed to update {pkg_name}: {e}")
+                    logger.error(f"Failed to update {pkg_name}: {e}")
+                self.progress.update(
+                    token=token,
+                    done=index,
+                    status=f"{index}/{total} {pkg_name}",
+                )
             
             return successful, failed
 
@@ -1585,7 +1798,9 @@ class PyEnvStudio(ctk.CTk):
             wrapped_task,
             success_msg=None,
             error_msg=None,
-            callback=on_complete
+            callback=on_complete,
+            progress_label=progress_label,
+            progress_token=token,
         )
 
     # ===== BULK OPS =====
@@ -1599,11 +1814,12 @@ class PyEnvStudio(ctk.CTk):
             self.btn_install_requirements.configure(state="disabled")
             self.run_async(
                 lambda: import_requirements(env_name, file_path,
-                                            log_callback=lambda msg: self.env_log_queue.put(msg)),
+                                            log_callback=self._task_log),
                 success_msg=f"Requirements from '{file_path}' installed in '{env_name}'.",
                 error_msg="Failed to install requirements",
                 callback=lambda: self.btn_install_requirements.configure(state="normal"),
                 py_tonic_action="import_requirements",
+                progress_label=f"Installing requirements into '{env_name}'",
             )
 
     def export_packages(self):
@@ -1618,6 +1834,7 @@ class PyEnvStudio(ctk.CTk):
                 success_msg=f"Packages exported to {file_path}.",
                 error_msg="Failed to export packages",
                 py_tonic_action="export_requirements",
+                progress_label=f"Exporting packages from '{env_name}'",
             )
 
     # ===== ENV OPS =====
@@ -1631,11 +1848,12 @@ class PyEnvStudio(ctk.CTk):
             return
         self.activate_button.configure(state="disabled")
         self.run_async(
-            lambda: activate_env(env, directory, open_with, log_callback=lambda msg: self.env_log_queue.put(msg)),
+            lambda: activate_env(env, directory, open_with, log_callback=self._task_log),
             success_msg=f"Environment '{env}' activated successfully in {open_with}.",
             error_msg="Failed to activate environment",
             callback=lambda: self.activate_button.configure(state="normal"),
             py_tonic_action="activate_env",
+            progress_label=f"Activating '{env}' with {open_with}",
         )
 
 
@@ -1717,7 +1935,7 @@ class PyEnvStudio(ctk.CTk):
             self.app_config.set_param("settings", "appearance_mode", new_appearance_mode)
             self.preferences = self.configuration_service.load_preferences()
         except Exception as exc:
-            logging.warning(f"Failed to save appearance mode: {exc}")
+            logger.warning(f"Failed to save appearance mode: {exc}")
         self.update_treeview_style()
         self.refresh_env_list()
 
@@ -1727,7 +1945,7 @@ class PyEnvStudio(ctk.CTk):
             self.app_config.set_param("settings", "ui_scaling", new_scaling)
             self.preferences = self.configuration_service.load_preferences()
         except Exception as exc:
-            logging.warning(f"Failed to save UI scaling: {exc}")
+            logger.warning(f"Failed to save UI scaling: {exc}")
 
     def on_tab_changed(self):
         if self.tabview.get() == "Packages":
@@ -1781,7 +1999,7 @@ class PyEnvStudio(ctk.CTk):
         try:
             provider = self._get_runtime_provider(provider_name)
         except Exception as exc:
-            logging.warning("Invalid runtime provider %r: %s", provider_name, exc)
+            logger.warning("Invalid runtime provider %r: %s", provider_name, exc)
             provider = self._get_runtime_provider("System")
 
         self.env_runtime_menu.configure(values=["Loading..."])
@@ -1793,7 +2011,7 @@ class PyEnvStudio(ctk.CTk):
                 installed = provider.list_installed() if provider.is_available() else []
                 provider_error = None
             except Exception as exc:
-                logging.warning("Failed to load managed Python runtimes: %s", exc)
+                logger.warning("Failed to load managed Python runtimes: %s", exc)
                 installed = []
                 provider_error = str(exc)
 
@@ -1903,7 +2121,7 @@ class PyEnvStudio(ctk.CTk):
                     self.preferences.runtime_provider if self.preferences else "Python Install Manager"
                 )
             except Exception as exc:
-                logging.warning("Invalid runtime provider; using system Python: %s", exc)
+                logger.warning("Invalid runtime provider; using system Python: %s", exc)
                 provider = self._get_runtime_provider("System")
             self._resolve_env_runtime_then_create(
                 env_name=env_name,
@@ -1931,7 +2149,7 @@ class PyEnvStudio(ctk.CTk):
         self.btn_create_env.configure(state="disabled")
         self.run_async(
             lambda: create_env(env_name, python_path, upgrade_pip,
-                               log_callback=lambda msg: self.env_log_queue.put(msg)),
+                               log_callback=self._task_log),
             success_msg=f"Environment '{env_name}' created successfully.",
             error_msg="Failed to create environment",
             callback=lambda: [
@@ -1941,6 +2159,7 @@ class PyEnvStudio(ctk.CTk):
                 self.refresh_env_list()
             ],
             py_tonic_action="create_env",
+            progress_label=f"Creating environment '{env_name}'",
         )
 
 
@@ -1949,7 +2168,7 @@ class PyEnvStudio(ctk.CTk):
                                          provider) -> None:
         """Resolve the requested runtime off-thread; install when missing, then create."""
         self.btn_create_env.configure(state="disabled")
-        self.env_log_queue.put(f"Checking Python {requested_version}...")
+        self._task_log(f"Checking Python {requested_version}...")
 
         def task():
             executable = None
@@ -2008,7 +2227,7 @@ class PyEnvStudio(ctk.CTk):
     def _on_env_runtime_check_failed(self, exc: Exception, env_name=None,
                                      python_path=None, upgrade_pip=False) -> None:
         """Keep UI responsive when runtime lookup fails; fall back to saved Python."""
-        logging.warning("Runtime lookup during env creation failed: %s", exc)
+        logger.warning("Runtime lookup during env creation failed: %s", exc)
         self.env_log_queue.put("Runtime lookup failed; creating with configured Python.")
         if env_name:
             self._start_env_creation(env_name, python_path, bool(upgrade_pip))
@@ -2018,16 +2237,23 @@ class PyEnvStudio(ctk.CTk):
     def _install_runtime_for_env(self, env_name, python_path, upgrade_pip,
                                  requested_version, provider) -> None:
         """Install the requested runtime without blocking the UI, then continue."""
-        self.env_log_queue.put(f"Installing Python {requested_version}...")
+        self._task_log(f"Installing Python {requested_version}...")
+        # A runtime download takes minutes, so the gauge gets a real session
+        # here; both continuation handlers below close it (ok and failed).
+        self._runtime_install_token = self.progress.begin(
+            f"Installing Python {requested_version}"
+        )
+        logger.info("Installing Python %s via %s for environment '%s'",
+                     requested_version, provider.NAME, env_name)
 
         def task():
             try:
                 result = provider.install(
                     requested_version,
-                    log_callback=lambda msg: self.env_log_queue.put(msg),
+                    log_callback=self._task_log,
                 )
             except Exception as exc:
-                logging.warning("Python %s installation failed: %s", requested_version, exc)
+                logger.warning("Python %s installation failed: %s", requested_version, exc)
                 self._safe_after(0, lambda: self._on_env_runtime_install_failed(
                     env_name, requested_version, str(exc)))
                 return
@@ -2057,15 +2283,26 @@ class PyEnvStudio(ctk.CTk):
 
     def _on_env_runtime_installed(self, env_name, requested_version,
                                   executable, upgrade_pip) -> None:
-        self.env_log_queue.put(f"Python {requested_version} installed")
+        self._close_runtime_install_progress(f"Python {requested_version} installed", ok=True)
+        self._task_log(f"Python {requested_version} installed")
         self.refresh_env_runtime_choices()
         self._start_env_creation(env_name, executable, upgrade_pip)
+
+    def _close_runtime_install_progress(self, message: str, ok: bool) -> None:
+        """Close the runtime-install gauge session (both outcomes)."""
+        token = self._runtime_install_token
+        self._runtime_install_token = None
+        if token is not None:
+            self.progress.finish(token, message, ok=ok)
 
     def _on_env_runtime_install_failed(self, env_name: str, requested_version: str,
                                        details: str) -> None:
         """Report install failure and offer retry while staying in the create flow."""
-        logging.warning("Python %s install for env %s failed: %s",
+        logger.warning("Python %s install for env %s failed: %s",
                         requested_version, env_name, details)
+        self._close_runtime_install_progress(
+            f"Python {requested_version} install failed: {details}", ok=False
+        )
         try:
             retry = messagebox.askretrycancel(
                 "Python Installation Failed",
@@ -2092,7 +2329,7 @@ class PyEnvStudio(ctk.CTk):
 
     def _resolve_python_for_env(self, version: str, log_queue) -> tuple[bool, str]:
         """Deprecated synchronous helper retained only for backward compatibility."""
-        logging.warning("_resolve_python_for_env is deprecated; env creation now uses the async flow.")
+        logger.warning("_resolve_python_for_env is deprecated; env creation now uses the async flow.")
         return False, ""
 
     def show_about_dialog(self):
@@ -2262,7 +2499,8 @@ class PyEnvStudio(ctk.CTk):
 
             self.refresh_env_runtime_choices()
             self.refresh_env_list()
-            self.env_log_queue.put("[Configuration] Settings updated")
+            self._task_log("[Configuration] Settings updated")
+            logger.info("Configuration settings updated")
 
         def persist(close_after_save: bool) -> None:
             try:
@@ -2454,7 +2692,7 @@ class PyEnvStudio(ctk.CTk):
                     try:
                         installed = provider.list_installed()
                     except Exception as exc:
-                        logging.warning("Local installed-runtime query failed: %s", exc)
+                        logger.warning("Local installed-runtime query failed: %s", exc)
                         installed = []
                     cached, last_updated = cache.load_cached(provider.NAME)
                     last_checked = last_updated
@@ -2497,7 +2735,7 @@ class PyEnvStudio(ctk.CTk):
                             except Exception:
                                 updates = {}
                         except Exception as exc:
-                            logging.warning("Online metadata refresh failed; using cache: %s", exc)
+                            logger.warning("Online metadata refresh failed; using cache: %s", exc)
                             if not cache_present:
                                 error = (
                                     "No online release information is currently available. "
@@ -2538,7 +2776,7 @@ class PyEnvStudio(ctk.CTk):
                     return
             except Exception as exc:
                 error = str(exc)
-                logging.warning("Failed to load runtime data from %s: %s", provider_name, exc)
+                logger.warning("Failed to load runtime data from %s: %s", provider_name, exc)
 
             # Fallthrough: non-PyManager providers, unavailable providers, or
             # unexpected errors. (The PyManager path always renders above.)
@@ -2837,7 +3075,7 @@ class PyEnvStudio(ctk.CTk):
             try:
                 result = provider.install(
                     runtime.version,
-                    log_callback=lambda msg: self.env_log_queue.put(msg),
+                    log_callback=self._task_log,
                 )
                 # Verify with a local query, then recalculate the available
                 # list from the DB cache: no online request after install.
@@ -2873,7 +3111,7 @@ class PyEnvStudio(ctk.CTk):
                 stale = False
                 available_flag = False
                 error = str(exc)
-                logging.warning("Python %s installation failed: %s", runtime.version, exc)
+                logger.warning("Python %s installation failed: %s", runtime.version, exc)
 
             def on_done():
                 try:
@@ -2961,7 +3199,7 @@ class PyEnvStudio(ctk.CTk):
             try:
                 result = provider.update(
                     runtime.version,
-                    log_callback=lambda msg: self.env_log_queue.put(msg),
+                    log_callback=self._task_log,
                 )
                 installed = provider.list_installed()
                 from py_env_studio.core.runtime_cache import RuntimeCache, map_runtime_usage
@@ -2982,7 +3220,7 @@ class PyEnvStudio(ctk.CTk):
                 installed, available, cached, usage, updates = [], [], [], {}, {}
                 last_checked, stale = None, False
                 error = str(exc)
-                logging.warning("Python %s update failed: %s", runtime.version, exc)
+                logger.warning("Python %s update failed: %s", runtime.version, exc)
 
             def on_done():
                 try:
@@ -3082,7 +3320,7 @@ class PyEnvStudio(ctk.CTk):
             try:
                 result = provider.uninstall(
                     runtime.version,
-                    log_callback=lambda msg: self.env_log_queue.put(msg),
+                    log_callback=self._task_log,
                 )
                 installed = provider.list_installed()
                 from py_env_studio.core.runtime_cache import RuntimeCache, map_runtime_usage
@@ -3107,7 +3345,7 @@ class PyEnvStudio(ctk.CTk):
                 installed, available, cached, usage, updates = [], [], [], {}, {}
                 last_checked, stale = None, False
                 error = str(exc)
-                logging.warning("Python %s removal failed: %s", runtime.version, exc)
+                logger.warning("Python %s removal failed: %s", runtime.version, exc)
 
             def on_done():
                 try:
@@ -3371,7 +3609,11 @@ class PyEnvStudio(ctk.CTk):
                     status_label.configure(text="Unable to retrieve community templates.", text_color=self.theme.ERROR_COLOR)
                 render_results()
 
-            self.run_async(task, callback=on_complete)
+            self.run_async(
+                task,
+                callback=on_complete,
+                progress_label="Searching GitHub community templates",
+            )
 
         def inspect_candidate(candidate: CommunityTemplateCandidate, use_after_import: bool = False) -> None:
             if state["busy"]:
@@ -3402,7 +3644,11 @@ class PyEnvStudio(ctk.CTk):
                 status_label.configure(text=f"Inspection complete: {candidate.full_name}")
                 show_preview(inspection, use_after_import)
 
-            self.run_async(task, callback=on_complete)
+            self.run_async(
+                task,
+                callback=on_complete,
+                progress_label=f"Inspecting {candidate.full_name}",
+            )
 
         def show_preview(inspection: CommunityTemplateInspection, use_after_import: bool) -> None:
             preview = ctk.CTkToplevel(top)
@@ -3619,8 +3865,20 @@ class PyEnvStudio(ctk.CTk):
         status_label.grid(row=1, column=0, padx=16, pady=(0, 12), sticky="w")
 
         state = {"error": None, "source_dir": None, "cleanup_dir": None, "origin": None, "repo_name": None}
+        # Stage weights for the fixed gauge: validation, clone, inspection.
+        stages = {
+            "Validating repository URL...": 0.10,
+            "Cloning repository...": 0.45,
+            "Inspecting project...": 0.85,
+            "Template ready.": 1.0,
+        }
 
         def set_status(message: str) -> None:
+            fraction = stages.get(message)
+            if fraction is not None:
+                self.progress.update(fraction=fraction, status=message)
+            else:
+                self.progress.update(status=message)
             self._safe_after(0, lambda: status_label.configure(text=message))
 
         def task():
@@ -3639,7 +3897,7 @@ class PyEnvStudio(ctk.CTk):
                     normalized_url,
                     source_dir,
                     timeout_seconds=240,
-                    log_callback=lambda msg: self.env_log_queue.put(f"[Templates] {msg}"),
+                    log_callback=lambda msg: self._task_log(msg, prefix="[Templates] "),
                 )
                 set_status("Inspecting project...")
                 self.user_template_store.inspect_source(source_dir)
@@ -3665,7 +3923,13 @@ class PyEnvStudio(ctk.CTk):
                 suggested_template_name=state["repo_name"],
             )
 
-        self.run_async(task, success_msg=None, error_msg=None, callback=on_complete)
+        self.run_async(
+            task,
+            success_msg=None,
+            error_msg=None,
+            callback=on_complete,
+            progress_label=f"Importing template from {repo_url}",
+        )
 
     def _show_template_metadata_dialog(self, source_dir: Path, source_type: str, origin: str, cleanup_dir: Path | None, refresh_callback, suggested_template_name: str | None = None, on_saved_template=None) -> None:
         try:
@@ -3793,13 +4057,22 @@ class PyEnvStudio(ctk.CTk):
                 )
                 self._reload_template_registry()
                 refresh_callback()
+                logger.info(
+                    "Saved user template '%s' (%s) from %s",
+                    template_id_var.get().strip(),
+                    name_var.get().strip(),
+                    origin or source_type,
+                )
+                self.progress.set_status(f"Template saved: {name_var.get().strip()}")
                 show_info("Template saved successfully.")
                 close_dialog()
                 if on_saved_template:
                     on_saved_template(template_id_var.get().strip())
             except UserTemplateError as exc:
+                logger.warning("Template save rejected: %s", exc)
                 show_error(str(exc))
             except Exception as exc:
+                logger.error("Template save failed: %s", exc, exc_info=exc)
                 show_error(f"Template save failed: {exc}")
 
         footer = ctk.CTkFrame(top)
@@ -3820,8 +4093,10 @@ class PyEnvStudio(ctk.CTk):
             self.user_template_store.delete_template(template_id)
             self._reload_template_registry()
             refresh_callback()
+            logger.info("Deleted user template '%s'", template_id)
             show_info("Template deleted successfully.")
         except Exception as exc:
+            logger.error("Failed to delete template '%s': %s", template_id, exc, exc_info=exc)
             show_error(f"Failed to delete template: {exc}")
 
     def show_templates_dialog(self):
@@ -4035,11 +4310,19 @@ class PyEnvStudio(ctk.CTk):
                 f"Location: {Path(req.project_location) / req.project_name}"
             )
             status_label.configure(text=project_status)
-            self.env_log_queue.put(f"[Templates] Project creation started: {req.project_name}")
+            self._task_log(
+                f"Project creation started: {req.project_name}",
+                prefix="[Templates] ",
+            )
+            logger.info(
+                "Creating project '%s' from template '%s' at %s",
+                req.project_name,
+                req.template_id,
+                Path(req.project_location) / req.project_name,
+            )
 
             try:
                 top.iconify()
-                self.env_log_queue.put("[Templates] Project creation minimized UI")
             except Exception:
                 pass
 
@@ -4047,7 +4330,7 @@ class PyEnvStudio(ctk.CTk):
                 try:
                     request_state["result"] = self.template_creation_workflow.create_project(
                         req,
-                        log_callback=lambda msg: self.env_log_queue.put(f"[Templates] {msg}"),
+                        log_callback=lambda msg: self._task_log(msg, prefix="[Templates] "),
                     )
                 except Exception as exc:
                     request_state["error"] = exc
@@ -4059,7 +4342,13 @@ class PyEnvStudio(ctk.CTk):
 
                 state = self.template_creation_workflow.state
                 if state.status == ProjectCreationStatus.FAILED or request_state["error"]:
-                    self.env_log_queue.put("[Templates] Project creation failed")
+                    self._task_log("Project creation failed", prefix="[Templates] ")
+                    logger.error(
+                        "Project '%s' creation failed: %s",
+                        state.project_name,
+                        request_state["error"] or state.status,
+                        exc_info=request_state["error"] or None,
+                    )
                     try:
                         top.deiconify()
                         top.lift()
@@ -4080,7 +4369,13 @@ class PyEnvStudio(ctk.CTk):
                     return
 
                 status_label.configure(text="Project created successfully.", text_color=self.theme.SUCCESS_COLOR)
-                self.env_log_queue.put("[Templates] Project creation completed")
+                self._task_log("Project creation completed", prefix="[Templates] ")
+                logger.info(
+                    "Created project at %s (template=%s, environment=%s)",
+                    result.project_path,
+                    result.template_id,
+                    result.created_environment_name or "none",
+                )
                 try:
                     self.plugin_manager.execute_hook(
                         "after_template_created",
@@ -4104,6 +4399,7 @@ class PyEnvStudio(ctk.CTk):
                 success_msg=None,
                 error_msg=None,
                 callback=on_complete,
+                progress_label=f"Creating project '{req.project_name}'",
             )
 
         actions = ctk.CTkFrame(top)
@@ -4252,7 +4548,7 @@ class PyEnvStudio(ctk.CTk):
             cfg = AppConfig()
             cfg.set_param("settings", "preferred_project_editor", tool_id)
         except Exception as exc:
-            logging.warning(f"Failed to save preferred project editor: {exc}")
+            logger.warning(f"Failed to save preferred project editor: {exc}")
 
     def _open_created_project_workflow(self, project_path: Path) -> None:
         tools = discover_project_open_tools(self.open_with_tools, include_default=True)
@@ -4275,7 +4571,7 @@ class PyEnvStudio(ctk.CTk):
                 return
 
             self.env_log_queue.put(f"[Templates] Selected project tool: {selected['display_name']}")
-            logging.info("Project opening requested with tool: %s", selected["display_name"])
+            logger.info("Project opening requested with tool: %s", selected["display_name"])
             try:
                 open_project_with_tool(selected, project_path)
                 self._set_preferred_project_editor(selected["tool_id"])
@@ -4317,7 +4613,7 @@ class PyEnvStudio(ctk.CTk):
                     status = "○ Not Loaded"
                     status_color = self.theme.TEXT_COLOR_LIGHT
                 except Exception as e:
-                    logging.error(f"Failed to load metadata for {plugin_name}: {e}")
+                    logger.error(f"Failed to load metadata for {plugin_name}: {e}")
                     return
             else:
                 return
@@ -4377,10 +4673,11 @@ class PyEnvStudio(ctk.CTk):
         try:
             self.plugin_manager.load_plugin(plugin_name)
             self.plugin_manager.set_plugin_enabled(plugin_name, True)
-            self.env_log_queue.put(f"[Plugin] Loaded plugin: {plugin_name}")
+            self._task_log(f"Loaded plugin: {plugin_name}", prefix="[Plugin] ")
             show_info(f"Plugin '{plugin_name}' loaded successfully")
             self._reload_plugins_dialog(top)
         except Exception as e:
+            logger.error("Failed to load plugin '%s': %s", plugin_name, e, exc_info=e)
             show_error(f"Failed to load plugin '{plugin_name}':\n{str(e)}")
 
     def _unload_plugin_and_refresh(self, plugin_name, top):
@@ -4388,10 +4685,11 @@ class PyEnvStudio(ctk.CTk):
         try:
             self.plugin_manager.unload_plugin(plugin_name)
             self.plugin_manager.set_plugin_enabled(plugin_name, False)
-            self.env_log_queue.put(f"[Plugin] Unloaded plugin: {plugin_name}")
+            self._task_log(f"Unloaded plugin: {plugin_name}", prefix="[Plugin] ")
             show_info(f"Plugin '{plugin_name}' unloaded successfully")
             self._reload_plugins_dialog(top)
         except Exception as e:
+            logger.error("Failed to unload plugin '%s': %s", plugin_name, e, exc_info=e)
             show_error(f"Failed to unload plugin '{plugin_name}':\n{str(e)}")
 
     def _reload_plugins_dialog(self, top):
@@ -4401,14 +4699,15 @@ class PyEnvStudio(ctk.CTk):
 
     def on_closing(self):
         """Handle application shutdown - cleanup plugins."""
+        logger.info("PyEnvStudio shutting down")
         try:
             # Execute on_app_shutdown hook for all loaded plugins
             self.plugin_manager.execute_hook("on_app_shutdown", {
                 "version": self.version
             })
-            logging.info("✓ Executed on_app_shutdown hook for all plugins")
+            logger.info("✓ Executed on_app_shutdown hook for all plugins")
         except Exception as e:
-            logging.error(f"Error executing on_app_shutdown hook: {e}")
+            logger.error(f"Error executing on_app_shutdown hook: {e}")
 
         # Cancel queued background work; in-flight tasks finish so pip/venv
         # operations are not interrupted mid-write.

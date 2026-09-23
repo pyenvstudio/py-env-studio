@@ -2,9 +2,12 @@
 import subprocess
 import logging
 import re
+import time
 from .env_manager import get_env_python
 from . import auto_resolve
 from . import tool_probe
+
+logger = logging.getLogger(__name__)
 
 def get_pip_version(refresh: bool = False) -> str:
     """Get the version of pip installed on the system.
@@ -60,10 +63,10 @@ def list_packages(env_name):
                 packages.append((name, version))
         return packages
     except subprocess.CalledProcessError as e:
-        logging.error(f"Failed to list packages in {env_name}: {e}")
+        logger.error(f"Failed to list packages in {env_name}: {e}")
         raise
     except Exception as e:
-        logging.error(f"Unexpected error listing packages in {env_name}: {e}")
+        logger.error(f"Unexpected error listing packages in {env_name}: {e}")
         raise
 
 def install_package(env_name, package, log_callback=None):
@@ -79,6 +82,7 @@ def install_package(env_name, package, log_callback=None):
     
     def _do_install(python_path, env_name, package, log_callback=None):
         """Internal install function that returns (success, message)."""
+        started_at = time.monotonic()
         try:
             if log_callback:
                 log_callback(f"Installing {package} in {env_name}")
@@ -99,7 +103,7 @@ def install_package(env_name, package, log_callback=None):
                 error_output = "\n".join(output_lines)
                 return False, error_output
             
-            logging.info(f"Installed {package} in {env_name}")
+            logger.info("Installed %s in %s (%.1fs)", package, env_name, time.monotonic() - started_at)
             if log_callback:
                 log_callback(f"Installed {package} successfully")
             return True, f"Installed {package} successfully"
@@ -107,7 +111,7 @@ def install_package(env_name, package, log_callback=None):
             err_msg = f"Unexpected error installing {package} in {env_name}: {e}"
             if log_callback:
                 log_callback(err_msg)
-            logging.error(err_msg)
+            logger.error(err_msg)
             return False, err_msg
     
     # Attempt installation with auto-resolve for dependency conflicts
@@ -132,6 +136,7 @@ def uninstall_package(env_name, package, log_callback=None):
         package (str): Package name to uninstall.
     """
     python_path = get_env_python(env_name)
+    started_at = time.monotonic()
     try:
         if log_callback:
             log_callback(f"Uninstalling {package} from {env_name}")
@@ -142,20 +147,20 @@ def uninstall_package(env_name, package, log_callback=None):
         process.wait()
         if process.returncode != 0:
             raise subprocess.CalledProcessError(process.returncode, process.args)
-        logging.info(f"Uninstalled {package} from {env_name}")
+        logger.info("Uninstalled %s from %s (%.1fs)", package, env_name, time.monotonic() - started_at)
         if log_callback:
             log_callback(f"Uninstalled {package} successfully")
     except subprocess.CalledProcessError as e:
         err_msg = f"Failed to uninstall {package} in {env_name}: {e}"
         if log_callback:
             log_callback(err_msg)
-        logging.error(err_msg)
+        logger.error(err_msg)
         raise
     except Exception as e:
         err_msg = f"Unexpected error uninstalling {package} in {env_name}: {e}"
         if log_callback:
             log_callback(err_msg)
-        logging.error(err_msg)
+        logger.error(err_msg)
         raise
 
 def update_package(env_name, package, log_callback=None):
@@ -167,6 +172,7 @@ def update_package(env_name, package, log_callback=None):
         package (str): Package name to update.
     """
     python_path = get_env_python(env_name)
+    started_at = time.monotonic()
     try:
         if log_callback:
             log_callback(f"Updating {package} in {env_name}")
@@ -177,20 +183,20 @@ def update_package(env_name, package, log_callback=None):
         process.wait()
         if process.returncode != 0:
             raise subprocess.CalledProcessError(process.returncode, process.args)
-        logging.info(f"Updated {package} in {env_name}")
+        logger.info("Updated %s in %s (%.1fs)", package, env_name, time.monotonic() - started_at)
         if log_callback:
             log_callback(f"Updated {package} successfully")
     except subprocess.CalledProcessError as e:
         err_msg = f"Failed to update {package} in {env_name}: {e}"
         if log_callback:
             log_callback(err_msg)
-        logging.error(err_msg)
+        logger.error(err_msg)
         raise
     except Exception as e:
         err_msg = f"Unexpected error updating {package} in {env_name}: {e}"
         if log_callback:
             log_callback(err_msg)
-        logging.error(err_msg)
+        logger.error(err_msg)
         raise
 
 def check_outdated_packages(env_name, log_callback=None):
@@ -209,7 +215,7 @@ def check_outdated_packages(env_name, log_callback=None):
             log_callback(f"Checking for outdated packages in {env_name}")
         result = subprocess.run([python_path, "-m", "pip", "list", "--outdated","--format=json"], capture_output=True, text=True, check=True)
     
-        logging.info(f"Checked for outdated packages in {env_name}")
+        logger.info(f"Checked for outdated packages in {env_name}")
         if log_callback:
             log_callback(f"Checked for outdated packages successfully")
         return result.stdout
@@ -219,13 +225,13 @@ def check_outdated_packages(env_name, log_callback=None):
         err_msg = f"Failed to check for updates in {env_name}: {e}"
         if log_callback:
             log_callback(err_msg)
-        logging.error(err_msg)
+        logger.error(err_msg)
         raise
     except Exception as e:
         err_msg = f"Unexpected error checking for updates in {env_name}: {e}"
         if log_callback:
             log_callback(err_msg)
-        logging.error(err_msg)
+        logger.error(err_msg)
         raise
 
 def export_requirements(env_name, file_path):
@@ -240,12 +246,12 @@ def export_requirements(env_name, file_path):
     try:
         with open(file_path, "w") as f:
             subprocess.run([python_path, "-m", "pip", "freeze"], stdout=f, check=True)
-        logging.info(f"Exported requirements for {env_name} to {file_path}")
+        logger.info(f"Exported requirements for {env_name} to {file_path}")
     except subprocess.CalledProcessError as e:
-        logging.error(f"Failed to export requirements for {env_name}: {e}")
+        logger.error(f"Failed to export requirements for {env_name}: {e}")
         raise
     except Exception as e:
-        logging.error(f"Unexpected error exporting requirements for {env_name}: {e}")
+        logger.error(f"Unexpected error exporting requirements for {env_name}: {e}")
         raise
 
 def import_requirements(env_name, file_path, log_callback=None):
@@ -261,6 +267,7 @@ def import_requirements(env_name, file_path, log_callback=None):
     
     def _do_install_requirements(python_path, file_path, log_callback=None):
         """Internal requirements install function that returns (success, message)."""
+        started_at = time.monotonic()
         try:
             if log_callback:
                 log_callback(f"Installing requirements from {file_path}...")
@@ -282,7 +289,12 @@ def import_requirements(env_name, file_path, log_callback=None):
                 error_output = "\n".join(output_lines)
                 return False, error_output
             
-            logging.info(f"Imported requirements from {file_path} to {env_name}")
+            logger.info(
+                "Imported requirements from %s to %s (%.1fs)",
+                file_path,
+                env_name,
+                time.monotonic() - started_at,
+            )
             if log_callback:
                 log_callback(f"Installed requirements successfully")
             return True, "Requirements installed successfully"
@@ -290,7 +302,7 @@ def import_requirements(env_name, file_path, log_callback=None):
             err_msg = f"Unexpected error installing requirements: {e}"
             if log_callback:
                 log_callback(err_msg)
-            logging.error(err_msg)
+            logger.error(err_msg)
             return False, err_msg
     
     # For requirements files, we use a special resolver that doesn't strip individual packages
@@ -334,7 +346,7 @@ def import_requirements(env_name, file_path, log_callback=None):
                 if process.returncode == 0:
                     if log_callback:
                         log_callback("[Auto-Resolve] ✓ Successfully installed requirements")
-                    logging.info(f"Imported requirements from {file_path} to {env_name}")
+                    logger.info(f"Imported requirements from {file_path} to {env_name}")
                     return
                 else:
                     # Legacy resolver also failed
@@ -342,25 +354,25 @@ def import_requirements(env_name, file_path, log_callback=None):
                     err_msg = f"Failed to import requirements to {env_name}: {error_output}"
                     if log_callback:
                         log_callback(err_msg)
-                    logging.error(err_msg)
+                    logger.error(err_msg)
                     raise Exception(error_output)
             except Exception as e:
                 # All resolution attempts failed
                 err_msg = f"Failed to import requirements to {env_name} even with conflict resolution: {e}"
                 if log_callback:
                     log_callback(err_msg)
-                logging.error(err_msg)
+                logger.error(err_msg)
                 raise
         else:
             # Not a resolution error, re-raise original error
             err_msg = f"Failed to import requirements to {env_name}: {message}"
             if log_callback:
                 log_callback(err_msg)
-            logging.error(err_msg)
+            logger.error(err_msg)
             raise Exception(message)
     except Exception as e:
         err_msg = f"Unexpected error importing requirements to {env_name}: {e}"
         if log_callback:
             log_callback(err_msg)
-        logging.error(err_msg)
+        logger.error(err_msg)
         raise

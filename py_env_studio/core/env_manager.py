@@ -21,6 +21,8 @@ from .strategies import run_strategy
 
 runtime = get_runtime_config()
 
+LOGGER = logging.getLogger(__name__)
+
 VENV_DIR = ""
 PYTHON_PATH = None
 LOG_FILE = ""
@@ -178,7 +180,7 @@ def _save_env_data(data):
         with _ENV_DATA_LOCK:
             _ENV_DATA_CACHE["stamp"] = object()  # force reload on next read
     except Exception as exc:
-        logging.error("Failed to save env data: %s", exc)
+        LOGGER.error("Failed to save env data: %s", exc)
 
 
 def set_env_data(env_name, recent_location=None, size=None, last_scanned=None, python_version=None, package_manager=None):
@@ -280,7 +282,7 @@ def set_preferred_package_manager(manager: str) -> None:
         app_config = AppConfig()
         app_config.set_param("settings", "preferred_package_manager", manager)
     except Exception as e:
-        logging.error(f"Failed to set preferred package manager: {e}")
+        LOGGER.error(f"Failed to set preferred package manager: {e}")
 
 
 def get_package_manager_display(manager: str = None) -> str:
@@ -313,7 +315,7 @@ def get_package_manager_display(manager: str = None) -> str:
             if version:
                 return f"pip {version}"
     except Exception as e:
-        logging.warning(f"Error getting package manager version: {e}")
+        LOGGER.warning(f"Error getting package manager version: {e}")
     
     return "pip"
 
@@ -329,6 +331,7 @@ def create_env(name, python_path=None, upgrade_pip=False, log_callback=None):
     env_path = os.path.join(VENV_DIR, name)
     python_path = python_path or PYTHON_PATH or "python"
     python_version = _extract_python_version(python_path) or "default"
+    started_at = time.monotonic()
     
     # Get the preferred package manager at creation time
     package_manager = get_preferred_package_manager()
@@ -443,18 +446,24 @@ def create_env(name, python_path=None, upgrade_pip=False, log_callback=None):
         # Store which package manager was actually used to create this environment
         set_env_data(name, recent_location=env_path, size=size_mb, python_version=detected_version, package_manager=package_manager)
 
-        logging.info("Created environment at: %s with Python: %s using %s", env_path, python_path, package_manager)
+        LOGGER.info(
+            "Created environment at: %s with Python: %s using %s (%.1fs)",
+            env_path,
+            python_path,
+            package_manager,
+            time.monotonic() - started_at,
+        )
         if log_callback:
             log_callback(f"Environment '{name}' created successfully with {package_manager}")
     except subprocess.CalledProcessError as exc:
         err_msg = f"Failed to create environment '{name}': {exc}"
-        logging.error(err_msg)
+        LOGGER.error("%s (%.1fs)", err_msg, time.monotonic() - started_at)
         if log_callback:
             log_callback(err_msg)
         raise
     except Exception as exc:
         err_msg = f"Unexpected error creating environment '{name}': {exc}"
-        logging.error(err_msg)
+        LOGGER.error("%s (%.1fs)", err_msg, time.monotonic() - started_at)
         if log_callback:
             log_callback(err_msg)
         raise
@@ -504,11 +513,12 @@ def rename_env(old_name, new_name, log_callback=None):
             data[new_name] = data.pop(old_name)
             _save_env_data(data)
 
+        LOGGER.info("Renamed environment '%s' to '%s'", old_name, new_name)
         if log_callback:
             log_callback(f"Environment renamed from '{old_name}' to '{new_name}' successfully")
     except Exception as exc:
         err_msg = f"Failed to rename environment '{old_name}' to '{new_name}': {exc}"
-        logging.error(err_msg)
+        LOGGER.error(err_msg)
         if log_callback:
             log_callback(err_msg)
         raise
@@ -558,7 +568,7 @@ def delete_env(name, log_callback=None):
             log_callback(f"Deleting environment '{name}' at {env_path}")
         if os.path.exists(env_path):
             shutil.rmtree(env_path)
-            logging.info("Deleted environment: %s", name)
+            LOGGER.info("Deleted environment: %s", name)
 
             data = _load_env_data()
             if name in data:
@@ -569,7 +579,7 @@ def delete_env(name, log_callback=None):
             log_callback(f"Environment '{name}' deleted successfully")
     except Exception as exc:
         err_msg = f"Failed to delete environment '{name}': {exc}"
-        logging.error(err_msg)
+        LOGGER.error(err_msg)
         if log_callback:
             log_callback(err_msg)
         raise
@@ -593,6 +603,12 @@ def activate_env(env_name, directory=None, open_with="vscode", open_in_venv_cwd=
     if not tool_entry:
         raise RuntimeError(f"Tool '{open_with}' not found on system")
 
+    LOGGER.info(
+        "Activating environment '%s' with %s (target=%s)",
+        env_name,
+        open_with,
+        target_dir,
+    )
     return run_strategy(
         tool_entry["strategy"],
         tool_entry["path"],

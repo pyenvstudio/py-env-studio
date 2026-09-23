@@ -1,4 +1,5 @@
 import argparse
+import logging
 import sys
 from pathlib import Path
 from typing import Dict, Optional, Sequence, Tuple
@@ -19,6 +20,43 @@ from py_env_studio.core.runtime_toggle import (
     init_project,
     list_registered_projects,
 )
+from py_env_studio.utils.app_logging import configure_logging
+from py_env_studio.utils.progress import TaskProgress
+
+logger = logging.getLogger(__name__)
+
+# Flags consumed before argparse runs, so logging is configured before the
+# first record is emitted (bootstrap/shortcut warnings included).
+LEADING_VERBOSITY_FLAGS = ("-v", "--verbose", "-q", "--quiet")
+
+
+def _extract_verbosity(argv: Sequence[str]) -> tuple[Optional[str], list[str]]:
+    """Pop leading verbosity flags and return ``(verbosity, remaining)``."""
+    verbosity: Optional[str] = None
+    rest = list(argv)
+    while rest and rest[0] in LEADING_VERBOSITY_FLAGS:
+        flag = rest.pop(0)
+        if flag in ("-q", "--quiet"):
+            verbosity = "error"  # quiet wins over a bare -v
+        elif verbosity != "error":
+            verbosity = "debug"
+    return verbosity, rest
+
+
+def _verbosity_from_args(args: argparse.Namespace) -> Optional[str]:
+    if getattr(args, "quiet", False):
+        return "error"
+    if getattr(args, "verbose", False):
+        return "debug"
+    return None
+
+
+def _bar(args: argparse.Namespace, label: str, total: Optional[float] = None) -> TaskProgress:
+    """CLI progress gauge that honours ``--no-progress`` / ``PES_NO_PROGRESS``."""
+    disabled = bool(getattr(args, "no_progress", False))
+    return TaskProgress(label, total, enabled=False if disabled else None)
+
+
 def _split_two_values(raw_value: str, usage: str) -> Tuple[str, str]:
     try:
         return raw_value.split(",", 1)
@@ -28,11 +66,21 @@ def _split_two_values(raw_value: str, usage: str) -> Tuple[str, str]:
 
 
 def handle_create(args: argparse.Namespace) -> None:
-    create_env(args.create, upgrade_pip=args.upgrade_pip)
+    name = args.create
+    logger.info(
+        "Creating environment '%s'%s",
+        name,
+        " (upgrading pip)" if args.upgrade_pip else "",
+    )
+    with _bar(args, f"Creating {name}") as progress:
+        create_env(name, upgrade_pip=args.upgrade_pip, log_callback=progress.note)
 
 
 def handle_delete(args: argparse.Namespace) -> None:
-    delete_env(args.delete)
+    name = args.delete
+    logger.info("Deleting environment '%s'", name)
+    with _bar(args, f"Deleting {name}") as progress:
+        delete_env(name, log_callback=progress.note)
 
 
 def handle_list(_: argparse.Namespace) -> None:
@@ -41,6 +89,7 @@ def handle_list(_: argparse.Namespace) -> None:
 
 
 def handle_activate(args: argparse.Namespace) -> None:
+    logger.info("Activating environment '%s'", args.activate)
     activate_env(args.activate)
 
 
@@ -49,7 +98,9 @@ def handle_install(args: argparse.Namespace) -> None:
         args.install,
         "py-env-studio --install env_name,package",
     )
-    install_package(env_name, package)
+    logger.info("Installing '%s' into environment '%s'", package, env_name)
+    with _bar(args, f"Installing {package}") as progress:
+        install_package(env_name, package, log_callback=progress.note)
 
 
 def handle_uninstall(args: argparse.Namespace) -> None:
@@ -57,7 +108,9 @@ def handle_uninstall(args: argparse.Namespace) -> None:
         args.uninstall,
         "py-env-studio --uninstall env_name,package",
     )
-    uninstall_package(env_name, package)
+    logger.info("Uninstalling '%s' from environment '%s'", package, env_name)
+    with _bar(args, f"Uninstalling {package}") as progress:
+        uninstall_package(env_name, package, log_callback=progress.note)
 
 
 def handle_export(args: argparse.Namespace) -> None:
@@ -65,6 +118,7 @@ def handle_export(args: argparse.Namespace) -> None:
         args.export,
         "py-env-studio --export env_name,file_path",
     )
+    logger.info("Exporting packages of '%s' to %s", env_name, file_path)
     export_requirements(env_name, file_path)
 
 
@@ -73,11 +127,17 @@ def handle_import_requirements(args: argparse.Namespace) -> None:
         args.import_reqs,
         "py-env-studio --import-reqs env_name,file_path",
     )
-    import_requirements(env_name, file_path)
+    logger.info("Installing requirements from %s into '%s'", file_path, env_name)
+    with _bar(args, "Installing requirements") as progress:
+        import_requirements(env_name, file_path, log_callback=progress.note)
 
 
 def _print_runtime_result(result: Dict[str, object]) -> None:
-    print(result["message"])
+    message = str(result["message"])
+    print(message)
+    # The message already reached the terminal on stdout; the file log keeps
+    # the record without printing it a second time on stderr.
+    logger.debug("%s", message)
     if not result["success"]:
         sys.exit(1)
 
@@ -126,21 +186,32 @@ def handle_run(args: argparse.Namespace) -> None:
         print("Error: No script provided. Usage: pes run <script.py> [args...]")
         sys.exit(1)
 
+    # No gauge here: the child process owns the terminal and its output must
+    # not be interleaved with redrawn status lines.
+    logger.info("Running %s in the managed environment", list(args.args))
     result = execute_in_managed_env(Path.cwd(), list(args.args))
+    if result:
+        logger.error("Script exited with status %s", result)
     sys.exit(result)
 
 
 def handle_mcp(_: argparse.Namespace) -> None:
     from py_env_studio.core.mcp.server import run_stdio
 
+    logger.info("Starting the PES MCP server on stdio")
     sys.exit(run_stdio())
 
 
-def launch_gui(_: argparse.Namespace) -> None:
+def launch_gui(args: argparse.Namespace) -> None:
     # Imported lazily so headless commands (e.g. `mcp`) work without GUI deps.
     from py_env_studio.ui.main_window import PyEnvStudio
 
-    app = PyEnvStudio()
+    logger.info("Launching the PyEnvStudio GUI")
+    app = PyEnvStudio(verbosity=_verbosity_from_args(args))
+    # Route window close through on_closing so plugin shutdown hooks and
+    # background-task shutdown actually run (previously only wired up when
+    # started via python -m py_env_studio.ui.main_window).
+    app.protocol("WM_DELETE_WINDOW", app.on_closing)
     app.mainloop()
 
 
@@ -236,6 +307,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Upgrade pip when creating a new environment",
     )
+    _add_output_options(parser)
 
     for command in FLAG_COMMANDS.values():
         parser_kwargs = {"help": command["help"]}
@@ -245,6 +317,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     for name, command in SUBCOMMANDS.items():
         subparser = subparsers.add_parser(name, help=command["help"])
+        # Same output options after the subcommand (`pes status -v`).  SUPPRESS
+        # defaults keep a value parsed before the subcommand from being
+        # overwritten by the subparser's defaults.
+        _add_output_options(subparser, suppress_defaults=True)
         if "extra_values" in command:
             subparser.add_argument(
                 "args",
@@ -253,6 +329,29 @@ def build_parser() -> argparse.ArgumentParser:
             )
 
     return parser
+
+
+def _add_output_options(parser: argparse.ArgumentParser, suppress_defaults: bool = False) -> None:
+    """Attach the shared ``-v``/``-q``/``--no-progress`` output controls."""
+    default = argparse.SUPPRESS if suppress_defaults else False
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        default=default,
+        help="Show detailed diagnostics (DEBUG logs and tracebacks)",
+    )
+    parser.add_argument(
+        "-q", "--quiet",
+        action="store_true",
+        default=default,
+        help="Only report errors",
+    )
+    parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        default=default,
+        help="Disable the CLI progress gauge (PES_NO_PROGRESS=1 does the same)",
+    )
 
 
 def dispatch_command(args: argparse.Namespace) -> None:
@@ -268,17 +367,65 @@ def dispatch_command(args: argparse.Namespace) -> None:
     launch_gui(args)
 
 
+class _ErrorMarker(logging.Handler):
+    """Silent sentinel: records whether any ERROR reached the logging system.
+
+    ``main`` attaches it to the root logger around dispatch so the catch-all
+    handler does not print a second, vaguer error line when the layer that
+    failed (``pip_tools``, ``env_manager``, ...) already logged the specific
+    cause.  ``emit`` deliberately writes nothing — this handler only watches.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.ERROR)
+        self.seen = False
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.seen = True
+
+
 def main(argv: Optional[Sequence[str]] = None) -> None:
-    initialize_app_runtime()
     argv = list(argv) if argv is not None else sys.argv[1:]
+    verbosity, argv = _extract_verbosity(argv)
+    # Configure logging first: bootstrap and every handler below emit through
+    # it, and the file sink must not miss startup problems.
+    configure_logging(verbosity)
+    verbose = verbosity == "debug"
 
-    if argv and not argv[0].startswith("-") and argv[0] not in SUBCOMMANDS:
-        handle_run(argparse.Namespace(args=argv))
-        return
+    initialize_app_runtime()
 
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    dispatch_command(args)
+    # Watches for an ERROR already reported by the failing layer, so the
+    # catch-all below does not print a second, vaguer copy of the same failure.
+    marker = _ErrorMarker()
+    root_logger = logging.getLogger()
+    root_logger.addHandler(marker)
+    try:
+        if argv and not argv[0].startswith("-") and argv[0] not in SUBCOMMANDS:
+            # `pes script.py [args...]` shorthand for `pes run ...`.
+            handle_run(argparse.Namespace(args=argv))
+            return
+
+        parser = build_parser()
+        args = parser.parse_args(argv)
+        verbosity = _verbosity_from_args(args) or verbosity
+        verbose = verbosity == "debug" if verbosity else verbose
+        configure_logging(verbosity)
+        dispatch_command(args)
+    except KeyboardInterrupt:
+        logger.warning("Interrupted by user")
+        sys.exit(130)
+    except SystemExit:
+        raise
+    except Exception as exc:
+        if verbose:
+            raise
+        # Traceback goes to the log file; the terminal gets one clean line.
+        logger.debug("Unhandled CLI failure", exc_info=True)
+        if not marker.seen:
+            logger.error("%s: %s", type(exc).__name__, exc)
+        sys.exit(1)
+    finally:
+        root_logger.removeHandler(marker)
 
 
 if __name__ == "__main__":

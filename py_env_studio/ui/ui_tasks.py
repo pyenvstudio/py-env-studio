@@ -40,6 +40,8 @@ type ErrorCallback = Callable[[BaseException], None]
 type VoidCallback = Callable[[], None]
 type UiCallback = Callable[..., object]
 
+logger = logging.getLogger(__name__)
+
 MAX_WORKERS = 8
 _WORKER_NAME_PREFIX = "pes-worker"
 
@@ -86,10 +88,10 @@ def post_to_ui(
     except (RuntimeError, tkinter.TclError):
         # "main thread is not in main loop" (loop gone) or a Tcl error from a
         # destroyed widget: the callback can no longer run, so drop it.
-        logging.debug("Dropped UI callback; widget or main loop is gone", exc_info=True)
+        logger.debug("Dropped UI callback; widget or main loop is gone", exc_info=True)
         return None
     except Exception:
-        logging.debug("Failed to schedule UI callback", exc_info=True)
+        logger.debug("Failed to schedule UI callback", exc_info=True)
         return None
 
 
@@ -132,17 +134,17 @@ def run_in_background[ValueT](
             if on_error is not None:
                 on_error(exc)
             else:
-                logging.warning("Background task failed: %s", exc, exc_info=exc)
+                logger.warning("Background task failed: %s", exc, exc_info=exc)
         elif on_done is not None:
             try:
                 on_done(future.result())
             except Exception:
-                logging.exception("Background completion handler raised")
+                logger.exception("Background completion handler raised")
         if on_finished is not None:
             try:
                 on_finished()
             except Exception:
-                logging.exception("Background completion callback raised")
+                logger.exception("Background completion callback raised")
 
     # Runs in the worker thread; post_to_ui hops it onto the Tk main thread.
     future.add_done_callback(lambda _finished: post_to_ui(ui, _deliver))

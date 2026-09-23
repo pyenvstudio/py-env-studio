@@ -10,9 +10,30 @@ The main screen consists:
 - **Side Bar** - Customize UI of PES tool 
 - **Environment Tab** - Manage Python virtual environments
 - **Package Tab** - Handle package installation and management
+- **Status Bar** - Fixed strip below the tabs showing current activity
+- **Console** - On-screen log of task output
 
 ---
-## Side Bar - UI Customization
+
+## Status Bar
+
+The status bar sits in a fixed position between the tab area and the console,
+so the layout never jumps while work runs. It shows:
+
+- **Status text** - what the app is doing right now (e.g. `Installing numpy…`)
+  or the last completed/failed action. The text turns green after a task
+  succeeds and red if it fails, then settles back to the normal colour.
+- **Progress gauge** - visible only while a task is actually running: it fills
+  steps with a known count (package updates, GitHub imports) or animates as a
+  marquee when the duration is unknown (environment creation, scans). When no
+  task is running the gauge disappears entirely, leaving just the status text.
+
+The gauge is driven by background tasks and updates automatically; details of
+every action are also written to the log file (`py_env_studio.log` in the
+platform data directory) and, for warnings and errors, mirrored to the console
+at the bottom of the window.
+
+---
 ### Appearance Mode
 Customize the theme mode with Light mode, Dark mode, or System mode.
 

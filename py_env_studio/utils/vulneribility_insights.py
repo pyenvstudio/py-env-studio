@@ -14,6 +14,8 @@ from .app_icon import schedule_window_icon
 from py_env_studio.core.package_manager import install_package
 from py_env_studio.ui.ui_tasks import run_in_background
 
+logger = logging.getLogger(__name__)
+
 # Set customtkinter appearance
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -538,7 +540,7 @@ class VulnerabilityInsightsApp:
         try:
             mark_package_fixed(self.env_name, package, target)
         except Exception as e:
-            logging.warning(f"Failed to persist fixed status for {package}: {e}")
+            logger.warning(f"Failed to persist fixed status for {package}: {e}")
         self._refresh_from_db()
 
     def _on_update_failure(self, btn, package, target, error):
@@ -663,7 +665,7 @@ class VulnerabilityInsightsApp:
             try:
                 mark_package_fixed(self.env_name, package, new_version)
             except Exception as e:
-                logging.warning(f"Failed to persist fixed status for {package}: {e}")
+                logger.warning(f"Failed to persist fixed status for {package}: {e}")
         self._refresh_from_db()
 
     def _on_upgrade_all_error(self, error):
