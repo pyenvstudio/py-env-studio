@@ -272,6 +272,18 @@ APIs are public, read-only, no auth required.
 We welcome contributions!
 Feel free to fork the repository, raise issues, or submit pull requests.
 
+## Acknowledgements
+
+Py Env Studio is built on the work of the Python community and the broader open-source ecosystem.
+
+**Built with:** [Python](https://www.python.org/), [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter), which provides the desktop UI foundation, and [Pillow](https://python-pillow.org/) for image and icon handling.
+
+**Integrates with:** the [Python Install Manager](https://docs.python.org/3/using/windows.html#python-install-manager) for Python runtime management; [PyPI](https://pypi.org/) and the [Python Packaging community](https://packaging.python.org/) for package distribution and metadata; and [pip](https://pip.pypa.io/) and [uv](https://docs.astral.sh/uv/) for package management.
+
+Thanks to the maintainers and contributors behind these projects and to everyone building Python and open-source software. These acknowledgements do not imply endorsement, affiliation, or official partnership.
+
+*Built with Python. Powered by open source.*
+
 **⚖️ License**
 This project is licensed under the MIT License.
 
