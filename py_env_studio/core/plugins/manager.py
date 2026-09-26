@@ -74,13 +74,58 @@ class PluginManager:
             manifest_file = plugin_dir / "plugin.json"
             if manifest_file.exists():
                 try:
-                    manifest = json.loads(manifest_file.read_text())
+                    manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
                     discovered.append(manifest.get("name", plugin_dir.name))
                     logger.debug(f"Discovered plugin: {manifest.get('name')}")
                 except Exception as e:
                     logger.warning(f"Failed to discover plugin in {plugin_dir}: {e}")
         
         return discovered
+    
+    def resolve_plugin_dir(self, plugin_name: str) -> Optional[Path]:
+        """Return the folder holding the plugin named ``plugin_name``.
+
+        ``plugin_name`` may be either the folder name or the ``name`` declared
+        in its manifest - the two often differ (``sample_plugin_v2/plugin.json``
+        declares ``sample_plugin2``), yet discovery and the enable/disable state
+        both key on the manifest name.  ``None`` means no such plugin.
+
+        Args:
+            plugin_name: Plugin folder name or manifest name
+
+        Returns:
+            Plugin directory, or ``None`` when the plugin cannot be found
+        """
+        direct = self.plugins_dir / plugin_name
+        if (direct / "plugin.json").is_file():
+            return direct
+        return self._find_plugin_dir_by_manifest_name(plugin_name)
+    
+    def _find_plugin_dir_by_manifest_name(self, manifest_name: str) -> Optional[Path]:
+        """Return the folder whose manifest declares ``manifest_name``.
+
+        Folders are scanned in sorted order so the winner stays stable when two
+        plugins accidentally declare the same name.
+        """
+        try:
+            entries = sorted(self.plugins_dir.iterdir(), key=lambda item: item.name.lower())
+        except OSError as exc:
+            logger.warning(f"Failed to scan plugins directory {self.plugins_dir}: {exc}")
+            return None
+        
+        for plugin_dir in entries:
+            if not plugin_dir.is_dir():
+                continue
+            manifest_file = plugin_dir / "plugin.json"
+            if not manifest_file.is_file():
+                continue
+            try:
+                manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if str(manifest.get("name") or "").strip() == manifest_name:
+                return plugin_dir
+        return None
     
     def load_plugin(self, plugin_name: str) -> BasePlugin:
         """Load and initialize a plugin.
@@ -98,14 +143,16 @@ class PluginManager:
             return self._plugins[plugin_name]
         
         try:
-            plugin_dir = self.plugins_dir / plugin_name
+            plugin_dir = self.resolve_plugin_dir(plugin_name)
+            if plugin_dir is None:
+                raise PluginLoadError(
+                    f"Plugin manifest not found for '{plugin_name}' in {self.plugins_dir}"
+                )
             manifest_file = plugin_dir / "plugin.json"
             
-            if not manifest_file.exists():
-                raise PluginLoadError(f"Plugin manifest not found: {manifest_file}")
-            
-            # Load manifest
-            manifest = json.loads(manifest_file.read_text())
+            # Load manifest.  JSON is UTF-8 by specification; the locale code
+            # page would reject manifests holding non-ASCII text on Windows.
+            manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
             metadata = self._manifest_to_metadata(manifest)
             
             # Add plugin directory to sys.path for imports
@@ -114,11 +161,16 @@ class PluginManager:
                 sys.path.insert(0, plugin_parent)
             
             # Import and instantiate plugin
-            entry_point = metadata.entry_point
-            module_path, class_name = entry_point.split(":")
+            entry_point = metadata.entry_point or ""
+            if ":" not in entry_point:
+                raise PluginLoadError(
+                    f"Invalid entry point for plugin '{plugin_name}': {entry_point!r} "
+                    "(expected 'module:ClassName')"
+                )
+            module_path, class_name = entry_point.split(":", 1)
             
-            module = import_module(module_path)
-            plugin_class = getattr(module, class_name)
+            module = self._import_plugin_module(module_path.strip(), plugin_dir)
+            plugin_class = getattr(module, class_name.strip())
             plugin = plugin_class()
             
             # Validate plugin
@@ -252,6 +304,40 @@ class PluginManager:
     
     # Private helper methods
     
+    def _import_plugin_module(self, module_path: str, plugin_dir: Path):
+        """Import the module that holds the plugin class.
+
+        The manifest entry point names a module inside the plugin folder
+        (``sample_plugin:SamplePlugin`` in ``plugins/sample_plugin/``), so the
+        folder-scoped name is tried first: it stays unambiguous when two plugins
+        ship a module with the same name (``sample_plugin_v2/sample_plugin.py``
+        can only be imported as ``sample_plugin_v2.sample_plugin``).  The flat
+        name is kept as a fallback for plugins that live directly under the
+        plugins directory.
+
+        Args:
+            module_path: Module name from the manifest entry point
+            plugin_dir: Folder that contains the plugin
+
+        Returns:
+            The imported module
+
+        Raises:
+            PluginLoadError: When neither import form succeeds
+        """
+        errors = {}
+        for candidate in (f"{plugin_dir.name}.{module_path}", module_path):
+            try:
+                return import_module(candidate)
+            except ImportError as exc:
+                errors[candidate] = exc
+        
+        detail = "; ".join(f"{name!r} ({exc})" for name, exc in errors.items())
+        raise PluginLoadError(
+            f"Unable to import plugin module {module_path!r} from "
+            f"'{plugin_dir.name}': {detail}"
+        )
+    
     def _validate_plugin(self, plugin: BasePlugin, metadata: PluginMetadata) -> bool:
         """Validate plugin integrity.
         
@@ -263,10 +349,19 @@ class PluginManager:
             True if valid
         """
         try:
-            # Check metadata
-            if plugin.get_metadata().name != metadata.name:
-                logger.error("Plugin metadata mismatch")
-                return False
+            # Check metadata.  The manifest is the plugin's public identity -
+            # discovery and the enable/disable state key on it - so a class that
+            # reports a different name is a warning, not a hard failure: it
+            # usually just means the plugin folder was renamed after the class
+            # was written.
+            declared_name = plugin.get_metadata().name
+            if declared_name != metadata.name:
+                logger.warning(
+                    "Plugin metadata name mismatch for '%s': the class reports '%s'; "
+                    "keeping the manifest name.",
+                    metadata.name,
+                    declared_name,
+                )
             
             # Check dependencies
             if metadata.dependencies:

@@ -73,6 +73,44 @@ class _ShortNameFormatter(logging.Formatter):
             record.name = original
 
 
+class _EncodingSafeStreamHandler(logging.StreamHandler):
+    """stderr handler that survives a stream which cannot encode the message.
+
+    Windows consoles are frequently cp1252 (cmd.exe, a redirected pipe, CI
+    capture).  A record carrying a glyph such as ``✓``/``✗``/``⚠`` would then
+    raise ``UnicodeEncodeError`` inside ``emit``; ``logging`` prints a
+    ``--- Logging error ---`` traceback and the message itself is lost.
+
+    The line is written as usual, and only when the stream rejects it is the
+    whole record re-encoded with ``backslashreplace`` (``\\u2713``) so the text
+    still arrives and logging never becomes the reason a run looks broken.
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            message = self.format(record)
+        except Exception:  # noqa: BLE001 - logging must not raise into app code
+            self.handleError(record)
+            return
+        try:
+            self.stream.write(message + self.terminator)
+            self.flush()
+        except UnicodeEncodeError:
+            try:
+                encoding = getattr(self.stream, "encoding", None) or "utf-8"
+                safe = message.encode(encoding, "backslashreplace").decode(
+                    encoding, "replace"
+                )
+                self.stream.write(safe + self.terminator)
+                self.flush()
+            except Exception:  # noqa: BLE001 - logging must not raise
+                self.handleError(record)
+        except RecursionError:
+            raise
+        except Exception:  # noqa: BLE001 - logging must not raise into app code
+            self.handleError(record)
+
+
 class QueueLogHandler(logging.Handler):
     """Forward formatted records into a :mod:`queue` consumed by the GUI.
 
@@ -163,8 +201,9 @@ def configure_logging(
         root.removeHandler(stale)
         stale.close()
     if file_handler is None:
+        # Explicit UTF-8: the locale code page would drop non-ASCII records.
         file_handler = logging.handlers.RotatingFileHandler(
-            log_file, maxBytes=1_000_000, backupCount=3, delay=True
+            log_file, maxBytes=1_000_000, backupCount=3, delay=True, encoding="utf-8"
         )
         file_handler._pes_tag = FILE_TAG  # type: ignore[attr-defined]
         root.addHandler(file_handler)
@@ -179,7 +218,8 @@ def configure_logging(
         handler.close()
     stream = console_stream if console_stream is not None else sys.stderr
     if console and stream is not None:
-        console_handler = logging.StreamHandler(stream)
+        # Encoding-safe: a cp1252 console must still receive ✓/✗ records.
+        console_handler = _EncodingSafeStreamHandler(stream)
         console_handler._pes_tag = CONSOLE_TAG  # type: ignore[attr-defined]
         console_handler.setLevel(console_level if console_level is not None else threshold)
         console_handler.setFormatter(

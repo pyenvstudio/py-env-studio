@@ -42,6 +42,15 @@ class DatabaseManager:
                     cur.execute(sql.get("schema_core", name))
                 for statement in sql.statements("schema_runtime_cache"):
                     cur.execute(statement)
+                for name in sql.available("package_updates"):
+                    if name.startswith("create_"):
+                        cur.execute(sql.get("package_updates", name))
+                package_update_columns = {
+                    row[1]
+                    for row in cur.execute("PRAGMA table_info(package_update_cache)").fetchall()
+                }
+                if "outdated_packages" not in package_update_columns:
+                    cur.execute(sql.get("package_updates", "add_outdated_packages_column"))
                 # project_contract.sql mixes DDL with DML templates: only the
                 # create_* statements are schema, the rest are fetched by name
                 # at the call site (see ProjectContractRepository).

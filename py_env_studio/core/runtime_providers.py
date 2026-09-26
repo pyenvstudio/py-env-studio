@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import re
@@ -9,6 +10,90 @@ from dataclasses import dataclass
 from typing import Callable
 
 LOGGER = logging.getLogger(__name__)
+
+# ``py.exe`` is shared with the legacy "Python Launcher", which does not
+# implement the manager's ``list`` command and answers every query with
+# "The 'list' command is unavailable because this is the legacy py.exe
+# command."  Candidates are therefore probed once per executable path and the
+# answer is cached for the lifetime of the process.
+_LEGACY_LAUNCHER_MARKER = "legacy py.exe"
+
+
+@functools.lru_cache(maxsize=8)
+def _probe_python_install_manager(executable: str) -> bool:
+    """Return ``True`` when ``executable`` really is Python Install Manager.
+
+    The new manager is identified by a successful JSON ``list`` (``[]`` is a
+    valid answer on a machine without managed runtimes yet); the legacy launcher
+    exits non-zero and prints the legacy warning, so it is rejected here and
+    never reused for install/update/uninstall commands.
+    """
+    try:
+        completed = subprocess.run(
+            [executable, "list", "--format=json"],
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        LOGGER.debug("Python Install Manager probe failed for %s: %s", executable, exc)
+        _remember_legacy_launcher(executable, None)
+        return False
+
+    if completed.returncode != 0:
+        combined = f"{completed.stdout or ''}\n{completed.stderr or ''}"
+        if _LEGACY_LAUNCHER_MARKER in combined:
+            LOGGER.info(
+                "%s is the legacy 'Python Launcher' (no 'list' command), so it is "
+                "ignored. Remove 'Python Launcher' in Installed Apps, then install "
+                "the Python Install Manager to manage runtimes from here.",
+                executable,
+            )
+        else:
+            LOGGER.debug("Probe rejected %s as Python Install Manager", executable)
+        _remember_legacy_launcher(executable, combined)
+        return False
+
+    try:
+        json.loads(completed.stdout or "[]")
+    except ValueError:
+        LOGGER.debug(
+            "Ignoring %s: it does not answer with the Python Install Manager JSON listing",
+            executable,
+        )
+        _remember_legacy_launcher(executable, completed.stdout or "")
+        return False
+    return True
+
+
+# Paths already identified as the legacy launcher (see find_legacy_python_launcher).
+_LEGACY_LAUNCHER_PATHS: set[str] = set()
+
+
+def _remember_legacy_launcher(executable: str, output: str | None) -> None:
+    """Record ``executable`` as a legacy launcher when it prints the marker."""
+    if output and _LEGACY_LAUNCHER_MARKER in output:
+        _LEGACY_LAUNCHER_PATHS.add(executable)
+
+
+def find_legacy_python_launcher() -> str | None:
+    """Return the path of a legacy ``py.exe`` launcher, if one is installed.
+
+    Used by the GUI to explain *why* the manager is missing: while the old
+    "Python Launcher" owns ``py.exe``, the new manager cannot provide it.
+    """
+    for candidate in ("py.exe", "py"):
+        path = shutil.which(candidate)
+        if not path:
+            continue
+        if not _probe_python_install_manager(path):
+            return path
+    # Remembered paths cover the case where py.exe has since been removed from
+    # PATH.  Sorted so the reported path is stable across runs.
+    for path in sorted(_LEGACY_LAUNCHER_PATHS):
+        return path
+    return None
 
 
 @dataclass(frozen=True)
@@ -110,12 +195,18 @@ class PythonInstallManagerProvider(RuntimeProvider):
 
     @staticmethod
     def _find_py() -> str | None:
-        # Prefer the unambiguous official command. `py.exe` may still refer to
-        # a legacy launcher on machines that have not migrated yet.
-        for candidate in ("pymanager.exe", "pymanager", "py.exe", "py"):
+        # ``pymanager`` is unambiguous, so it is trusted as soon as it exists.
+        for candidate in ("pymanager.exe", "pymanager"):
             path = shutil.which(candidate)
             if path:
-                LOGGER.debug("Python Install Manager candidate found: %s", path)
+                LOGGER.debug("Python Install Manager found: %s", path)
+                return path
+        # ``py.exe`` may still be the legacy launcher on machines that have not
+        # migrated yet.  Probing it here keeps every later query from failing.
+        for candidate in ("py.exe", "py"):
+            path = shutil.which(candidate)
+            if path and _probe_python_install_manager(path):
+                LOGGER.debug("Python Install Manager found via %s: %s", candidate, path)
                 return path
         return None
 

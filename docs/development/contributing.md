@@ -104,11 +104,11 @@ Notes for writing docs:
 
 ## Release checklist
 
-1. Update the version in all three places so the GUI, the package metadata, and
-   the docs agree:
+1. Update the version in all three places so the installed package, fallback
+    package config, and docs agree:
    - `pyproject.toml` → `[project] version`
-   - `py_env_studio/config.ini` → `[project] version` (shown in **Help → About**
-     and in the MCP `initialize` handshake)
+    - `py_env_studio/config.ini` → `[project] version` (fallback for source-tree
+       runs without installed distribution metadata, and used by the MCP handshake)
    - `docs/conf.py` → the `_project_version` default
 2. Add `docs/releases/v<version>.md` and link it from the `Releases` toctree in
    `docs/index.md`; mark the previous release as superseded.

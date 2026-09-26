@@ -14,6 +14,16 @@ from . import uv_tools
 logger = logging.getLogger(__name__)
 
 
+def _invalidate_package_update_cache(env_name: str) -> None:
+    """Drop update results after a successful package mutation."""
+    try:
+        from .package_update_monitor import PackageUpdateMonitor
+
+        PackageUpdateMonitor().invalidate_cache(env_name)
+    except Exception as exc:
+        logger.warning("Could not invalidate package-update cache for '%s': %s", env_name, exc)
+
+
 def get_env_package_manager(env_name: str) -> str:
     """Get the package manager that was used to create this environment.
     
@@ -84,11 +94,16 @@ def install_package(env_name, package, log_callback=None):
                 log_callback(msg)
             if not success:
                 raise Exception(msg)
+            _invalidate_package_update_cache(env_name)
         except Exception as e:
             logger.error(f"uv install_package failed, falling back to pip: {e}")
-            return pip_tools.install_package(env_name, package, log_callback)
+            result = pip_tools.install_package(env_name, package, log_callback)
+            _invalidate_package_update_cache(env_name)
+            return result
     else:
-        return pip_tools.install_package(env_name, package, log_callback)
+        result = pip_tools.install_package(env_name, package, log_callback)
+        _invalidate_package_update_cache(env_name)
+        return result
 
 
 def uninstall_package(env_name, package, log_callback=None):
@@ -109,11 +124,16 @@ def uninstall_package(env_name, package, log_callback=None):
                 log_callback(msg)
             if not success:
                 raise Exception(msg)
+            _invalidate_package_update_cache(env_name)
         except Exception as e:
             logger.error(f"uv uninstall_package failed, falling back to pip: {e}")
-            return pip_tools.uninstall_package(env_name, package, log_callback)
+            result = pip_tools.uninstall_package(env_name, package, log_callback)
+            _invalidate_package_update_cache(env_name)
+            return result
     else:
-        return pip_tools.uninstall_package(env_name, package, log_callback)
+        result = pip_tools.uninstall_package(env_name, package, log_callback)
+        _invalidate_package_update_cache(env_name)
+        return result
 
 
 def update_package(env_name, package, log_callback=None):
@@ -134,11 +154,16 @@ def update_package(env_name, package, log_callback=None):
                 log_callback(msg)
             if not success:
                 raise Exception(msg)
+            _invalidate_package_update_cache(env_name)
         except Exception as e:
             logger.error(f"uv update_package failed, falling back to pip: {e}")
-            return pip_tools.update_package(env_name, package, log_callback)
+            result = pip_tools.update_package(env_name, package, log_callback)
+            _invalidate_package_update_cache(env_name)
+            return result
     else:
-        return pip_tools.update_package(env_name, package, log_callback)
+        result = pip_tools.update_package(env_name, package, log_callback)
+        _invalidate_package_update_cache(env_name)
+        return result
 
 
 def export_requirements(env_name, output_file, log_callback=None):
@@ -184,11 +209,16 @@ def import_requirements(env_name, requirements_file, log_callback=None):
                 log_callback(msg)
             if not success:
                 raise Exception(msg)
+            _invalidate_package_update_cache(env_name)
         except Exception as e:
             logger.error(f"uv import_requirements failed, falling back to pip: {e}")
-            return pip_tools.import_requirements(env_name, requirements_file, log_callback)
+            result = pip_tools.import_requirements(env_name, requirements_file, log_callback)
+            _invalidate_package_update_cache(env_name)
+            return result
     else:
-        return pip_tools.import_requirements(env_name, requirements_file, log_callback)
+        result = pip_tools.import_requirements(env_name, requirements_file, log_callback)
+        _invalidate_package_update_cache(env_name)
+        return result
 
 
 def check_outdated_packages(env_name, log_callback=None):

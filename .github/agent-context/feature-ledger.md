@@ -11,6 +11,13 @@ This file tracks implemented features/fixes with implementation date.
 ## 2026-09-10
 - Configuration/Preferences (Tools -> Configuration): added centralized user configuration UI and service for default venv path, default Python selection, default package manager (pip/uv with availability checks), default project tool, template project defaults (create venv/init git), appearance mode, UI scaling, apply/save/cancel/reset flows, and runtime refresh integration.
 - Backfill (existing core UI capabilities): environment create/delete, one-click activation, package management (install/update/uninstall), vulnerability scanner + insights, environment search/rename, recent usage tracking, environment-size visibility, and requirements import/export.
+
+## 2026-09-26
+- Per-environment package-update monitoring: added a default-off creation opt-in, SQLite cached update counts with a six-hour TTL, asynchronous startup checks using the configured pip/uv package-manager path, and Updates table states for disabled, checking, checked, and unavailable environments.
+- Package-update cache consistency: successful pip/uv installs, uninstalls, upgrades, and requirements imports now invalidate the per-environment result; GUI completion refreshes the row and starts a fresh opted-in check.
+- Compact environment creation UI: moved creation controls into an on-demand, reusable dialog with screen-aware sizing, scrollable content, and explicit focus/z-order handling.
+- Environment update shortcut: double-clicking an Updates cell toggles automatic checking for only that environment; the usage guide documents the shortcut.
+- Application updates: Help → Check for Updates compares the installed distribution with PyPI, offers confirmed pip installation and restart, handles frozen builds via the release page, and About now reports the installed package version.
 - Backfill (existing interaction UX): environment table shortcuts including double-click activation and one-click copy of recent location to clipboard with Open At prefill behavior.
 - Backfill (existing UI personalization): appearance mode switching (Light/Dark/System) and runtime UI scaling controls.
 - Backfill (existing extensibility): plugin system with plugin discovery, enable/disable lifecycle, persisted plugin state, startup/shutdown hooks, scan-complete hook, and plugin manager UI.

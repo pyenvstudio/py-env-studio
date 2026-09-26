@@ -369,7 +369,13 @@ class RuntimeCache:
             try:
                 fresh_releases = self.refresh_online(provider, provider_name=provider_name)
                 _, last_updated = self.load_cached(provider_name)
-                cached = fresh_releases
+                # Same newest-first order as load_cached(): without this the UI
+                # list order would flip depending on whether the cache was warm.
+                cached = sorted(
+                    fresh_releases,
+                    key=lambda item: _version_key(item.version),
+                    reverse=True,
+                )
                 fresh = True
             except Exception as exc:
                 LOGGER.warning("Online metadata refresh failed; using cache: %s", exc)

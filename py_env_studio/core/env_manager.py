@@ -183,7 +183,7 @@ def _save_env_data(data):
         LOGGER.error("Failed to save env data: %s", exc)
 
 
-def set_env_data(env_name, recent_location=None, size=None, last_scanned=None, python_version=None, package_manager=None):
+def set_env_data(env_name, recent_location=None, size=None, last_scanned=None, python_version=None, package_manager=None, package_update_check_enabled=None):
     data = _load_env_data()
     entry = data.get(env_name, {})
 
@@ -197,6 +197,8 @@ def set_env_data(env_name, recent_location=None, size=None, last_scanned=None, p
         entry["python_version"] = python_version
     if package_manager is not None:
         entry["package_manager"] = package_manager
+    if package_update_check_enabled is not None:
+        entry["package_update_check_enabled"] = package_update_check_enabled is True
 
     data[env_name] = entry
     _save_env_data(data)
@@ -204,7 +206,10 @@ def set_env_data(env_name, recent_location=None, size=None, last_scanned=None, p
 
 def get_env_data(env_name):
     data = _load_env_data()
-    return data.get(env_name, {})
+    entry = data.get(env_name, {})
+    if "package_update_check_enabled" not in entry:
+        entry["package_update_check_enabled"] = False
+    return entry
 
 
 def calculate_env_size_mb(env_path):
@@ -327,7 +332,7 @@ def _is_valid_env_name(name: str) -> bool:
     return True
 
 
-def create_env(name, python_path=None, upgrade_pip=False, log_callback=None):
+def create_env(name, python_path=None, upgrade_pip=False, log_callback=None, package_update_check_enabled=False):
     env_path = os.path.join(VENV_DIR, name)
     python_path = python_path or PYTHON_PATH or "python"
     python_version = _extract_python_version(python_path) or "default"
@@ -444,7 +449,14 @@ def create_env(name, python_path=None, upgrade_pip=False, log_callback=None):
         size_mb = calculate_env_size_mb(env_path)
         detected_version = _extract_python_version(venv_python)
         # Store which package manager was actually used to create this environment
-        set_env_data(name, recent_location=env_path, size=size_mb, python_version=detected_version, package_manager=package_manager)
+        set_env_data(
+            name,
+            recent_location=env_path,
+            size=size_mb,
+            python_version=detected_version,
+            package_manager=package_manager,
+            package_update_check_enabled=package_update_check_enabled,
+        )
 
         LOGGER.info(
             "Created environment at: %s with Python: %s using %s (%.1fs)",
@@ -570,6 +582,13 @@ def delete_env(name, log_callback=None):
             shutil.rmtree(env_path)
             LOGGER.info("Deleted environment: %s", name)
 
+            try:
+                from .package_update_monitor import PackageUpdateMonitor
+
+                PackageUpdateMonitor().invalidate_cache(name)
+            except Exception as exc:
+                LOGGER.warning("Could not invalidate package-update cache for '%s': %s", name, exc)
+
             data = _load_env_data()
             if name in data:
                 del data[name]
@@ -586,7 +605,8 @@ def delete_env(name, log_callback=None):
 
 
 def get_env_python(env_name):
-    return os.path.join(VENV_DIR, env_name, "Scripts" if os.name == "nt" else "bin", "python")
+    executable = "python.exe" if os.name == "nt" else "python"
+    return os.path.join(VENV_DIR, env_name, "Scripts" if os.name == "nt" else "bin", executable)
 
 
 def activate_env(env_name, directory=None, open_with="vscode", open_in_venv_cwd=False, log_callback=None):

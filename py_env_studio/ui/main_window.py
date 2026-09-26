@@ -30,6 +30,15 @@ from py_env_studio.core.package_manager import (
     list_packages, install_package, uninstall_package, update_package,
     export_requirements, import_requirements, check_outdated_packages,
     get_env_package_manager)
+from py_env_studio.core.package_update_monitor import PackageUpdateMonitor
+from py_env_studio.core.app_updates import (
+    RELEASES_URL,
+    check_for_app_update,
+    get_installed_app_version,
+    install_app_update,
+    is_frozen_build,
+    restart_app,
+)
 from py_env_studio.ui.ui_tasks import (
     post_to_ui, run_in_background, shutdown_background_tasks)
 from py_env_studio.ui.status_bar import ProgressCoordinator
@@ -130,6 +139,39 @@ def show_info(msg):
 def open_link(link):
         webbrowser.open(link)
 
+
+# Help links shown when Python Install Manager is not found on the system.
+PYMANAGER_GOOGLE_SEARCH_URL = "https://www.google.com/search?q=python+install+manager+download"
+PYMANAGER_DOWNLOAD_URL = "https://www.python.org/downloads/release/pymanager-263/"
+PYMANAGER_INSTALL_STEPS = (
+    "1. Download Python Install Manager (free, from python.org).\n"
+    "2. Run the installer - no admin rights needed.\n"
+    "3. Click Refresh here: official Python releases then install in one click."
+)
+
+
+def legacy_launcher_note():
+    """Return an extra hint when an older 'Python Launcher' owns ``py.exe``.
+
+    The new Python Install Manager cannot provide ``py.exe`` while the legacy
+    launcher is installed, so the download help mentions removing it.  ``None``
+    means there is nothing to warn about (no ``py.exe``, or it already behaves
+    like the manager).
+    """
+    try:
+        from py_env_studio.core.runtime_providers import find_legacy_python_launcher
+
+        path = find_legacy_python_launcher()
+    except Exception:
+        return None
+    if not path:
+        return None
+    return (
+        f"A legacy 'Python Launcher' (py.exe) was found at {path}.\n"
+        "Open 'Installed Apps' and remove 'Python Launcher' so the new Python "
+        "Install Manager can provide the py.exe command."
+    )
+
 class MoreActionsDialog(ctk.CTkToplevel):
     """Custom dialog for showing More actions with Vulnerability Report and Scan Now buttons"""
     
@@ -204,6 +246,8 @@ class PyEnvStudio(ctk.CTk):
         self.verbosity = verbosity
         self._setup_config()
         self._setup_vars()
+        self._package_update_monitor = PackageUpdateMonitor()
+        self._package_update_pending = set()
         self._setup_window()
         self.icons = self._load_icons()
         self._setup_plugins()
@@ -219,7 +263,7 @@ class PyEnvStudio(ctk.CTk):
     def _setup_config(self):
         self.app_config = ConfigParser()
         self.app_config.read(get_config_path())
-        self.version = self.app_config.get('project', 'version', fallback='1.0.0')
+        self.version = get_installed_app_version()
 
     def _setup_vars(self):
         self.configuration_service = ConfigurationService()
@@ -546,8 +590,8 @@ class PyEnvStudio(ctk.CTk):
         help_menu = tkinter.Menu(menubar, tearoff=0)
         # read the docs link
         help_menu.add_command(label="Documentation", command=lambda: open_link("https://py-env-studio.readthedocs.io/en/latest/"))
+        help_menu.add_command(label="Check for Updates", command=self.check_for_app_updates)
         help_menu.add_command(label="About", command=self.show_about_dialog)
-        # help_menu.add_command(label="Check for Updates", command=self.check_outdated_packages)
 
         # === set menubar ===
         menubar.add_cascade(label="File", menu=file_menu)
@@ -589,9 +633,70 @@ class PyEnvStudio(ctk.CTk):
         self._env_list_section(env_tab)
 
     def _env_create_section(self, parent):
+        self._create_env_dialog = None
+        self.btn_open_create_env = self.btn(
+            parent,
+            "Create Environment",
+            self.open_create_environment_dialog,
+            self.icons.get("create-env"),
+        )
+        self.btn_open_create_env.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
 
-        f = self.frame(parent, corner_radius=12, border_width=1, border_color=self.theme.BORDER_COLOR)
-        f.grid(row=0, column=0, columnspan=2, padx=10, pady=(10, 5), sticky="ew")
+    def open_create_environment_dialog(self):
+        dialog = self._create_env_dialog
+        if dialog is not None:
+            try:
+                if dialog.winfo_exists():
+                    dialog.deiconify()
+                    dialog.lift()
+                    dialog.focus_force()
+                    dialog.grab_set()
+                    return
+            except Exception:
+                pass
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Create Environment")
+        dialog.transient(self)
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        width = min(780, max(480, screen_width - 48))
+        height = min(560, max(400, screen_height - 80))
+        x = max(0, (screen_width - width) // 2)
+        y = max(0, (screen_height - height) // 2)
+        dialog.geometry(f"{width}x{height}+{x}+{y}")
+        dialog.minsize(min(640, width), min(440, height))
+        dialog.grid_columnconfigure(0, weight=1)
+        self._create_env_dialog = dialog
+        self._build_env_create_form(dialog)
+        dialog.protocol("WM_DELETE_WINDOW", self.close_create_environment_dialog)
+        dialog.update_idletasks()
+        dialog.lift()
+        dialog.focus_force()
+        dialog.grab_set()
+
+    def close_create_environment_dialog(self):
+        dialog = self._create_env_dialog
+        if dialog is None:
+            return
+        try:
+            dialog.grab_release()
+            dialog.withdraw()
+            self.focus_set()
+        except Exception:
+            logger.debug("Could not hide Create Environment dialog", exc_info=True)
+
+    def _build_env_create_form(self, parent):
+        parent.grid_rowconfigure(1, weight=1)
+        parent.grid_columnconfigure(0, weight=1)
+        self.lbl(parent, "Create a managed Python environment", font=self.theme.FONT_BOLD).grid(
+            row=0, column=0, padx=16, pady=(14, 4), sticky="w"
+        )
+        content = ctk.CTkScrollableFrame(parent, fg_color="transparent")
+        content.grid(row=1, column=0, padx=8, pady=4, sticky="nsew")
+        content.grid_columnconfigure(0, weight=1)
+        f = self.frame(content, corner_radius=12, border_width=1, border_color=self.theme.BORDER_COLOR)
+        f.grid(row=0, column=0, padx=4, pady=4, sticky="ew")
         f.grid_columnconfigure(1, weight=1)
 
         # Environment name label and entry
@@ -613,9 +718,7 @@ class PyEnvStudio(ctk.CTk):
 
         # "or select:" label next to browse button
         
-        self.lbl(f, "or select:").grid(row=1, column=3, padx=(5, 5), pady=5, sticky="w")
-
-        # OptionMenu for python interpreters on same row, next column
+        self.lbl(f, "or select Python:").grid(row=2, column=0, padx=(10, 5), pady=5, sticky="w")
         self.available_python = self.optmenu(
             f,
             list_pythons(),
@@ -623,13 +726,13 @@ class PyEnvStudio(ctk.CTk):
             cmd=self.browse_python_path,
             width=150
         )
-        self.available_python.grid(row=1, column=4, padx=(5, 10), pady=5, sticky="w")
+        self.available_python.grid(row=2, column=1, columnspan=4, padx=(0, 10), pady=5, sticky="ew")
 
         # Managed Python runtime selection. This is intentionally separate from
         # the explicit interpreter-path override above. The runtime selector is
         # backed by the configured RuntimeProvider and therefore does not require
         # users to browse for python.exe manually.
-        self.lbl(f, "Python Runtime:").grid(row=2, column=0, padx=(10, 5), pady=5, sticky="w")
+        self.lbl(f, "Python Runtime:").grid(row=3, column=0, padx=(10, 5), pady=5, sticky="w")
         self.env_runtime_var = tkinter.StringVar(value="System Default")
         self.env_runtime_menu = self.optmenu(
             f,
@@ -638,39 +741,67 @@ class PyEnvStudio(ctk.CTk):
             width=180,
             cmd=lambda _value: self._on_env_runtime_selected(),
         )
-        self.env_runtime_menu.grid(row=2, column=1, padx=(0, 5), pady=5, sticky="w")
+        self.env_runtime_menu.grid(row=3, column=1, padx=(0, 5), pady=5, sticky="w")
         self.btn(f, "Refresh", self.refresh_env_runtime_choices, width=80).grid(
-            row=2, column=2, padx=5, pady=5, sticky="w"
+            row=3, column=2, padx=5, pady=5, sticky="w"
         )
+        # The hint row also carries inline "get Python Install Manager" buttons
+        # so a missing manager reads as a helpful next step, not a dead end.
+        self.env_runtime_hint_row = ctk.CTkFrame(f, fg_color="transparent")
+        self.env_runtime_hint_row.grid(row=3, column=3, columnspan=2, padx=5, pady=5, sticky="w")
         self.env_runtime_hint = self.lbl(
-            f, "", font=("Segoe UI", 10), text_color=self.theme.SECONDARY_COLOR
+            self.env_runtime_hint_row, "", font=("Segoe UI", 10), text_color=self.theme.SECONDARY_COLOR
         )
-        self.env_runtime_hint.grid(row=2, column=3, columnspan=2, padx=5, pady=5, sticky="w")
+        self.env_runtime_hint.pack(side="left")
+        self.env_runtime_help_links = ctk.CTkFrame(self.env_runtime_hint_row, fg_color="transparent")
+        self.btn(
+            self.env_runtime_help_links,
+            "⬇️ Get Python Install Manager",
+            lambda: open_link(PYMANAGER_DOWNLOAD_URL),
+            width=215, height=26,
+        ).pack(side="left")
+        self.btn(
+            self.env_runtime_help_links,
+            "🔍 Google",
+            lambda: open_link(PYMANAGER_GOOGLE_SEARCH_URL),
+            width=85, height=26,
+        ).pack(side="left", padx=(4, 0))
+        # Hidden by default; refresh_env_runtime_choices() reveals it when the
+        # configured provider is Python Install Manager and it is missing.
+        self.env_runtime_help_links.pack_forget()
 
         # Upgrade pip checkbox below, full width
         self.checkbox_upgrade_pip = self.chk(f, "Upgrade pip during creation")
         self.checkbox_upgrade_pip.select()
-        self.checkbox_upgrade_pip.grid(row=3, column=0, columnspan=5, padx=10, pady=5, sticky="w")
+        self.checkbox_upgrade_pip.grid(row=4, column=0, columnspan=5, padx=10, pady=5, sticky="w")
+
+        self.checkbox_package_updates = self.chk(f, "Regularly Check for Package Updates")
+        self.checkbox_package_updates.deselect()
+        self.checkbox_package_updates.grid(row=5, column=0, columnspan=5, padx=10, pady=5, sticky="w")
 
         # Package manager selection
-        self.lbl(f, "Package Manager:").grid(row=4, column=0, padx=(10, 5), pady=5, sticky="w")
+        self.lbl(f, "Package Manager:").grid(row=6, column=0, padx=(10, 5), pady=5, sticky="w")
         self.create_env_pkg_mgr = self.optmenu(
             f,
             ["pip", "uv"],
             var=None,
             width=150
         )
-        self.create_env_pkg_mgr.grid(row=4, column=1, padx=(0, 5), pady=5, sticky="w")
+        self.create_env_pkg_mgr.grid(row=6, column=1, padx=(0, 5), pady=5, sticky="w")
         from py_env_studio.core.env_manager import get_preferred_package_manager
         self.create_env_pkg_mgr.set(get_preferred_package_manager())
 
         # show python version information label below checkbox
         self.python_version_info = self.lbl(f, "USING PYTHON: Default", font=self.theme.FONT_BOLD, text_color=self.theme.HIGHLIGHT_COLOR)
-        self.python_version_info.grid(row=5, column=0, columnspan=5, padx=10, pady=5, sticky="w")
+        self.python_version_info.grid(row=7, column=0, columnspan=5, padx=10, pady=5, sticky="w")
 
-        # Create environment button below
-        self.btn_create_env = self.btn(f, "Create Environment", self.create_env, self.icons.get("create-env"))
-        self.btn_create_env.grid(row=6, column=0, columnspan=5, padx=10, pady=5)
+        actions = ctk.CTkFrame(parent, fg_color="transparent")
+        actions.grid(row=2, column=0, padx=16, pady=(4, 12), sticky="e")
+        self.btn_create_env = self.btn(actions, "Create", self.create_env, self.icons.get("create-env"))
+        self.btn_create_env.grid(row=0, column=0, padx=5)
+        self.btn(actions, "Close", self.close_create_environment_dialog, width=100).grid(
+            row=0, column=1, padx=5
+        )
 
         # Deferred to the first mainloop tick: the refresh runs on the worker
         # pool and posts its result back with widget.after(), which needs a
@@ -1187,19 +1318,53 @@ class PyEnvStudio(ctk.CTk):
         self._env_list_debounce_id = self.after(150, self.refresh_env_list)
 
     @staticmethod
-    def _collect_env_rows(query: str) -> list[tuple[str, dict, str]]:
+    def _package_update_label(enabled: bool, cached: dict | None, checking: bool = False) -> str:
+        if not enabled:
+            return "Disabled"
+        if cached is not None:
+            if cached.get("error"):
+                return "Unavailable"
+            count = cached.get("outdated_count")
+            if count is not None:
+                return f"{count} updates" if count else "Up to date"
+        return "Checking…" if checking else "Not checked"
+
+    @staticmethod
+    def _collect_env_rows(query: str, monitor=None, pending=()):
         """Gather environment metadata. Worker-thread safe: never touches Tk.
 
         ``get_package_manager_display`` probes ``pip``/``uv`` with a
         subprocess, so running this on the Tk main thread would freeze the
         window once per environment on every keystroke.
         """
-        rows: list[tuple[str, dict, str]] = []
-        for env in search_envs(query):
+        all_environments = search_envs("")
+        states = {}
+        checks = []
+        for env in all_environments:
             data = get_env_data(env)
-            vm_tool = get_package_manager_display(get_env_package_manager(env))
-            rows.append((env, data, vm_tool))
-        return rows
+            manager = get_env_package_manager(env)
+            enabled = data.get("package_update_check_enabled", False) is True
+            cached = None
+            if enabled and monitor is not None:
+                try:
+                    cached = monitor.get_cached_result(env, manager)
+                except Exception:
+                    logger.warning("Could not load cached package updates for '%s'", env, exc_info=True)
+                if cached is None and env not in pending:
+                    checks.append(env)
+            states[env] = (data, manager, enabled, cached)
+
+        rows = []
+        for env in search_envs(query):
+            data, manager, enabled, cached = states[env]
+            vm_tool = get_package_manager_display(manager)
+            rows.append((
+                env,
+                data,
+                vm_tool,
+                PyEnvStudio._package_update_label(enabled, cached, env in pending),
+            ))
+        return rows, checks
 
     def refresh_env_list(self):
         """Rebuild the environments table without blocking the mainloop.
@@ -1212,6 +1377,7 @@ class PyEnvStudio(ctk.CTk):
         generation = getattr(self, "_env_list_generation", 0) + 1
         self._env_list_generation = generation
         query = self.env_search_var.get()
+        pending = frozenset(self._package_update_pending)
         self.progress.set_status("Refreshing environments…")
 
         self._clear_frame(self.env_scrollable_frame)
@@ -1222,9 +1388,9 @@ class PyEnvStudio(ctk.CTk):
         ).grid(row=0, column=0, padx=10, pady=10, sticky="w")
 
         run_in_background(
-            lambda: self._collect_env_rows(query),
+            lambda: self._collect_env_rows(query, self._package_update_monitor, pending),
             ui=self,
-            on_done=lambda rows: self._render_env_list(rows, generation),
+            on_done=lambda result: self._render_env_list(*result, generation),
             on_error=lambda exc: self._render_env_list_error(exc, generation),
         )
 
@@ -1249,7 +1415,7 @@ class PyEnvStudio(ctk.CTk):
             text_color=self.theme.ERROR_COLOR,
         ).grid(row=0, column=0, padx=10, pady=10, sticky="w")
 
-    def _render_env_list(self, rows, generation: int) -> None:
+    def _render_env_list(self, rows, checks, generation: int) -> None:
         """Draw the environment rows (main thread only)."""
         if not self._current_env_generation(generation):
             return  # a newer refresh is already pending or rendered
@@ -1257,8 +1423,7 @@ class PyEnvStudio(ctk.CTk):
             f"{len(rows)} environment{'s' if len(rows) != 1 else ''} listed"
         )
         self._clear_frame(self.env_scrollable_frame)
-        # Updated columns - added VM_TOOL after PYTHON_VERSION
-        columns = ("ENVIRONMENT", "PYTHON_VERSION", "VM_TOOL", "LAST_LOCATION", "SIZE", "RENAME", "DELETE", "LAST_SCANNED", "MORE")
+        columns = ("ENVIRONMENT", "PYTHON_VERSION", "VM_TOOL", "LAST_LOCATION", "SIZE", "RENAME", "DELETE", "LAST_SCANNED", "UPDATES", "MORE")
         self.env_tree = ttk.Treeview(
             self.env_scrollable_frame, columns=columns, show="headings", height=8, selectmode="browse"
         )
@@ -1270,16 +1435,18 @@ class PyEnvStudio(ctk.CTk):
             ("SIZE", "Size", 100, "center"),
             ("RENAME", "Rename", 80, "center"),
             ("DELETE", "Delete", 80, "center"),
-            ("LAST_SCANNED", "Last Scanned", 120, "center"),
-            ("MORE", "More", 80, "center")  # New More column
+            ("LAST_SCANNED", "Security Scan", 120, "center"),
+            ("UPDATES", "Updates", 110, "center"),
+            ("MORE", "More", 80, "center")
         ]:
             self.env_tree.heading(col, text=text)
             self.env_tree.column(col, width=width, anchor=anchor)
         self.env_tree.grid(row=0, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="nsew")
         self.update_treeview_style()
 
-        for env, data, vm_tool in rows:
-            self.env_tree.insert("", "end", values=(
+        self._env_row_ids = {}
+        for env, data, vm_tool, updates in rows:
+            row_id = self.env_tree.insert("", "end", values=(
                 env,
                 data.get("python_version", "-"),
                 vm_tool,
@@ -1288,8 +1455,14 @@ class PyEnvStudio(ctk.CTk):
                 "🖊",
                 "🗑️",
                 data.get("last_scanned", "-"),
+                updates,
                 "⋮"  # more
             ))
+            self._env_row_ids[env] = row_id
+
+        selected_env = self.selected_env_var.get()
+        if selected_env in self._env_row_ids:
+            self.env_tree.selection_set(self._env_row_ids[selected_env])
 
         def on_tree_click(event):
             col = self.env_tree.identify_column(event.x)
@@ -1358,7 +1531,15 @@ class PyEnvStudio(ctk.CTk):
                         py_tonic_action="delete_env",
                         progress_label=f"Deleting environment '{env}'",
                     )
-            elif col == "#9":  # More
+            elif col == "#9":  # Updates
+                pending_click = getattr(self, "_updates_single_click_after", None)
+                if pending_click is not None:
+                    self.after_cancel(pending_click)
+                self._updates_single_click_after = self.after(
+                    250,
+                    lambda env_name=env: self._open_updates_after_single_click(env_name),
+                )
+            elif col == "#10":  # More
                 self.show_more_actions_dialog(env)
 
         def on_tree_double_click(event):
@@ -1366,10 +1547,17 @@ class PyEnvStudio(ctk.CTk):
             row = self.env_tree.identify_row(event.y)
             if not row:
                 return
+            env = self.env_tree.item(row)["values"][0]
 
             # Double click to trigger Activate button
             if col in ("#1","#2", "#3", "#5", "#8"):
                 self.activate_button.invoke()
+            elif col == "#9":
+                pending_click = getattr(self, "_updates_single_click_after", None)
+                if pending_click is not None:
+                    self.after_cancel(pending_click)
+                    self._updates_single_click_after = None
+                self._toggle_package_update_check(env)
 
         self.env_tree.bind("<Button-1>", on_tree_click)
         self.env_tree.bind("<Double-1>", on_tree_double_click)
@@ -1383,6 +1571,117 @@ class PyEnvStudio(ctk.CTk):
 
 
         self.env_tree.bind("<<TreeviewSelect>>", on_tree_select)
+
+        for env in checks:
+            self._start_package_update_check(env)
+
+    def _set_env_update_label(self, env_name: str, label: str) -> None:
+        row_id = getattr(self, "_env_row_ids", {}).get(env_name)
+        if not row_id or not self.env_tree.exists(row_id):
+            return
+        values = list(self.env_tree.item(row_id, "values"))
+        values[8] = label
+        self.env_tree.item(row_id, values=values)
+
+    def _open_cached_package_updates(self, env_name: str) -> None:
+        if not get_env_data(env_name).get("package_update_check_enabled", False):
+            if not messagebox.askyesno(
+                "Enable Package Updates",
+                f"Enable automatic package-update checks for '{env_name}'?",
+            ):
+                return
+            set_env_data(env_name, package_update_check_enabled=True)
+            self._start_package_update_check(env_name)
+            return
+        if env_name in self._package_update_pending:
+            return
+
+        run_in_background(
+            lambda: self._package_update_monitor.get_cached_result(
+                env_name, get_env_package_manager(env_name)
+            ),
+            ui=self,
+            on_done=lambda cached: self._show_cached_package_updates(env_name, cached),
+            on_error=lambda exc: logger.warning(
+                "Could not load cached package updates for '%s': %s", env_name, exc
+            ),
+        )
+
+    def _open_updates_after_single_click(self, env_name: str) -> None:
+        self._updates_single_click_after = None
+        self._open_cached_package_updates(env_name)
+
+    def _toggle_package_update_check(self, env_name: str) -> None:
+        enabled = get_env_data(env_name).get("package_update_check_enabled", False) is True
+        set_env_data(env_name, package_update_check_enabled=not enabled)
+        if enabled:
+            self._set_env_update_label(env_name, "Disabled")
+        else:
+            self._start_package_update_check(env_name)
+
+    def _show_cached_package_updates(self, env_name: str, cached: dict | None) -> None:
+        if cached is None:
+            self.check_for_package_updates(env_name)
+            return
+        if cached.get("error"):
+            show_error(f"Package updates are unavailable for '{env_name}'.")
+            return
+
+        packages = cached.get("outdated_packages")
+        if packages is None and cached.get("outdated_count", 0) > 0:
+            self.check_for_package_updates(env_name)
+            return
+        rows = [
+            (
+                package.get("name", ""),
+                package.get("version", ""),
+                package.get("latest_version", ""),
+                package.get("latest_filetype", ""),
+            )
+            for package in (packages or [])
+        ]
+        self.show_updatable_packages(rows, env_name=env_name)
+
+    def _start_package_update_check(self, env_name: str) -> None:
+        if env_name in self._package_update_pending:
+            return
+        self._package_update_pending.add(env_name)
+        self._set_env_update_label(env_name, "Checking…")
+
+        def completed(result: dict) -> None:
+            self._package_update_pending.discard(env_name)
+            enabled = get_env_data(env_name).get("package_update_check_enabled", False) is True
+            self._set_env_update_label(env_name, self._package_update_label(enabled, result))
+
+        def failed(exc: BaseException) -> None:
+            self._package_update_pending.discard(env_name)
+            logger.warning("Package-update check failed for '%s': %s", env_name, exc, exc_info=exc)
+            self._set_env_update_label(env_name, "Unavailable")
+
+        run_in_background(
+            lambda: self._package_update_monitor.check_if_stale(env_name),
+            ui=self,
+            on_done=completed,
+            on_error=failed,
+        )
+
+    def _refresh_package_update_status(self, env_name: str) -> None:
+        def refreshed(_result) -> None:
+            self.refresh_env_list()
+
+        def failed(exc: BaseException) -> None:
+            logger.warning(
+                "Could not invalidate package-update status for '%s': %s",
+                env_name,
+                exc,
+            )
+
+        run_in_background(
+            lambda: self._package_update_monitor.invalidate_cache(env_name),
+            ui=self,
+            on_done=refreshed,
+            on_error=failed,
+        )
 
     def show_more_actions_dialog(self, env_name):
         """Show the More actions dialog with Vulnerability Report and Scan Now buttons"""
@@ -1445,7 +1744,7 @@ class PyEnvStudio(ctk.CTk):
             progress_label=f"Scanning environment '{env_name}'",
         )
 
-    def show_updatable_packages(self, updatable_packages):
+    def show_updatable_packages(self, updatable_packages, env_name=None):
         if not updatable_packages:
             show_info("All packages are up to date.")
             return
@@ -1456,6 +1755,7 @@ class PyEnvStudio(ctk.CTk):
         top.geometry("500x320")
         top.transient(self)
         top.grab_set()
+        target_env_name = env_name or self.selected_env_var.get().strip()
 
         # Center the dialog
         top.geometry(f"+{self.winfo_rootx() + 600}+{self.winfo_rooty() + 300}")
@@ -1490,14 +1790,12 @@ class PyEnvStudio(ctk.CTk):
                 return
             
             pkg_names = [tree.item(item)["values"][0] for item in selected_items]
-            env_name = self.selected_env_var.get().strip()
-            self.batch_update_packages(env_name, pkg_names, top)
+            self.batch_update_packages(target_env_name, pkg_names, top)
 
         def update_all_packages():
             """Update all packages in the list"""
             pkg_names = [tree.item(item)["values"][0] for item in tree.get_children()]
-            env_name = self.selected_env_var.get().strip()
-            self.batch_update_packages(env_name, pkg_names, top)
+            self.batch_update_packages(target_env_name, pkg_names, top)
 
         # Button frame
         btn_frame = ctk.CTkFrame(top, fg_color="transparent")
@@ -1528,6 +1826,7 @@ class PyEnvStudio(ctk.CTk):
             try:
                 # check_outdated_packages returns a JSON string
                 result_json = check_outdated_packages(env_name, log_callback=self._task_log)
+                data = []
                 updatable_packages = []
                 if result_json:
                     data = json.loads(result_json)
@@ -1539,9 +1838,31 @@ class PyEnvStudio(ctk.CTk):
                             pkg.get("latest_version", ""),
                             pkg.get("latest_filetype", "")
                         ))
-                self._safe_after(0, lambda: self.show_updatable_packages(updatable_packages))
+                self._package_update_monitor.record_result(
+                    env_name,
+                    len(updatable_packages),
+                    outdated_packages=data or [],
+                )
+                self._safe_after(0, lambda: [
+                    self._set_env_update_label(
+                        env_name,
+                        self._package_update_label(
+                            get_env_data(env_name).get("package_update_check_enabled", False) is True,
+                            {"outdated_count": len(updatable_packages), "error": None},
+                        ),
+                    ),
+                    self.show_updatable_packages(updatable_packages, env_name=env_name),
+                ])
             except Exception as e:
-                self._safe_after(0, lambda: show_error(f"Failed to check for package updates: {str(e)}"))
+                error_message = f"Failed to check for package updates: {str(e)}"
+                try:
+                    self._package_update_monitor.record_result(env_name, None, error=str(e))
+                except Exception:
+                    logger.warning("Could not cache manual package-update failure for '%s'", env_name, exc_info=True)
+                self._safe_after(0, lambda: [
+                    self._set_env_update_label(env_name, "Unavailable"),
+                    show_error(error_message),
+                ])
 
         self.run_async(
             task,
@@ -1667,16 +1988,28 @@ class PyEnvStudio(ctk.CTk):
             return
         if button_widget:
             button_widget.configure(state="disabled")
+
+        operation_succeeded = {"value": False}
+
+        def task():
+            result = install_package(env_name, package_name, log_callback=self._task_log)
+            operation_succeeded["value"] = True
+            return result
+
+        def finished():
+            if operation_succeeded["value"]:
+                self._refresh_package_update_status(env_name)
+            if entry_widget:
+                entry_widget.delete(0, tkinter.END)
+            if button_widget:
+                button_widget.configure(state="normal")
+            self.view_installed_packages() if on_complete is None else on_complete()
+
         self.run_async(
-            lambda: install_package(env_name, package_name,
-                                    log_callback=self._task_log),
+            task,
             success_msg=f"Package '{package_name}' installed in '{env_name}'.",
             error_msg="Failed to install package",
-            callback=lambda: [
-                entry_widget.delete(0, tkinter.END) if entry_widget else None,
-                button_widget.configure(state="normal") if button_widget else None,
-                self.view_installed_packages() if on_complete is None else on_complete()
-            ],
+            callback=finished,
             py_tonic_action="install_package",
             progress_label=f"Installing {package_name} into '{env_name}'",
         )
@@ -1696,23 +2029,41 @@ class PyEnvStudio(ctk.CTk):
         if self.checkbox_confirm_install.get() and not messagebox.askyesno(
             "Confirm", f"Uninstall '{package_name}' from '{env_name}'?"):
             return
+        operation_succeeded = {"value": False}
+
+        def task():
+            result = uninstall_package(env_name, package_name, log_callback=self._task_log)
+            operation_succeeded["value"] = True
+            return result
+
         self.run_async(
-            lambda: uninstall_package(env_name, package_name,
-                                      log_callback=self._task_log),
+            task,
             success_msg=f"Package '{package_name}' uninstalled from '{env_name}'.",
             error_msg="Failed to uninstall package",
-            callback=lambda: self.view_installed_packages(),
+            callback=lambda: [
+                self.view_installed_packages(),
+                self._refresh_package_update_status(env_name) if operation_succeeded["value"] else None,
+            ],
             py_tonic_action="uninstall_package",
             progress_label=f"Uninstalling {package_name} from '{env_name}'",
         )
 
     def update_installed_package(self, env_name, package_name):
+        operation_succeeded = {"value": False}
+
+        def task():
+            result = update_package(env_name, package_name, log_callback=self._task_log)
+            operation_succeeded["value"] = True
+            return result
+
         self.run_async(
-            lambda: update_package(env_name, package_name,
-                                   log_callback=self._task_log),
+            task,
             success_msg=f"Package '{package_name}' updated in '{env_name}'.",
             error_msg="Failed to update package",
-            callback=lambda: self.view_installed_packages(),
+            callback=lambda: [
+                self.view_installed_packages(),
+                self._refresh_package_update_status(env_name) if operation_succeeded["value"] else None,
+            ],
             py_tonic_action="update_package",
             progress_label=f"Updating {package_name} in '{env_name}'",
         )
@@ -1778,6 +2129,7 @@ class PyEnvStudio(ctk.CTk):
                     summary += f"✓ Updated Successfully ({len(successful)}):\n"
                     for pkg in successful:
                         summary += f"  • {pkg}\n"
+                    self._refresh_package_update_status(env_name)
 
                 if failed:
                     summary += f"\n✗ Failed ({len(failed)}):\n"
@@ -1812,12 +2164,22 @@ class PyEnvStudio(ctk.CTk):
         file_path = filedialog.askopenfilename(filetypes=[("Text files", "*.txt")])
         if file_path:
             self.btn_install_requirements.configure(state="disabled")
+
+            operation_succeeded = {"value": False}
+
+            def task():
+                result = import_requirements(env_name, file_path, log_callback=self._task_log)
+                operation_succeeded["value"] = True
+                return result
+
             self.run_async(
-                lambda: import_requirements(env_name, file_path,
-                                            log_callback=self._task_log),
+                task,
                 success_msg=f"Requirements from '{file_path}' installed in '{env_name}'.",
                 error_msg="Failed to install requirements",
-                callback=lambda: self.btn_install_requirements.configure(state="normal"),
+                callback=lambda: [
+                    self.btn_install_requirements.configure(state="normal"),
+                    self._refresh_package_update_status(env_name) if operation_succeeded["value"] else None,
+                ],
                 py_tonic_action="import_requirements",
                 progress_label=f"Installing requirements into '{env_name}'",
             )
@@ -1990,6 +2352,19 @@ class PyEnvStudio(ctk.CTk):
         except Exception:
             pass
 
+    def _set_env_runtime_help_links(self, visible: bool) -> None:
+        """Show/hide the inline 'Get Python Install Manager' action buttons."""
+        row = getattr(self, "env_runtime_help_links", None)
+        if row is None:
+            return
+        try:
+            if visible:
+                row.pack(side="left", padx=(8, 0))
+            else:
+                row.pack_forget()
+        except Exception:
+            pass
+
     def refresh_env_runtime_choices(self):
         """Refresh managed Python runtime choices without blocking the GUI."""
         if not hasattr(self, "env_runtime_menu"):
@@ -2008,10 +2383,12 @@ class PyEnvStudio(ctk.CTk):
 
         def task():
             try:
-                installed = provider.list_installed() if provider.is_available() else []
+                available = provider.is_available()
+                installed = provider.list_installed() if available else []
                 provider_error = None
             except Exception as exc:
                 logger.warning("Failed to load managed Python runtimes: %s", exc)
+                available = False
                 installed = []
                 provider_error = str(exc)
 
@@ -2031,29 +2408,50 @@ class PyEnvStudio(ctk.CTk):
                     else:
                         self.env_runtime_var.set("System Default")
                     if provider_error:
+                        self._set_env_runtime_help_links(False)
                         self._set_env_runtime_hint(
                             "Could not load runtimes; using System Default.",
                             self.theme.WARNING_COLOR,
                         )
                     elif not installed:
                         if provider.NAME == "Python Install Manager":
-                            self._set_env_runtime_hint(
-                                "Install Manager not found; using system Python.",
-                                self.theme.WARNING_COLOR,
-                            )
+                            if not available:
+                                self._set_env_runtime_hint(
+                                    "No managed runtimes yet - install Python Install Manager "
+                                    "once to unlock one-click official Python versions "
+                                    "(your system Python still works).",
+                                    self.theme.HIGHLIGHT_COLOR,
+                                )
+                                self._set_env_runtime_help_links(True)
+                            else:
+                                self._set_env_runtime_hint(
+                                    "Python Install Manager is ready - install a runtime from "
+                                    "Configuration > Python Runtime.",
+                                    self.theme.HIGHLIGHT_COLOR,
+                                )
+                                self._set_env_runtime_help_links(False)
                         elif provider.NAME == "Custom":
+                            self._set_env_runtime_help_links(False)
                             self._set_env_runtime_hint(
                                 "Set an explicit interpreter in Configuration > Python.",
                                 self.theme.WARNING_COLOR,
                             )
                         else:
+                            self._set_env_runtime_help_links(False)
                             self._set_env_runtime_hint(
                                 f"{len(installed)} system runtime(s) found.",
                             )
                     else:
+                        self._set_env_runtime_help_links(False)
                         self._set_env_runtime_hint(
                             f"{len(installed)} runtime(s) via {provider.NAME}.",
                         )
+                    if (
+                        provider.NAME == "Python Install Manager"
+                        and not available
+                        and not provider_error
+                    ):
+                        self._show_pymanager_download_help(once_per_session=True)
                     self._on_env_runtime_selected()
                 except Exception:
                     pass
@@ -2080,6 +2478,7 @@ class PyEnvStudio(ctk.CTk):
         set_preferred_package_manager(selected_pkg_mgr)
 
         upgrade_pip = bool(self.checkbox_upgrade_pip.get())
+        package_update_check_enabled = bool(self.checkbox_package_updates.get())
         if python_path:
             # Reading the interpreter's version spawns `python --version`; do
             # it off-thread and continue once the result is back on this thread.
@@ -2087,15 +2486,16 @@ class PyEnvStudio(ctk.CTk):
                 lambda: self._version_from_python_path(python_path),
                 ui=self,
                 on_done=lambda detected: self._finish_create_env(
-                    env_name, python_path, upgrade_pip, detected),
+                    env_name, python_path, upgrade_pip, detected, package_update_check_enabled),
                 on_error=lambda _exc: self._finish_create_env(
-                    env_name, python_path, upgrade_pip, None),
+                    env_name, python_path, upgrade_pip, None, package_update_check_enabled),
             )
             return
 
-        self._finish_create_env(env_name, python_path, upgrade_pip, None)
+        self._finish_create_env(env_name, python_path, upgrade_pip, None, package_update_check_enabled)
 
-    def _finish_create_env(self, env_name, python_path, upgrade_pip, detected_version) -> None:
+    def _finish_create_env(self, env_name, python_path, upgrade_pip, detected_version,
+                           package_update_check_enabled=False) -> None:
         """Resolve the requested runtime, then start creation (main thread only).
 
         Split out of :meth:`create_env` so interpreter version detection can
@@ -2129,10 +2529,11 @@ class PyEnvStudio(ctk.CTk):
                 upgrade_pip=upgrade_pip,
                 requested_version=requested_version,
                 provider=provider,
+                package_update_check_enabled=package_update_check_enabled,
             )
             return
 
-        self._start_env_creation(env_name, python_path, upgrade_pip)
+        self._start_env_creation(env_name, python_path, upgrade_pip, package_update_check_enabled)
 
     @staticmethod
     def _version_from_python_path(python_path) -> str | None:
@@ -2144,12 +2545,18 @@ class PyEnvStudio(ctk.CTk):
             return detected.split(" ", 1)[1].strip()
         return None
 
-    def _start_env_creation(self, env_name: str, python_path, upgrade_pip: bool) -> None:
+    def _start_env_creation(self, env_name: str, python_path, upgrade_pip: bool,
+                            package_update_check_enabled: bool = False) -> None:
         """Begin async environment creation using the existing workflow/helpers."""
         self.btn_create_env.configure(state="disabled")
         self.run_async(
-            lambda: create_env(env_name, python_path, upgrade_pip,
-                               log_callback=self._task_log),
+            lambda: create_env(
+                env_name,
+                python_path,
+                upgrade_pip,
+                log_callback=self._task_log,
+                package_update_check_enabled=package_update_check_enabled,
+            ),
             success_msg=f"Environment '{env_name}' created successfully.",
             error_msg="Failed to create environment",
             callback=lambda: [
@@ -2165,7 +2572,7 @@ class PyEnvStudio(ctk.CTk):
 
     def _resolve_env_runtime_then_create(self, env_name: str, python_path,
                                          upgrade_pip: bool, requested_version: str,
-                                         provider) -> None:
+                                         provider, package_update_check_enabled=False) -> None:
         """Resolve the requested runtime off-thread; install when missing, then create."""
         self.btn_create_env.configure(state="disabled")
         self._task_log(f"Checking Python {requested_version}...")
@@ -2181,19 +2588,22 @@ class PyEnvStudio(ctk.CTk):
             if executable:
                 self._safe_after(
                     0,
-                    lambda: self._start_env_creation(env_name, executable, upgrade_pip),
+                    lambda: self._start_env_creation(
+                        env_name, executable, upgrade_pip, package_update_check_enabled),
                 )
                 return
             if lookup_error is not None:
                 self._safe_after(0, lambda: self._on_env_runtime_check_failed(
-                    lookup_error, env_name, python_path, upgrade_pip))
+                    lookup_error, env_name, python_path, upgrade_pip,
+                    package_update_check_enabled))
                 return
             # Not installed (or provider cannot supply it).
             if python_path:
                 # Explicit path was given: continue with it instead of stalling.
                 self._safe_after(
                     0,
-                    lambda: self._start_env_creation(env_name, python_path, upgrade_pip),
+                    lambda: self._start_env_creation(
+                        env_name, python_path, upgrade_pip, package_update_check_enabled),
                 )
                 return
 
@@ -2207,7 +2617,8 @@ class PyEnvStudio(ctk.CTk):
                         f"Python {requested_version} is not available via {provider.NAME}; "
                         "creating with system Python."
                     )
-                    self._start_env_creation(env_name, None, upgrade_pip)
+                    self._start_env_creation(
+                        env_name, None, upgrade_pip, package_update_check_enabled)
                     return
                 answer = messagebox.askyesno(
                     "Python Not Installed",
@@ -2218,24 +2629,28 @@ class PyEnvStudio(ctk.CTk):
                     self.btn_create_env.configure(state="normal")
                     return
                 self._install_runtime_for_env(
-                    env_name, python_path, upgrade_pip, requested_version, provider)
+                    env_name, python_path, upgrade_pip, requested_version, provider,
+                    package_update_check_enabled)
 
             self._safe_after(0, ask_install)
 
         run_in_background(task, ui=self)
 
     def _on_env_runtime_check_failed(self, exc: Exception, env_name=None,
-                                     python_path=None, upgrade_pip=False) -> None:
+                                     python_path=None, upgrade_pip=False,
+                                     package_update_check_enabled=False) -> None:
         """Keep UI responsive when runtime lookup fails; fall back to saved Python."""
         logger.warning("Runtime lookup during env creation failed: %s", exc)
         self.env_log_queue.put("Runtime lookup failed; creating with configured Python.")
         if env_name:
-            self._start_env_creation(env_name, python_path, bool(upgrade_pip))
+            self._start_env_creation(
+                env_name, python_path, bool(upgrade_pip), package_update_check_enabled)
         else:
             self.btn_create_env.configure(state="normal")
 
     def _install_runtime_for_env(self, env_name, python_path, upgrade_pip,
-                                 requested_version, provider) -> None:
+                                 requested_version, provider,
+                                 package_update_check_enabled=False) -> None:
         """Install the requested runtime without blocking the UI, then continue."""
         self._task_log(f"Installing Python {requested_version}...")
         # A runtime download takes minutes, so the gauge gets a real session
@@ -2255,38 +2670,43 @@ class PyEnvStudio(ctk.CTk):
             except Exception as exc:
                 logger.warning("Python %s installation failed: %s", requested_version, exc)
                 self._safe_after(0, lambda: self._on_env_runtime_install_failed(
-                    env_name, requested_version, str(exc)))
+                    env_name, requested_version, str(exc), package_update_check_enabled))
                 return
             if not result:
                 self._safe_after(0, lambda: self._on_env_runtime_install_failed(
-                    env_name, requested_version, "installation reported failure"))
+                    env_name, requested_version, "installation reported failure",
+                    package_update_check_enabled))
                 return
             # Verify off the UI thread: listing/installation may take seconds.
             try:
                 executable = provider.get_executable(requested_version)
             except Exception as exc:
                 self._safe_after(0, lambda: self._on_env_runtime_install_failed(
-                    env_name, requested_version, str(exc)))
+                    env_name, requested_version, str(exc), package_update_check_enabled))
                 return
             if not executable:
                 self._safe_after(0, lambda: self._on_env_runtime_install_failed(
                     env_name, requested_version,
-                    "installed runtime not found after install"))
+                    "installed runtime not found after install",
+                    package_update_check_enabled))
                 return
             self._safe_after(
                 0,
                 lambda: self._on_env_runtime_installed(
-                    env_name, requested_version, executable, upgrade_pip),
+                    env_name, requested_version, executable, upgrade_pip,
+                    package_update_check_enabled),
             )
 
         run_in_background(task, ui=self)
 
     def _on_env_runtime_installed(self, env_name, requested_version,
-                                  executable, upgrade_pip) -> None:
+                                  executable, upgrade_pip,
+                                  package_update_check_enabled=False) -> None:
         self._close_runtime_install_progress(f"Python {requested_version} installed", ok=True)
         self._task_log(f"Python {requested_version} installed")
         self.refresh_env_runtime_choices()
-        self._start_env_creation(env_name, executable, upgrade_pip)
+        self._start_env_creation(
+            env_name, executable, upgrade_pip, package_update_check_enabled)
 
     def _close_runtime_install_progress(self, message: str, ok: bool) -> None:
         """Close the runtime-install gauge session (both outcomes)."""
@@ -2296,7 +2716,8 @@ class PyEnvStudio(ctk.CTk):
             self.progress.finish(token, message, ok=ok)
 
     def _on_env_runtime_install_failed(self, env_name: str, requested_version: str,
-                                       details: str) -> None:
+                                       details: str,
+                                       package_update_check_enabled=False) -> None:
         """Report install failure and offer retry while staying in the create flow."""
         logger.warning("Python %s install for env %s failed: %s",
                         requested_version, env_name, details)
@@ -2323,7 +2744,7 @@ class PyEnvStudio(ctk.CTk):
                     self.entry_env_name.get().strip() or env_name,
                     self.entry_python_path.get().strip() or None,
                     bool(self.checkbox_upgrade_pip.get()),
-                    requested_version, provider)
+                    requested_version, provider, package_update_check_enabled)
                 return
         self.btn_create_env.configure(state="normal")
 
@@ -2335,6 +2756,61 @@ class PyEnvStudio(ctk.CTk):
     def show_about_dialog(self):
         show_info(f"PyEnvStudio: Manage Python virtual environments and packages.\n\n"
                   f"Created by: Wasim Shaikh\nVersion: {self.version}\n\nVisit: https://github.com/contactshaikhwasim")
+
+    def check_for_app_updates(self) -> None:
+        token = self.progress.begin("Checking for Py Env Studio updates")
+
+        def checked(status) -> None:
+            self.progress.finish(token, "Py Env Studio update check complete", ok=True)
+            if not status.update_available:
+                show_info(f"Py Env Studio is up to date (version {status.current_version}).")
+                return
+
+            if is_frozen_build():
+                if messagebox.askyesno(
+                    "Update Available",
+                    f"Py Env Studio {status.latest_version} is available (installed: "
+                    f"{status.current_version}). Download the latest release and replace "
+                    "this bundled application?",
+                    parent=self,
+                ):
+                    open_link(RELEASES_URL)
+                return
+
+            if messagebox.askyesno(
+                "Update Available",
+                f"Py Env Studio {status.latest_version} is available (installed: "
+                f"{status.current_version}). Install the update and restart now?",
+                parent=self,
+            ):
+                self._install_app_update(status.latest_version)
+
+        def failed(exc: BaseException) -> None:
+            self.progress.finish(token, "Py Env Studio update check failed", ok=False)
+            logger.warning("Py Env Studio update check failed: %s", exc, exc_info=exc)
+            show_error(f"Unable to check for Py Env Studio updates: {exc}")
+
+        run_in_background(check_for_app_update, ui=self, on_done=checked, on_error=failed)
+
+    def _install_app_update(self, target_version: str) -> None:
+        token = self.progress.begin(f"Installing Py Env Studio {target_version}")
+
+        def install_and_restart():
+            install_app_update(target_version)
+            return restart_app()
+
+        def updated(_process) -> None:
+            self.progress.finish(token, "Update installed; restarting Py Env Studio", ok=True)
+            self.on_closing()
+
+        def failed(exc: BaseException) -> None:
+            self.progress.finish(token, "Py Env Studio update failed", ok=False)
+            logger.error("Py Env Studio update failed: %s", exc, exc_info=exc)
+            show_error(
+                f"Could not install or restart Py Env Studio {target_version}: {exc}"
+            )
+
+        run_in_background(install_and_restart, ui=self, on_done=updated, on_error=failed)
 
     def show_preferences_dialog(self):
         """Show configuration dialog for PES defaults."""
@@ -2672,7 +3148,8 @@ class PyEnvStudio(ctk.CTk):
             except Exception as exc:
                 self._safe_after(0, lambda: self._show_runtime_unavailable(
                     provider_var, default_python_var, status_label,
-                    message=str(exc), generation=generation))
+                    message=str(exc), generation=generation,
+                    provider_name=provider_name))
                 return
 
             cache = RuntimeCache()
@@ -2795,7 +3272,7 @@ class PyEnvStudio(ctk.CTk):
         run_in_background(task, ui=self)
 
     def _show_runtime_unavailable(self, provider_var, default_python_var, status_label,
-                                  message=None, generation=None) -> None:
+                                  message=None, generation=None, provider_name=None) -> None:
         """Display the provider-unavailable state."""
         if generation is not None and generation != getattr(self, "_runtime_ui_generation", generation):
             return
@@ -2803,6 +3280,11 @@ class PyEnvStudio(ctk.CTk):
             if not self.winfo_exists():
                 return
         except Exception:
+            return
+        if provider_name == "Python Install Manager":
+            # Same encouraging treatment as the normal not-found path.
+            self._render_pymanager_not_found(default_python_var, status_label, message=message)
+            self._show_pymanager_download_help()
             return
         self._clear_frame(self.installed_runtimes_frame)
         self._clear_frame(self.available_runtimes_frame)
@@ -2826,6 +3308,223 @@ class PyEnvStudio(ctk.CTk):
             )
         except Exception:
             pass
+
+    def _build_pymanager_help_panel(self, parent, *, wraplength: int = 640):
+        """Render encouraging 'how to get Python Install Manager' help inline.
+
+        Used by the Configuration > Python Runtime section and the main window
+        when the manager is missing, so the state offers a clear next step
+        (install steps + both download links) instead of a dead-end warning.
+        """
+        try:
+            panel = ctk.CTkFrame(parent, fg_color="transparent")
+            panel.pack(anchor="w", fill="x", padx=8, pady=(2, 6))
+            self.lbl(
+                panel,
+                PYMANAGER_INSTALL_STEPS,
+                font=("Segoe UI", 11),
+                text_color=self.theme.SECONDARY_COLOR,
+                justify="left",
+                wraplength=wraplength,
+            ).pack(anchor="w", pady=1)
+            links = ctk.CTkFrame(panel, fg_color="transparent")
+            links.pack(anchor="w", pady=(6, 2))
+            self.btn(
+                links,
+                "⬇️ Download Python Install Manager",
+                lambda: open_link(PYMANAGER_DOWNLOAD_URL),
+                width=250, height=30,
+            ).pack(side="left")
+            self.btn(
+                links,
+                "🔍 Search on Google",
+                lambda: open_link(PYMANAGER_GOOGLE_SEARCH_URL),
+                width=170, height=30,
+            ).pack(side="left", padx=(8, 0))
+            self.lbl(
+                panel,
+                PYMANAGER_DOWNLOAD_URL,
+                font=("Segoe UI", 10),
+                text_color=self.theme.PRIMARY_COLOR,
+                wraplength=wraplength,
+            ).pack(anchor="w", pady=(2, 2))
+            note = legacy_launcher_note()
+            if note:
+                self.lbl(
+                    panel,
+                    "⚠ " + note,
+                    font=("Segoe UI", 11),
+                    text_color=self.theme.WARNING_COLOR,
+                    justify="left",
+                    wraplength=wraplength,
+                ).pack(anchor="w", pady=(4, 2))
+            return panel
+        except Exception:
+            logger.warning(
+                "Failed to render Python Install Manager help panel", exc_info=True
+            )
+            return None
+
+    def _render_pymanager_not_found(self, default_python_var, status_label, *, message=None) -> None:
+        """Encouraging in-place help for a missing Python Install Manager.
+
+        Explains the upside, lists the install steps and offers both download
+        links instead of only reporting that the provider is unavailable.
+        """
+        try:
+            if not self.winfo_exists():
+                return
+        except Exception:
+            return
+        try:
+            self._clear_frame(self.installed_runtimes_frame)
+            self._clear_frame(self.available_runtimes_frame)
+            self.lbl(
+                self.installed_runtimes_frame,
+                "🚀 Unlock one-click Python installs",
+                font=("Segoe UI", 13, "bold"),
+                text_color=self.theme.HIGHLIGHT_COLOR,
+            ).pack(anchor="w", padx=8, pady=(4, 2))
+            self.lbl(
+                self.installed_runtimes_frame,
+                "Python Install Manager is not on this system yet. Install it once "
+                "and Py Env Studio can download, update and remove official Python "
+                "runtimes for you - no manual path hunting. Your system Python keeps "
+                "working in the meantime.",
+                text_color=self.theme.SECONDARY_COLOR,
+                justify="left",
+                wraplength=640,
+            ).pack(anchor="w", padx=8, pady=(0, 4))
+            self._build_pymanager_help_panel(self.installed_runtimes_frame)
+            self.lbl(
+                self.available_runtimes_frame,
+                "Prefer zero setup? Switch Runtime Provider to 'System' to use the "
+                "interpreters already on your PATH - everything else keeps working.",
+                text_color=self.theme.SECONDARY_COLOR,
+                justify="left",
+                wraplength=640,
+            ).pack(anchor="w", padx=8, pady=2)
+            try:
+                default_python_var.set("System Default")
+                self.default_python_rt_menu.configure(values=["System Default"])
+            except Exception:
+                pass
+            try:
+                status_label.configure(
+                    text=message or (
+                        "Python Install Manager not found - follow the steps above to "
+                        "enable one-click official Python installs."
+                    ),
+                    text_color=self.theme.HIGHLIGHT_COLOR,
+                )
+            except Exception:
+                pass
+        except Exception:
+            logger.warning(
+                "Failed to render Python Install Manager not-found help", exc_info=True
+            )
+
+    def _show_pymanager_download_help(self, *, once_per_session: bool = False) -> None:
+        """Popup telling the user where to download Python Install Manager.
+
+        Shown when the configured provider is Python Install Manager but no
+        manager executable (``pymanager`` / ``py``) was found on this system.
+        """
+        if once_per_session and getattr(self, "_pymanager_help_session_shown", False):
+            return
+        existing = getattr(self, "_pymanager_help_popup", None)
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.lift()
+                    existing.focus_force()
+                    return
+            except Exception:
+                pass
+
+        try:
+            note = legacy_launcher_note()
+            popup = ctk.CTkToplevel(self)
+            self._pymanager_help_popup = popup
+            self._pymanager_help_session_shown = True
+            popup.title("Unlock one-click Python installs")
+            popup.geometry("580x520" if note else "580x430")
+            popup.resizable(False, False)
+            popup.lift()
+            popup.focus_force()
+            try:
+                popup.transient(self)
+                popup.grab_set()  # may fail if the parent is not viewable yet
+            except Exception:
+                pass
+
+            popup.grid_columnconfigure(0, weight=1)
+            ctk.CTkLabel(
+                popup,
+                text="🚀 Unlock one-click Python installs",
+                font=("Segoe UI", 16, "bold"),
+            ).grid(row=0, column=0, padx=20, pady=(20, 6), sticky="w")
+            ctk.CTkLabel(
+                popup,
+                justify="left",
+                wraplength=520,
+                text=(
+                    "Python Install Manager ('pymanager' / 'py') is not on this "
+                    "system yet, so managed Python runtimes are unavailable.\n"
+                    "Install it once and Py Env Studio can download, update and "
+                    "remove official Python versions for you - no manual path "
+                    "hunting. Your system Python keeps working in the meantime."
+                ),
+            ).grid(row=1, column=0, padx=20, pady=(0, 10), sticky="ew")
+            ctk.CTkLabel(
+                popup,
+                justify="left",
+                wraplength=520,
+                text=PYMANAGER_INSTALL_STEPS,
+                font=("Segoe UI", 11),
+                text_color=self.theme.SECONDARY_COLOR,
+            ).grid(row=2, column=0, padx=20, pady=(0, 12), sticky="ew")
+            ctk.CTkButton(
+                popup,
+                text="⬇️ Download Python Install Manager (python.org)",
+                command=lambda: open_link(PYMANAGER_DOWNLOAD_URL),
+                height=36,
+            ).grid(row=3, column=0, padx=20, pady=5, sticky="ew")
+            ctk.CTkButton(
+                popup,
+                text="🔍 Google Search: python install manager download",
+                command=lambda: open_link(PYMANAGER_GOOGLE_SEARCH_URL),
+                height=36,
+            ).grid(row=4, column=0, padx=20, pady=5, sticky="ew")
+            ctk.CTkLabel(
+                popup,
+                text=PYMANAGER_DOWNLOAD_URL,
+                font=("Segoe UI", 10),
+                text_color=self.theme.PRIMARY_COLOR,
+                wraplength=520,
+            ).grid(row=5, column=0, padx=20, pady=(2, 0), sticky="w")
+            if note:
+                ctk.CTkLabel(
+                    popup,
+                    text="⚠ " + note,
+                    justify="left",
+                    wraplength=520,
+                    font=("Segoe UI", 11),
+                    text_color=self.theme.WARNING_COLOR,
+                ).grid(row=6, column=0, padx=20, pady=(8, 0), sticky="ew")
+            ctk.CTkButton(
+                popup,
+                text="Not now, keep using system Python",
+                command=popup.destroy,
+                width=250,
+                fg_color="transparent",
+                border_width=1,
+            ).grid(row=7, column=0, padx=20, pady=(16, 20))
+        except Exception:
+            logger.warning(
+                "Failed to show Python Install Manager download help popup",
+                exc_info=True,
+            )
 
     def _update_runtime_ui(
         self,
@@ -2868,6 +3567,12 @@ class PyEnvStudio(ctk.CTk):
         except Exception:
             pass
         if not available_flag:
+            if provider_name == "Python Install Manager":
+                # Encourage instead of dead-ending: install steps + download
+                # links are rendered inline, right where the user is looking.
+                self._render_pymanager_not_found(default_python_var, status_label)
+                self._show_pymanager_download_help()
+                return
             self._clear_frame(self.installed_runtimes_frame)
             self._clear_frame(self.available_runtimes_frame)
             message = error or f"{provider_name} is not available on this system."
@@ -2877,9 +3582,7 @@ class PyEnvStudio(ctk.CTk):
                 text_color=self.theme.WARNING_COLOR,
             ).pack(anchor="w", padx=8, pady=4)
             hint = (
-                "Use 'System' to work with interpreters already on PATH."
-                if provider_name == "Python Install Manager"
-                else "Set an explicit interpreter path in Configuration > Python."
+                "Set an explicit interpreter path in Configuration > Python."
                 if provider_name == "Custom"
                 else "Install a Python interpreter so it can be discovered on PATH."
             )
@@ -4602,18 +5305,22 @@ class PyEnvStudio(ctk.CTk):
             plugin: Plugin instance or None
             is_loaded: Whether plugin is currently loaded
         """
-        # Get metadata
+        # Get metadata.  The manifest is the plugin's public identity - discovery
+        # and the enabled/disabled state key on it - so it takes precedence over
+        # the name/version the class reports when the two disagree.
         if is_loaded:
-            metadata = plugin.get_metadata()
+            metadata = self.plugin_manager.get_plugin_metadata(plugin_name) or plugin.get_metadata()
             status = "✓ Loaded"
             status_color = self.theme.SUCCESS_COLOR
         else:
-            # Try to load metadata from manifest
-            manifest_file = Path.home() / ".py_env_studio" / "plugins" / plugin_name / "plugin.json"
-            if manifest_file.exists():
+            # Try to load metadata from manifest.  The folder is resolved
+            # through the manager so a plugin whose folder name differs from
+            # its manifest name (sample_plugin_v2 -> sample_plugin2) is found.
+            plugin_dir = self.plugin_manager.resolve_plugin_dir(plugin_name)
+            manifest_file = plugin_dir / "plugin.json" if plugin_dir else None
+            if manifest_file is not None and manifest_file.exists():
                 try:
-                    import json
-                    manifest = json.loads(manifest_file.read_text())
+                    manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
                     metadata = self.plugin_manager._manifest_to_metadata(manifest)
                     status = "○ Not Loaded"
                     status_color = self.theme.TEXT_COLOR_LIGHT

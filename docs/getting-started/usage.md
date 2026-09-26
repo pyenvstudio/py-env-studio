@@ -83,6 +83,7 @@ All created environments are displayed in an interactive table with the followin
 | **RENAME** | Rename option | Click to rename the environment |
 | **DELETE** | Delete option | Click to delete the environment |
 | **LAST SCANNED** | Last vulnerability scan date | Double-click to activate the environment |
+| **UPDATES** | Automatic package-update status | Click to view available updates or enable checks; double-click to enable or disable checks for this environment |
 | **MORE** | Additional actions | Click to access vulnerability report and scan now options |
 
 ---
@@ -354,6 +355,14 @@ client snippets, tunable settings, and troubleshooting are in the
 | **Ctrl + Click** | Select multiple packages in the update table |
 | **Ctrl + A** | Select all packages in the update table |
 | **Double-click** (table columns) | Activate environment or copy path (context-dependent) |
+| **Double-click** (Updates column) | Enable or disable automatic package-update checks for that environment |
+
+## Help Menu
+
+Choose **Help → Check for Updates** to compare the installed Py Env Studio
+version with the latest PyPI release. For a Python-installed copy, confirm to
+install the update and restart the app. Bundled builds open the release page
+for a manual replacement. **Help → About** displays the installed version.
 
 ---
 
