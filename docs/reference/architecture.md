@@ -23,11 +23,13 @@ flowchart TB
     UI --> Config
     UI --> Plugins
     UI --> Learning
+    UI --> Locks
     UI --> StatusBar[ui/status_bar.py: activity and progress gauge]
 
     subgraph Core[Core services]
         Env[env_manager: environment lifecycle and launch]
         Packages[package_manager: unified package operations]
+        Locks[environment_lock: PEP 751 generation and verification]
         Templates[templates: registry, engine, workflow, user store]
         Runtime[runtime_toggle: managed project environments]
         Config[configuration and runtime: preferences and paths]
@@ -39,6 +41,9 @@ flowchart TB
 
     Packages --> Pip[pip_tools]
     Packages --> Uv[uv_tools]
+    Locks --> Packages
+    Locks --> Database
+    Locks --> Venv
     Pip --> Venv[Python virtual environments]
     Uv --> Venv
     Env --> Venv
@@ -54,7 +59,7 @@ flowchart TB
     Scanner --> PyPI[PyPI API]
     Scanner --> DepsDev[deps.dev API]
     Scanner --> OSV[OSV API]
-    Scanner --> Database[(SQLite scan database)]
+    Scanner --> Database[(SQLite metadata and scans)]
     SecurityUI --> Database
 
     Bootstrap --> Database
@@ -75,6 +80,7 @@ flowchart TB
 | `py_env_studio.ui.main_window` | Implements the CustomTkinter desktop application, including environment, package, configuration, template, plugin, and vulnerability-report workflows. |
 | `py_env_studio.core.env_manager` | Creates, validates, lists, renames, deletes, activates, and records metadata for environments. |
 | `py_env_studio.core.package_manager` | Selects the environment's `pip` or `uv` backend and provides a consistent package-management interface. |
+| `py_env_studio.core.environment_lock` | Generates, validates, verifies, previews, and synchronizes per-environment PEP 751 `pylock.toml` files. |
 | `py_env_studio.core.templates` | Defines built-in templates, stores user templates, validates requests, generates projects, and coordinates creation state. |
 | `py_env_studio.core.runtime_toggle` | Manages project-local `pes.config`, the global project registry, managed environments, and runtime execution. |
 | `py_env_studio.core.configuration` and `runtime` | Load, validate, and persist preferences and determine application data paths. |
@@ -94,4 +100,5 @@ flowchart TB
 - Runtime-managed projects use a project-local `pes.config` plus a global JSON registry; the registered contract state is mirrored into the `project_contract` table.
 - Template, plugin, and Py-Tonic data are persisted separately in their respective managed storage locations.
 - Package and security workflows use local virtual environments plus public PyPI, deps.dev, and OSV services.
+- PEP 751 lock artifacts live in the managed environment as portable `pylock.toml` files; SQLite stores only their hashes, format/version, status, and timestamps.
 - The beta MCP server adds no persistence of its own: it reads existing services, the SQLite cache, and project metadata over local stdio. See [MCP](mcp.md).

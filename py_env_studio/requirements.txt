@@ -3,3 +3,4 @@ cvss==3.6
 tkinter-dash==0.1.5
 Pillow==11.3.0
 Requests==2.32.5
+packaging>=24.2

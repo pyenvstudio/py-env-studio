@@ -5,7 +5,11 @@ operations to either pip or uv based on which manager was used to create the env
 """
 
 import logging
+import shutil
+import subprocess
 from typing import List, Tuple, Optional
+
+from packaging.utils import canonicalize_name
 
 from .env_manager import get_env_data, get_env_python
 from . import pip_tools
@@ -22,6 +26,12 @@ def _invalidate_package_update_cache(env_name: str) -> None:
         PackageUpdateMonitor().invalidate_cache(env_name)
     except Exception as exc:
         logger.warning("Could not invalidate package-update cache for '%s': %s", env_name, exc)
+    try:
+        from .environment_lock import EnvironmentLockService
+
+        EnvironmentLockService().mark_drift(env_name)
+    except Exception as exc:
+        logger.debug("Could not mark environment lock unchecked for '%s': %s", env_name, exc)
 
 
 def get_env_package_manager(env_name: str) -> str:
@@ -219,6 +229,55 @@ def import_requirements(env_name, requirements_file, log_callback=None):
         result = pip_tools.import_requirements(env_name, requirements_file, log_callback)
         _invalidate_package_update_cache(env_name)
         return result
+
+
+def sync_from_lock_file(env_name: str, lock_file, expected_package_names: set[str]) -> None:
+    """Synchronize one environment from a validated pylock.toml via its manager."""
+    from pathlib import Path
+
+    path = Path(lock_file)
+    if path.is_symlink() or not path.is_file():
+        raise FileNotFoundError(f"Environment lock is unavailable: {path}")
+
+    manager = get_env_package_manager(env_name)
+    python = get_env_python(env_name)
+    mutation_started = False
+    try:
+        mutation_started = True
+        if manager == "uv":
+            uv = shutil.which("uv")
+            if not uv:
+                raise RuntimeError("uv is no longer available to synchronize this environment")
+            result = subprocess.run(
+                [uv, "pip", "sync", "--python", python, "--strict", str(path)],
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+            if result.returncode != 0:
+                details = (result.stderr or result.stdout or "uv sync failed").strip()
+                raise RuntimeError(details)
+            return
+
+        result = subprocess.run(
+            [python, "-m", "pip", "install", "--requirement", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        if result.returncode != 0:
+            details = (result.stderr or result.stdout or "pip lock installation failed").strip()
+            raise RuntimeError(details)
+
+        installed_names = {
+            canonicalize_name(name)
+            for name, _version in list_packages(env_name)
+        }
+        for package_name in sorted(installed_names - expected_package_names):
+            uninstall_package(env_name, package_name)
+    finally:
+        if mutation_started:
+            _invalidate_package_update_cache(env_name)
 
 
 def check_outdated_packages(env_name, log_callback=None):

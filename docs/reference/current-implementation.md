@@ -58,8 +58,13 @@ The package manager implements:
 -   Import `requirements.txt`
 -   Export requirements
 -   Detect outdated packages
+-   Generate and consume standardized PEP 751 `pylock.toml` locks
 
-The GUI provides dedicated package-management functionality.
+The GUI provides dedicated package-management functionality. Per-environment
+locks are generated from installed package versions, validated and verified
+without execution, and synchronized only after a change preview and explicit
+confirmation. Lock files remain portable TOML artifacts; SQLite stores only
+their status and metadata. Package mutations mark an existing lock unchecked.
 
 ------------------------------------------------------------------------
 
@@ -80,6 +85,8 @@ Implemented capabilities include:
 -   Check outdated packages
 -   Package information lookup
 -   `UVManager` abstraction
+-   Native PEP 751 lock generation with `uv pip compile` and synchronization
+    with `uv pip sync`
 
 An environment can choose `pip` or `uv` as its package manager, and
 package operations are routed through the selected manager, with an

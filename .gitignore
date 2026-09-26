@@ -216,6 +216,9 @@ changelogs/
 notes/
 prompts/
 tests/
+!tests/
+tests/*
+!tests/test_environment_lock.py
 !.github/agent-context/
 !.github/agent-context/**
 

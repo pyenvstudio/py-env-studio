@@ -42,11 +42,11 @@ at the bottom of the window.
 To create a new Python virtual environment:
 
 1. Navigate to the **Environment Tab**
-2. Locate the **Create Environment** section
-3. **New Environment Name:** Enter a name for your environment in the input field
-4. **Python Path:** Optionally select a Python installation from the dropdown (automatically detects all available Python installations on your system) or manually specify a Python path
-5. **Upgrade pip during creation:** Check this option to automatically upgrade pip to the latest version when creating the environment
-6. Click the **Create Environment** button to initialize the new environment
+2. Click **Create Environment** to open the creation dialog
+3. Enter an environment name and optionally choose a Python interpreter or managed runtime
+4. Choose the package manager (`pip` or `uv`) and whether to upgrade pip during creation
+5. Optionally enable **Regularly Check for Package Updates** for this environment; it is off by default
+6. Click **Create** to initialize the environment
 
 ---
 
@@ -84,7 +84,21 @@ All created environments are displayed in an interactive table with the followin
 | **DELETE** | Delete option | Click to delete the environment |
 | **LAST SCANNED** | Last vulnerability scan date | Double-click to activate the environment |
 | **UPDATES** | Automatic package-update status | Click to view available updates or enable checks; double-click to enable or disable checks for this environment |
-| **MORE** | Additional actions | Click to access vulnerability report and scan now options |
+| **MORE** | Additional actions | Click to access vulnerability reports, scans, and Package Lock |
+
+Automatic package-update checks are per environment. At startup, enabled and
+available environments are checked in the background when their cached result
+is missing or more than six hours old. Refreshing the table uses cached results
+and does not itself query package indexes. Successful package installs,
+uninstalls, upgrades, and requirements imports invalidate that environment's
+cached result so its next check reflects the changed packages.
+
+- **Disabled** environments are not checked automatically.
+- Click an enabled Updates value to open the cached outdated-package list.
+- Click a Disabled value to confirm enabling checks for that environment.
+- Double-click an Updates value to toggle checking on or off for that environment.
+- After a successful package change, the row refreshes and opted-in environments
+   are checked again asynchronously.
 
 ---
 
@@ -130,6 +144,29 @@ To view and manage packages in an environment:
 2. A table view displays all installed packages with options to:
    - **Delete** individual packages
    - **Update** packages to their latest version
+
+### Per-Environment Package Locks
+
+Select an environment and open **More → Package Lock** to manage its canonical
+`pylock.toml` file. The lock uses the standardized PEP 751 format and remains a
+portable TOML artifact at the root of that environment. PES stores only its
+path, format/version, hash, status, and timestamps in SQLite.
+
+- **Create Lock** records the packages and versions currently installed.
+- **View Lock** opens the TOML in a read-only viewer.
+- **Verify Environment** compares active lock entries with installed packages
+   without changing the environment.
+- **Sync from Lock** previews installs, version changes, and removals. It does
+   nothing until you confirm; packages not present in the active lock are removed.
+- **Update Lock** replaces the file from the environment as it currently exists;
+   it does not update packages.
+- **Remove Lock** deletes the file and its PES metadata.
+
+Package changes made outside lock sync mark the lock **Unchecked** until it is
+verified again. A lock may report **Drift Detected** when installed packages no
+longer match. uv environments use native `uv pip compile` and `uv pip sync`;
+pip environments use pip's native pylock support, which pip currently labels
+experimental.
 
 ---
 
@@ -363,6 +400,8 @@ Choose **Help → Check for Updates** to compare the installed Py Env Studio
 version with the latest PyPI release. For a Python-installed copy, confirm to
 install the update and restart the app. Bundled builds open the release page
 for a manual replacement. **Help → About** displays the installed version.
+For a source-tree run without installed package metadata, About uses the
+packaged `config.ini` version as its fallback.
 
 ---
 

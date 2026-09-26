@@ -31,6 +31,11 @@ from py_env_studio.core.package_manager import (
     export_requirements, import_requirements, check_outdated_packages,
     get_env_package_manager)
 from py_env_studio.core.package_update_monitor import PackageUpdateMonitor
+from py_env_studio.core.environment_lock import (
+    EnvironmentLockService,
+    LockSyncPreview,
+    LockVerification,
+)
 from py_env_studio.core.app_updates import (
     RELEASES_URL,
     check_for_app_update,
@@ -136,6 +141,26 @@ def show_error(msg):
 def show_info(msg):
     messagebox.showinfo("Info", msg)
 
+
+def _format_lock_sync_preview(plan: LockSyncPreview) -> str:
+    sections = []
+    for title, differences in (
+        ("Install", plan.additions),
+        ("Upgrade or downgrade", plan.upgrades),
+        ("Remove", plan.removals),
+    ):
+        if differences:
+            lines = [f"{item.package}: {item.expected or '?'}" for item in differences[:12]]
+            if len(differences) > len(lines):
+                lines.append(f"… and {len(differences) - len(lines)} more")
+            sections.append(f"{title} ({len(differences)}):\n" + "\n".join(lines))
+    if plan.conflicts:
+        sections.append("Resolver preview:\n" + "\n".join(plan.conflicts[:3]))
+    if plan.breaking_changes:
+        sections.append("Potential breaking changes:\n" + "\n".join(plan.breaking_changes[:8]))
+    return "\n\n".join(sections) or "No package changes."
+
+
 def open_link(link):
         webbrowser.open(link)
 
@@ -173,18 +198,19 @@ def legacy_launcher_note():
     )
 
 class MoreActionsDialog(ctk.CTkToplevel):
-    """Custom dialog for showing More actions with Vulnerability Report and Scan Now buttons"""
+    """Environment actions for vulnerability reports, scans, and package locks."""
     
-    def __init__(self, parent, env_name, callback_vulnerability, callback_scan):
+    def __init__(self, parent, env_name, callback_vulnerability, callback_scan, callback_lock=None):
         super().__init__(parent)
         
         self.env_name = env_name
         self.callback_vulnerability = callback_vulnerability
         self.callback_scan = callback_scan
+        self.callback_lock = callback_lock
         
         # Configure dialog
         self.title(f"Actions for {env_name}")
-        self.geometry("300x150")
+        self.geometry("340x230")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
@@ -194,7 +220,7 @@ class MoreActionsDialog(ctk.CTkToplevel):
         
         # Configure grid
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure((0, 1, 2), weight=1)
+        self.grid_rowconfigure((0, 1, 2, 3), weight=1)
         
         # Title label
         title_label = ctk.CTkLabel(
@@ -223,6 +249,15 @@ class MoreActionsDialog(ctk.CTkToplevel):
             width=250
         )
         scan_btn.grid(row=2, column=0, padx=20, pady=(5, 20), sticky="ew")
+
+        lock_btn = ctk.CTkButton(
+            self,
+            text="🔒 Package Lock",
+            command=self.package_lock,
+            height=35,
+            width=250,
+        )
+        lock_btn.grid(row=3, column=0, padx=20, pady=(0, 16), sticky="ew")
         
     def vulnerability_report(self):
         """Handle Vulnerability Report button click"""
@@ -236,6 +271,11 @@ class MoreActionsDialog(ctk.CTkToplevel):
         if self.callback_scan:
             self.callback_scan(self.env_name)
 
+    def package_lock(self):
+        self.destroy()
+        if self.callback_lock:
+            self.callback_lock(self.env_name)
+
 
 class PyEnvStudio(ctk.CTk):
     def __init__(self, verbosity: str | None = None):
@@ -246,6 +286,7 @@ class PyEnvStudio(ctk.CTk):
         self.verbosity = verbosity
         self._setup_config()
         self._setup_vars()
+        self._environment_lock_service = EnvironmentLockService()
         self._package_update_monitor = PackageUpdateMonitor()
         self._package_update_pending = set()
         self._setup_window()
@@ -1684,12 +1725,295 @@ class PyEnvStudio(ctk.CTk):
         )
 
     def show_more_actions_dialog(self, env_name):
-        """Show the More actions dialog with Vulnerability Report and Scan Now buttons"""
+        """Show additional actions for one environment."""
         dialog = MoreActionsDialog(
             parent=self,
             env_name=env_name,
             callback_vulnerability=self.show_vulnerability_report,
-            callback_scan=self.scan_environment_now
+            callback_scan=self.scan_environment_now,
+            callback_lock=self.show_package_lock_dialog,
+        )
+
+    def show_package_lock_dialog(self, env_name: str) -> None:
+        """Open the environment-specific lock actions without blocking the GUI."""
+        top = ctk.CTkToplevel(self)
+        top.title(f"Package Lock - {env_name}")
+        top.geometry("560x460")
+        top.minsize(480, 400)
+        top.transient(self)
+        top.grab_set()
+        top.grid_columnconfigure(0, weight=1)
+        top.grid_rowconfigure(1, weight=1)
+
+        self.lbl(top, f"Package Lock: {env_name}", font=self.theme.FONT_BOLD).grid(
+            row=0, column=0, padx=16, pady=(16, 4), sticky="w"
+        )
+        status_var = tkinter.StringVar(value="Loading lock status…")
+
+        def dialog_is_open() -> bool:
+            try:
+                return bool(top.winfo_exists())
+            except tkinter.TclError:
+                return False
+
+        def set_status(text: str) -> None:
+            if dialog_is_open():
+                status_var.set(text)
+
+        def show_dialog_error(title: str, text: str) -> None:
+            if dialog_is_open():
+                messagebox.showerror(title, text, parent=top)
+
+        status_label = ctk.CTkLabel(
+            top,
+            textvariable=status_var,
+            anchor="w",
+            justify="left",
+            wraplength=510,
+        )
+        status_label.grid(row=1, column=0, padx=16, pady=(2, 8), sticky="new")
+
+        actions = ctk.CTkFrame(top, fg_color="transparent")
+        actions.grid(row=2, column=0, padx=16, pady=8, sticky="nsew")
+        actions.grid_columnconfigure((0, 1), weight=1)
+
+        buttons = {}
+
+        def add_action(key: str, title: str, command, row: int, column: int):
+            button = self.btn(actions, title, command, width=220)
+            button.grid(row=row, column=column, padx=6, pady=6, sticky="ew")
+            buttons[key] = button
+
+        add_action("create", "Create Lock", lambda: create_or_update(False), 0, 0)
+        add_action("view", "View Lock", lambda: view_lock(), 0, 1)
+        add_action("verify", "Verify Environment", lambda: verify_lock(), 1, 0)
+        add_action("sync", "Sync from Lock", lambda: preview_sync(), 1, 1)
+        add_action("update", "Update Lock", lambda: create_or_update(True), 2, 0)
+        add_action("remove", "Remove Lock", lambda: remove_lock(), 2, 1)
+        self.btn(top, "Close", top.destroy, width=100).grid(
+            row=3, column=0, padx=16, pady=(4, 14), sticky="e"
+        )
+
+        def update_actions(status: dict) -> None:
+            if not dialog_is_open():
+                return
+            label = status.get("status", "Lock Missing")
+            details = [f"Status: {label}"]
+            if status.get("lock_file"):
+                details.append(f"File: {status['lock_file']}")
+            if status.get("last_verified_at"):
+                details.append(f"Last verified: {status['last_verified_at']}")
+            if status.get("error"):
+                details.append(f"Details: {status['error']}")
+            status_var.set("\n".join(details))
+            exists = Path(status.get("lock_file", "")).is_file()
+            buttons["create"].configure(state="disabled" if exists else "normal")
+            for key in ("view", "verify", "sync", "update", "remove"):
+                buttons[key].configure(state="normal" if exists else "disabled")
+            if status.get("status") == "Unchecked" and exists:
+                verify_lock()
+
+        def refresh_status() -> None:
+            set_status("Loading lock status…")
+            run_in_background(
+                lambda: self._environment_lock_service.get_status(env_name),
+                ui=self,
+                on_done=update_actions,
+                on_error=lambda exc: set_status(f"Lock status unavailable: {exc}"),
+            )
+
+        def create_or_update(update: bool) -> None:
+            if update and not messagebox.askyesno(
+                "Update Package Lock",
+                "Replace pylock.toml with the packages and versions currently installed?",
+                parent=top,
+            ):
+                return
+            set_status("Capturing installed packages and resolving pylock.toml…")
+
+            def finished(status: dict) -> None:
+                if not dialog_is_open():
+                    return
+                update_actions(status)
+                messagebox.showinfo(
+                    "Package Lock",
+                    "pylock.toml updated from the current environment.",
+                    parent=top,
+                )
+
+            def failed(exc: BaseException) -> None:
+                set_status(f"Lock creation failed: {exc}")
+                logger.warning("Lock creation failed for '%s': %s", env_name, exc, exc_info=exc)
+
+            run_in_background(
+                lambda: self._environment_lock_service.create_lock(env_name, update=update),
+                ui=self,
+                on_done=finished,
+                on_error=failed,
+            )
+
+        def verify_lock() -> None:
+            set_status("Checking installed packages against pylock.toml…")
+
+            def finished(result: LockVerification) -> None:
+                if not dialog_is_open():
+                    return
+                refresh_status()
+                self._show_lock_verification_result(result, parent=top)
+
+            run_in_background(
+                lambda: self._environment_lock_service.verify(env_name),
+                ui=self,
+                on_done=finished,
+                on_error=lambda exc: set_status(f"Verification failed: {exc}"),
+            )
+
+        def view_lock() -> None:
+            run_in_background(
+                lambda: self._environment_lock_service.read_lock_text(env_name),
+                ui=self,
+                on_done=lambda text: self._show_lock_file(env_name, text)
+                if dialog_is_open()
+                else None,
+                on_error=lambda exc: show_dialog_error(
+                    "Package Lock", f"Could not read pylock.toml: {exc}"
+                ),
+            )
+
+        def preview_sync() -> None:
+            set_status("Preparing package change preview…")
+            run_in_background(
+                lambda: self._environment_lock_service.preview_sync(env_name),
+                ui=self,
+                on_done=confirm_sync,
+                on_error=lambda exc: set_status(f"Could not prepare sync: {exc}"),
+            )
+
+        def confirm_sync(plan: LockSyncPreview) -> None:
+            if not dialog_is_open():
+                return
+            if plan.status in {
+                "Lock Missing",
+                "Invalid Lock",
+                "Incompatible Python",
+                "Environment Unavailable",
+            } or plan.preview_errors:
+                messagebox.showerror(
+                    "Cannot Sync from Lock",
+                    "\n".join(plan.preview_errors) or plan.status,
+                    parent=top,
+                )
+                return
+            if not plan.change_count:
+                messagebox.showinfo(
+                    "Package Lock",
+                    "The environment already matches pylock.toml.",
+                    parent=top,
+                )
+                return
+            summary = _format_lock_sync_preview(plan)
+            if not messagebox.askyesno(
+                "Confirm Lock Sync",
+                f"Bring '{env_name}' into agreement with pylock.toml?\n\n{summary}",
+                parent=top,
+            ):
+                return
+            set_status("Synchronizing packages from pylock.toml…")
+
+            def synced(result: LockVerification) -> None:
+                if not dialog_is_open():
+                    return
+                self._refresh_package_update_status(env_name)
+                self.refresh_env_list()
+                if self.selected_env_var.get().strip() == env_name:
+                    self.refresh_package_list()
+                refresh_status()
+                self._show_lock_verification_result(result, parent=top)
+
+            def sync_failed(exc: BaseException) -> None:
+                if not dialog_is_open():
+                    return
+                logger.error("Lock sync failed for '%s': %s", env_name, exc, exc_info=exc)
+                set_status(f"Lock sync failed: {exc}")
+                run_in_background(
+                    lambda: self._environment_lock_service.verify(env_name),
+                    ui=self,
+                    on_done=lambda _result: refresh_status(),
+                )
+                show_dialog_error(
+                    "Package Lock", f"Could not synchronize '{env_name}' from pylock.toml: {exc}"
+                )
+
+            run_in_background(
+                lambda: self._environment_lock_service.sync_from_lock(env_name),
+                ui=self,
+                on_done=synced,
+                on_error=sync_failed,
+            )
+
+        def remove_lock() -> None:
+            if not messagebox.askyesno(
+                "Remove Package Lock",
+                f"Remove pylock.toml and its association from '{env_name}'?",
+                parent=top,
+            ):
+                return
+
+            def removed(_result) -> None:
+                if not dialog_is_open():
+                    return
+                refresh_status()
+
+            run_in_background(
+                lambda: self._environment_lock_service.remove_lock(env_name),
+                ui=self,
+                on_done=removed,
+                on_error=lambda exc: show_dialog_error(
+                    "Package Lock", f"Could not remove package lock: {exc}"
+                ),
+            )
+
+        refresh_status()
+
+    def _show_lock_verification_result(self, result: LockVerification, *, parent) -> None:
+        if result.status == "Verified":
+            messagebox.showinfo("Package Lock", "Environment matches pylock.toml.", parent=parent)
+            return
+        if result.status != "Drift Detected":
+            messagebox.showerror(
+                "Package Lock",
+                f"Lock verification: {result.status}\n{result.error or ''}",
+                parent=parent,
+            )
+            return
+        details = [
+            f"{difference.kind}: {difference.package}; "
+            f"expected {difference.expected or 'a locked source'}, "
+            f"installed {difference.installed or 'missing'}"
+            for difference in result.differences[:30]
+        ]
+        if len(result.differences) > len(details):
+            details.append(f"… and {len(result.differences) - len(details)} more difference(s)")
+        messagebox.showwarning(
+            "Package Lock Drift Detected",
+            "The installed environment does not match pylock.toml:\n\n" + "\n".join(details),
+            parent=parent,
+        )
+
+    def _show_lock_file(self, env_name: str, contents: str) -> None:
+        viewer = ctk.CTkToplevel(self)
+        viewer.title(f"pylock.toml - {env_name}")
+        viewer.geometry("760x600")
+        viewer.transient(self)
+        viewer.grab_set()
+        viewer.grid_columnconfigure(0, weight=1)
+        viewer.grid_rowconfigure(0, weight=1)
+        text = ctk.CTkTextbox(viewer, wrap="none")
+        text.grid(row=0, column=0, padx=12, pady=12, sticky="nsew")
+        text.insert("1.0", contents)
+        text.configure(state="disabled")
+        self.btn(viewer, "Close", viewer.destroy, width=100).grid(
+            row=1, column=0, padx=12, pady=(0, 12), sticky="e"
         )
         
     def show_vulnerability_report(self, env_name):

@@ -15,6 +15,7 @@ This file tracks implemented features/fixes with implementation date.
 ## 2026-09-26
 - Per-environment package-update monitoring: added a default-off creation opt-in, SQLite cached update counts with a six-hour TTL, asynchronous startup checks using the configured pip/uv package-manager path, and Updates table states for disabled, checking, checked, and unavailable environments.
 - Package-update cache consistency: successful pip/uv installs, uninstalls, upgrades, and requirements imports now invalidate the per-environment result; GUI completion refreshes the row and starts a fresh opted-in check.
+- Per-environment package locking: added canonical PEP 751 `pylock.toml` generation, read-only viewing, verification, drift status, previewed/confirmed sync, update, and removal through native pip/uv tooling; SQLite stores metadata only and package mutations mark locks unchecked.
 - Compact environment creation UI: moved creation controls into an on-demand, reusable dialog with screen-aware sizing, scrollable content, and explicit focus/z-order handling.
 - Environment update shortcut: double-clicking an Updates cell toggles automatic checking for only that environment; the usage guide documents the shortcut.
 - Application updates: Help → Check for Updates compares the installed distribution with PyPI, offers confirmed pip installation and restart, handles frozen builds via the release page, and About now reports the installed package version.

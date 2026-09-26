@@ -61,7 +61,8 @@ dependencies = [
     "pip",
     "setuptools",
     "wheel",
-    "platformdirs>=4.2.0"
+    "platformdirs>=4.2.0",
+    "packaging>=24.2"
 ]
 
 
