@@ -870,6 +870,7 @@ Logs always go to **stderr** — stdout is reserved for MCP protocol traffic.
 | `pyenv_scan_vulnerabilities` | `environment_id` | SQLite cache via `utils.handlers.DBHelper` (never scans/networks from MCP) |
 | `pyenv_get_dependency_information` | `environment_id`, `package?` | `core.dependency_preview` (`pip show` based, offline) |
 | `pyenv_analyze_project` | `project_path?` | `core.project_intelligence.ProjectIntelligenceService` (aggregates registry, environment, package, dependency, outdated, security cache) |
+| `pyenv_check_consistency` | `path?` | same `ProjectIntelligenceService` analysis; additive `declared`/`resolved`/`installed` blocks with `consistent` always `"unknown"` (probe stub, no manifest/lockfile parsing) |
 
 Example `tools/call`:
 

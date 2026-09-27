@@ -215,10 +215,18 @@ When the server is disabled, startup exits with
 | `pyenv_get_dependency_information` | `environment_id`, `package?` | `core.dependency_preview` (`pip show`, offline) |
 | `pyenv_scan_vulnerabilities` | `environment_id` | cached scan via `utils.handlers.DBHelper` |
 | `pyenv_analyze_project` | `project_path?` | `core.project_intelligence.ProjectIntelligenceService` |
+| `pyenv_check_consistency` | `path?` | same `ProjectIntelligenceService` analysis (probe stub: `consistent` is always `"unknown"`) |
 
 `pyenv_analyze_project` is the aggregate tool: one call returns the PES project
 configuration, resolved environment, Python runtime, package manager,
 dependencies, outdated packages, cached vulnerabilities, and runtime state.
+
+`pyenv_check_consistency` is an additive, read-only stub that reuses the same
+analysis and additionally reports `declared`/`resolved`/`installed` blocks plus
+a `consistent` field. It does **not** read manifests or lockfiles, does not
+resolve dependencies, and never computes a verdict — `consistent` is always
+`"unknown"`, and `unknown` does not mean consistent. Blocks it cannot
+determine are reported as `{"available": false}`.
 
 ### Response envelope
 

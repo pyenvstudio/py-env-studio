@@ -1,0 +1,8 @@
+[project]
+name = "survey-app"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["django>=5.1"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -93,6 +93,19 @@ TOOL_DEFINITIONS = [
         },
         "handler": analysis.analyze_project,
     },
+    {
+        "name": "pyenv_check_consistency",
+        "description": "Before modifying any Python project's dependencies or running its tests, call this to determine which interpreter, environment, lockfile, and manifest the project actually uses, and whether they agree.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "project_path": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+        "handler": analysis.check_consistency,
+    },
 ]
 
 
