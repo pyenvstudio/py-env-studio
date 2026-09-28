@@ -6,7 +6,7 @@
 | Version | 1.1.0 |
 | Date | 2026-09-20 |
 | Repository revision | `8d11de4` (`main`, "window icon fix") |
-| Product version under test | 2.1.2 (`pyproject.toml`, `py_env_studio/config.ini`) |
+| Product version under test | 2.1.3 (`pyproject.toml`, `py_env_studio/config.ini`) |
 | Verified platform | Windows 11, Python 3.13.7, pytest 9.1.1 |
 | Scope | All documented features in `docs/reference/features.md`, `docs/getting-started/cli.md`, `.github/agent-context/feature-ledger.md`, `README.md` |
 | Status | **v1.1.0 — two RED cases (TC-RT-016/TC-RT-017) resolved by realigning `tests/test_project_runtime.py` with the production `runtime_toggle` API. All other catalog cases remain unimplemented (deferred). No production code was modified.** |

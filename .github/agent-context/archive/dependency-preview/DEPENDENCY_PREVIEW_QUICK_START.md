@@ -186,7 +186,7 @@ Want to compare installations?
 **Upgrade:**
 ```
 📈 pandas
-   2.0.0 → 2.1.2
+   2.0.0 → 2.1.3
 ```
 
 **Removal:**

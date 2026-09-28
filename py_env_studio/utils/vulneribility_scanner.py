@@ -236,7 +236,7 @@ if __name__ == "__main__":
     sm = SecurityMatrix()
 
     # # Example: Scan single package
-    # sm.scan_pkg("django", "2.1.2", env_id=DBHelper.get_or_create_env("test_env"))
+    # sm.scan_pkg("django", "2.1.3", env_id=DBHelper.get_or_create_env("test_env"))
 
     # Example: Scan entire environment
     # sm.scan_env("env_update2")

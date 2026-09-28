@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "py-env-studio"
-version = "2.1.2"
+version = "2.1.3"
 description = "A comprehensive cross-platform GUI and CLI tool for managing Python virtual environments and packages with advanced features including environment lifecycle management, package operations, vulnerability scanning, security insights, project templates, Py-Tonic interactive learning mode, an extensible plugin system for custom functionality, and a local read-only MCP control plane (beta) for AI coding agents."
 requires-python = ">=3.12"
 authors = [

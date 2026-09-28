@@ -47,9 +47,9 @@ def test_check_for_app_update_compares_pypi_release(monkeypatch):
         lambda url, **kwargs: requests.append((url, kwargs)) or Response(),
     )
 
-    status = app_updates.check_for_app_update("2.1.2")
+    status = app_updates.check_for_app_update("2.1.3")
 
-    assert status.current_version == "2.1.2"
+    assert status.current_version == "2.1.3"
     assert status.latest_version == "2.2.0"
     assert status.update_available is True
     assert requests[0][1]["timeout"] == 10
@@ -63,7 +63,7 @@ def test_check_for_app_update_does_not_downgrade_newer_prerelease(monkeypatch):
 
         @staticmethod
         def json():
-            return {"info": {"version": "2.1.2"}}
+            return {"info": {"version": "2.1.3"}}
 
     monkeypatch.setattr(app_updates.requests, "get", lambda *_args, **_kwargs: Response())
 
