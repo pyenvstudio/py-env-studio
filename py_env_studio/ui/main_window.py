@@ -727,6 +727,20 @@ class PyEnvStudio(ctk.CTk):
         except Exception:
             logger.debug("Could not hide Create Environment dialog", exc_info=True)
 
+    def _create_env_dialog_is_open(self) -> bool:
+        """True while the Create Environment dialog is on screen.
+
+        Guard for helper windows that take a grab: stealing the grab from this
+        dialog makes its fields - the environment name first - uneditable.
+        """
+        dialog = getattr(self, "_create_env_dialog", None)
+        if dialog is None:
+            return False
+        try:
+            return bool(dialog.winfo_exists()) and bool(dialog.winfo_viewable())
+        except Exception:
+            return False
+
     def _build_env_create_form(self, parent):
         parent.grid_rowconfigure(1, weight=1)
         parent.grid_columnconfigure(0, weight=1)
@@ -743,7 +757,7 @@ class PyEnvStudio(ctk.CTk):
         # Environment name label and entry
         self.lbl(f, "New Environment Name:").grid(row=0, column=0, padx=(10, 5), pady=5, sticky="w")
         self.entry_env_name = self.entry(f, "Enter environment name")
-        self.entry_env_name.grid(row=0, column=1, padx=(0, 10), pady=5, sticky="ew")
+        self.entry_env_name.grid(row=0, column=2, padx=(0, 10), pady=5, sticky="ew")
 
         # Python path label, entry, and browse button on row 1
         self.lbl(f, "Python Path (Optional):").grid(row=1, column=0, padx=(10, 5), pady=5, sticky="w")
@@ -3755,6 +3769,17 @@ class PyEnvStudio(ctk.CTk):
         manager executable (``pymanager`` / ``py``) was found on this system.
         """
         if once_per_session and getattr(self, "_pymanager_help_session_shown", False):
+            return
+        if self._create_env_dialog_is_open():
+            # The Create Environment dialog already shows this guidance inline
+            # (hint label plus the 'Get Python Install Manager' buttons), so the
+            # popup would only duplicate it. Worse, its grab_set()/focus_force()
+            # would take the pointer and the keyboard away from the dialog the
+            # user just opened, making fields such as the environment name
+            # impossible to edit.
+            logger.debug(
+                "Skipping Python Install Manager help popup; Create Environment dialog is open"
+            )
             return
         existing = getattr(self, "_pymanager_help_popup", None)
         if existing is not None:
