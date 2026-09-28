@@ -29,7 +29,7 @@ Perfect for:
 
 ---
 
-## 🆕 What's new in v2.1.0
+## 🆕 What's new in v2.1.2
 
 - 🧪 **MCP control plane (beta)** — a local, read-only MCP server lets AI coding
   agents (VS Code Copilot and other MCP clients) read authoritative
@@ -48,7 +48,7 @@ Perfect for:
 - 📊 **Native dashboard charts** (`tkinter-dash`, no matplotlib), 📶 a CLI
   progress gauge and GUI status gauge, and consistent application icons.
 
-→ [Full v2.1.0 release notes](docs/releases/v2.1.0.md)
+→ [Full v2.1.2 release notes](docs/releases/v2.1.2.md)
 
 ---
 
@@ -105,7 +105,7 @@ PyEnvStudio now features a powerful plugin system that allows developers to exte
 - **Easy Development** - Simple plugin API with lifecycle management
 - **Examples Included** - Full working sample plugin with documentation
 
-See the [v2.1.0 release notes](docs/releases/v2.1.0.md) and the [plugin development guide](docs/plugins/development.md).
+See the [v2.1.2 release notes](docs/releases/v2.1.2.md) and the [plugin development guide](docs/plugins/development.md).
 
 ### Additional implemented capabilities
 

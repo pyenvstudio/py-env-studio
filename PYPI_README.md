@@ -96,7 +96,7 @@ Setup steps for VS Code and other clients:
 
 - Documentation home: [https://py-env-studio.readthedocs.io/](https://py-env-studio.readthedocs.io/)
 - Usage manual: [https://py-env-studio.readthedocs.io/en/latest/getting-started/usage.html](https://py-env-studio.readthedocs.io/en/latest/getting-started/usage.html)
-- Release notes: [https://py-env-studio.readthedocs.io/en/latest/releases/v2.1.0.html](https://py-env-studio.readthedocs.io/en/latest/releases/v2.1.0.html)
+- Release notes: [https://py-env-studio.readthedocs.io/en/latest/releases/v2.1.2.html](https://py-env-studio.readthedocs.io/en/latest/releases/v2.1.2.html)
 - Source code: [https://github.com/pyenvstudio/py-env-studio](https://github.com/pyenvstudio/py-env-studio)
 - Issue tracker: [https://github.com/pyenvstudio/py-env-studio/issues](https://github.com/pyenvstudio/py-env-studio/issues)
 

@@ -80,6 +80,6 @@ plugins/quick-reference
 maxdepth: 2
 caption: Releases
 ---
-releases/v2.1.0
+releases/v2.1.2
 releases/v2.0.8
 ```

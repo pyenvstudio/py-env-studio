@@ -465,7 +465,7 @@ def test_outdated_unavailable_offline(wired, project_dir, monkeypatch):
 
 SEV_PAYLOAD = {
     "vulnerability_insights": {
-        "metadata": {"package": "django", "version": "2.1.0"},
+        "metadata": {"package": "django", "version": "2.1.2"},
         "developer_view": [
             {"vulnerability_id": "GHSA-1", "affected_components": ["django"],
              "severity": {"level": "High", "score": "CVSS:3.1/AV:N"},

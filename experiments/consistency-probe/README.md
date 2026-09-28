@@ -138,7 +138,7 @@ Decision rule fixed in advance:
 
 ## Recorded tool responses (deterministic, one per scenario)
 
-Recorded once against this build (`py-env-studio` 2.1.0, Python 3.13, after a
+Recorded once against this build (`py-env-studio` 2.1.2, Python 3.13, after a
 clean reset). All five scenarios return the same shape, because the stub has no
 PES registration for them and performs no manifest/lockfile parsing:
 

@@ -235,7 +235,7 @@ def test_vulnerability_scan_cached_and_empty(server, monkeypatch):
                       "python_executable": "/v/bin/python", "python_version": "3.12",
                       "package_manager": "pip", "status": "exists", "metadata": {}},
     )
-    payload = {"vulnerability_insights": {"metadata": {"package": "django", "version": "2.1.0"},
+    payload = {"vulnerability_insights": {"metadata": {"package": "django", "version": "2.1.2"},
                                           "developer_view": [{
                                               "vulnerability_id": "GHSA-x",
                                               "summary": "s", "affected_components": ["django"],

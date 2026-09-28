@@ -36,7 +36,7 @@ MCP client (reasoning) ──stdio──▶ PES MCP server ──▶ PES Core se
 ## Requirements
 
 - Python **3.12+**
-- Py Env Studio **2.1.0+** installed so the `py-env-studio` command is on `PATH`
+- Py Env Studio **2.1.2+** installed so the `py-env-studio` command is on `PATH`
 - An MCP-capable client (VS Code with Copilot Chat, GitHub Copilot CLI, Claude
   Desktop, Cursor, …)
 
@@ -53,7 +53,7 @@ way (see the [CLI reference](../getting-started/cli.md#command-aliases)).
 
 The installed version is reported by the `initialize` handshake shown below, by
 **Help → About** in the GUI, and by `pip show py-env-studio` (which reads the
-same `2.1.0` value as `pyproject.toml` and `py_env_studio/config.ini`).
+same `2.1.2` value as `pyproject.toml` and `py_env_studio/config.ini`).
 
 If `py-env-studio` is not found, either use the full path to the executable
 (for example
@@ -75,7 +75,7 @@ Expected response (single line):
 ```json
 {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05",
  "capabilities": {"tools": {}},
- "serverInfo": {"name": "py-env-studio", "version": "2.1.0"}}}
+ "serverInfo": {"name": "py-env-studio", "version": "2.1.2"}}}
 ```
 
 Press `Ctrl+C` to stop a manually started server.
@@ -289,4 +289,4 @@ lookup on behalf of MCP.
 - [Features & current implementation](current-implementation.md) — section 25
 - [Architecture](architecture.md)
 - [CLI reference](../getting-started/cli.md)
-- [v2.1.0 release notes](../releases/v2.1.0.md)
+- [v2.1.2 release notes](../releases/v2.1.2.md)

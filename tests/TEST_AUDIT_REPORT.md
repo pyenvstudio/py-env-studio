@@ -7,7 +7,7 @@
 | Report date | 2026-09-20 |
 | Repository | `pyenvstudio/py-env-studio` |
 | Revision audited | `8d11de4` (`main`, "window icon fix") **plus uncommitted working-tree changes** |
-| Product version | 2.1.0 |
+| Product version | 2.1.2 |
 | Platform audited | Windows (Python 3.13.7, pytest 9.1.1, customtkinter 5.2.2, tkinter-dash 0.1.5) |
 | Companion document | `tests/TEST_CASES.md` (339-case catalog, IDs `TC-<AREA>-<nnn>`) |
 | Audit type | Static + dynamic test-suite assessment |
