@@ -1,4 +1,4 @@
-"""Tests for pyenv_analyze_project (Windows-first, read-only, local-first).
+"""Tests for pes_analyze_project (Windows-first, read-only, local-first).
 
 Service seams (runtime_toggle, env_manager, package_manager,
 dependency_preview, uv_tools, handlers.DBHelper) are stubbed so no real
@@ -581,8 +581,8 @@ def test_mcp_tool_registered_and_called(wired, project_dir):
     names = [t["name"] for t in
              server.handle_message(
                  {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})["result"]["tools"]]
-    assert "pyenv_analyze_project" in names
-    response = _call("pyenv_analyze_project", {"project_path": str(project_dir)})
+    assert "pes_analyze_project" in names
+    response = _call("pes_analyze_project", {"project_path": str(project_dir)})
     envelope = _envelope_of(response)
     assert envelope["success"] is True
     data = envelope["data"]
@@ -599,7 +599,7 @@ def test_mcp_tool_contract_shapes():
     from py_env_studio.core.mcp.tools import analysis as handler
 
     assert list(inspect.signature(handler.analyze_project).parameters) == ["arguments"]
-    failure = _envelope_of(_call("pyenv_analyze_project",
+    failure = _envelope_of(_call("pes_analyze_project",
                                  {"project_path": "/no/such/dir-xyz-123"}))
     assert failure["success"] is False
     assert failure["error"]["code"] == "PROJECT_NOT_FOUND"
@@ -607,7 +607,7 @@ def test_mcp_tool_contract_shapes():
 
 
 def test_mcp_invalid_input_type():
-    envelope = _envelope_of(_call("pyenv_analyze_project", {"project_path": 42}))
+    envelope = _envelope_of(_call("pes_analyze_project", {"project_path": 42}))
     assert envelope["success"] is False
     assert envelope["error"]["code"] == "INVALID_INPUT"
 
@@ -619,7 +619,7 @@ def test_mcp_stdio_roundtrip_stays_clean(wired, project_dir, monkeypatch):
     server = create_server("test-pes")
     stdin = io.StringIO(
         '{"jsonrpc": "2.0", "id": 1, "method": "tools/call",'
-        ' "params": {"name": "pyenv_analyze_project",'
+        ' "params": {"name": "pes_analyze_project",'
         ' "arguments": {"project_path": %s}}}\n'
         % json_module.dumps(str(project_dir))
     )

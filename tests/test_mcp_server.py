@@ -43,15 +43,15 @@ def test_initialize_and_tools_registered(server):
     names = [t["name"] for t in listed["result"]["tools"]]
     assert names == list(READ_ONLY_TOOL_NAMES)
     assert set(names) == {
-        "pyenv_list_environments",
-        "pyenv_get_environment",
-        "pyenv_list_packages",
-        "pyenv_get_project_context",
-        "pyenv_get_environment_status",
-        "pyenv_scan_vulnerabilities",
-        "pyenv_get_dependency_information",
-        "pyenv_analyze_project",
-        "pyenv_check_consistency",
+        "pes_list_environments",
+        "pes_get_environment",
+        "pes_list_packages",
+        "pes_get_project_context",
+        "pes_get_environment_status",
+        "pes_scan_vulnerabilities",
+        "pes_get_dependency_information",
+        "pes_analyze_project",
+        "pes_check_consistency",
     }
 
 
@@ -60,7 +60,7 @@ def test_malformed_and_unknown_tool(server):
     assert server.handle_message({"nope": True})["error"]["code"] == -32601
     unknown = _call(server, "no_such_tool")
     assert unknown["error"]["code"] == -32601
-    missing = _call(server, "pyenv_get_environment", {})
+    missing = _call(server, "pes_get_environment", {})
     assert _envelope(missing)["success"] is False
     assert _envelope(missing)["error"]["code"] == "INVALID_INPUT"
 
@@ -69,7 +69,7 @@ def test_notifications_have_no_response(server):
     assert server.handle_message(
         {"jsonrpc": "2.0", "method": "notifications/initialized"}
     ) is None
-    assert _call(server, "pyenv_list_packages") is not None
+    assert _call(server, "pes_list_packages") is not None
     ping = server.handle_message({"jsonrpc": "2.0", "id": 9, "method": "ping", "params": {}})
     assert ping["result"] == {}
 
@@ -90,16 +90,16 @@ def test_list_and_get_environment(server, monkeypatch):
             "status": "exists", "metadata": {},
         } if name == "demo" else None,
     )
-    env = _envelope(_call(server, "pyenv_list_environments"))
+    env = _envelope(_call(server, "pes_list_environments"))
     assert env["success"] is True
     assert env["data"]["count"] == 1
     assert env["data"]["environments"][0]["python_version"] == "3.12.1"
 
-    one = _envelope(_call(server, "pyenv_get_environment", {"environment_id": "demo"}))
+    one = _envelope(_call(server, "pes_get_environment", {"environment_id": "demo"}))
     assert one["success"] is True
     assert one["data"]["environment"]["name"] == "demo"
 
-    missing = _envelope(_call(server, "pyenv_get_environment", {"environment_id": "ghost"}))
+    missing = _envelope(_call(server, "pes_get_environment", {"environment_id": "ghost"}))
     assert missing["success"] is False
     assert missing["error"]["code"] == "ENVIRONMENT_NOT_FOUND"
 
@@ -123,7 +123,7 @@ def test_environment_status(server, monkeypatch, tmp_path):
         },
     )
     monkeypatch.setattr(package_manager, "list_packages", lambda name: [("a", "1.0")] * 3)
-    status = _envelope(_call(server, "pyenv_get_environment_status", {"environment_id": "demo"}))
+    status = _envelope(_call(server, "pes_get_environment_status", {"environment_id": "demo"}))
     assert status["success"] is True
     assert status["data"]["exists"] is True
     assert status["data"]["python_available"] is True
@@ -147,11 +147,11 @@ def test_list_packages_and_missing_env(server, monkeypatch):
         package_manager, "list_packages", lambda name: [("numpy", "1.26.0")]
     )
     monkeypatch.setattr(package_manager, "get_env_package_manager", lambda name: "pip")
-    ok = _envelope(_call(server, "pyenv_list_packages", {"environment_id": "demo"}))
+    ok = _envelope(_call(server, "pes_list_packages", {"environment_id": "demo"}))
     assert ok["success"] is True
     assert ok["data"]["packages"] == [{"name": "numpy", "version": "1.26.0"}]
 
-    missing = _envelope(_call(server, "pyenv_list_packages", {"environment_id": "ghost"}))
+    missing = _envelope(_call(server, "pes_list_packages", {"environment_id": "ghost"}))
     assert missing["error"]["code"] == "ENVIRONMENT_NOT_FOUND"
 
 
@@ -184,7 +184,7 @@ def test_project_context_with_and_without_environment(server, monkeypatch, tmp_p
                       "status": "exists", "metadata": {}},
     )
     monkeypatch.setattr(package_manager, "list_packages", lambda name: [("a", "1")])
-    ctx = _envelope(_call(server, "pyenv_get_project_context", {"project_path": str(root)}))
+    ctx = _envelope(_call(server, "pes_get_project_context", {"project_path": str(root)}))
     assert ctx["success"] is True
     assert ctx["data"]["project"]["name"] == "proj"
     assert ctx["data"]["environment"]["python_version"] == "3.12.0"
@@ -200,7 +200,7 @@ def test_project_context_uninitialized(server, monkeypatch):
         lambda r=None: {"initialized": False, "project_root": "/tmp/x",
                         "runtime_enabled": False},
     )
-    ctx = _envelope(_call(server, "pyenv_get_project_context", {}))
+    ctx = _envelope(_call(server, "pes_get_project_context", {}))
     assert ctx["success"] is True
     assert ctx["data"]["environment"] is None
     assert ctx["data"]["runtime"]["managed"] is False
@@ -208,7 +208,7 @@ def test_project_context_uninitialized(server, monkeypatch):
 
 def test_project_context_missing_path(server):
     env = _envelope(
-        _call(server, "pyenv_get_project_context", {"project_path": "/no/such/dir-xyz"})
+        _call(server, "pes_get_project_context", {"project_path": "/no/such/dir-xyz"})
     )
     assert env["success"] is False
     assert env["error"]["code"] == "PROJECT_NOT_FOUND"
@@ -244,7 +244,7 @@ def test_vulnerability_scan_cached_and_empty(server, monkeypatch):
                                               "remediation_steps": "Upgrade to 2.2.0",
                                               "status": "not fixed", "references": []}]}}
     monkeypatch.setattr(handlers.DBHelper, "get_vulnerability_info", staticmethod(lambda env: payload))
-    ok = _envelope(_call(server, "pyenv_scan_vulnerabilities", {"environment_id": "demo"}))
+    ok = _envelope(_call(server, "pes_scan_vulnerabilities", {"environment_id": "demo"}))
     assert ok["success"] is True
     assert ok["data"]["count"] == 1
     assert ok["data"]["findings"][0]["vulnerability_id"] == "GHSA-x"
@@ -254,7 +254,7 @@ def test_vulnerability_scan_cached_and_empty(server, monkeypatch):
         handlers.DBHelper, "get_vulnerability_info",
         staticmethod(lambda env: {"vulnerability_insights": []}),
     )
-    empty = _envelope(_call(server, "pyenv_scan_vulnerabilities", {"environment_id": "demo"}))
+    empty = _envelope(_call(server, "pes_scan_vulnerabilities", {"environment_id": "demo"}))
     assert empty["success"] is True
     assert empty["data"]["scan_available"] is False
 
@@ -285,7 +285,7 @@ def test_vulnerability_scan_does_not_touch_network(server, monkeypatch):
 
     monkeypatch.setattr(requests, "get", _boom)
     monkeypatch.setattr(requests, "post", _boom)
-    env = _envelope(_call(server, "pyenv_scan_vulnerabilities", {"environment_id": "demo"}))
+    env = _envelope(_call(server, "pes_scan_vulnerabilities", {"environment_id": "demo"}))
     assert env["success"] is True
 
 
@@ -309,7 +309,7 @@ def test_dependency_information_local_only(server, monkeypatch):
         dependency_preview, "get_package_dependencies",
         lambda python, pkg: {"click": "click>=8"} if pkg == "flask" else {},
     )
-    info = _envelope(_call(server, "pyenv_get_dependency_information",
+    info = _envelope(_call(server, "pes_get_dependency_information",
                             {"environment_id": "demo"}))
     assert info["success"] is True
     assert info["data"]["count"] == 2
@@ -340,7 +340,7 @@ def test_stdio_roundtrip_never_logs_to_stdout(server, monkeypatch):
     stdin = io.StringIO(
         '{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}\n'
         '{"jsonrpc": "2.0", "id": 2, "method": "tools/call",'
-        ' "params": {"name": "pyenv_list_environments", "arguments": {}}}\n'
+        ' "params": {"name": "pes_list_environments", "arguments": {}}}\n'
     )
     stdout = io.StringIO()
     server.serve_stdio(stdin=stdin, stdout=stdout)

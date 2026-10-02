@@ -377,7 +377,7 @@ instead of guessing it.
    **MCP: Add Server** (stdio → `py-env-studio` → `mcp`) or create
    `.vscode/mcp.json` with a `servers` entry.
 4. Start the server from **MCP: List Servers**, trust it, then enable the
-   `pyenv_*` tools in chat.
+   `pes_*` tools in chat.
 
 MCP is read-only, stdio-only, and never triggers a network scan. Full steps,
 client snippets, tunable settings, and troubleshooting are in the
@@ -437,7 +437,7 @@ packaged `config.ini` version as its fallback.
 **Connecting an AI Coding Agent (Beta):**
 1. Check `py-env-studio --list` works (aliases: `pes`, `pyenvstudio`)
 2. Register `py-env-studio mcp` (or `pes mcp`) as a stdio MCP server in your client
-3. Start and trust the server, then enable the `pyenv_*` tools in chat
+3. Start and trust the server, then enable the `pes_*` tools in chat
 
 **Keeping PES Current:**
 1. `pip install --upgrade py-env-studio`

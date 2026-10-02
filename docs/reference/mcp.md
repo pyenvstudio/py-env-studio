@@ -27,7 +27,7 @@ MCP client (reasoning) ──stdio──▶ PES MCP server ──▶ PES Core se
 |---|---|
 | Transport | Local **stdio** only (no HTTP, no sockets, no network) |
 | Access | **Read-only** — no tool mutates environments, packages, or projects |
-| Scans | Never triggered by MCP; `pyenv_scan_vulnerabilities` returns the cached PES scan |
+| Scans | Never triggered by MCP; `pes_scan_vulnerabilities` returns the cached PES scan |
 | Tools | 8 read-only tools (see the table below) |
 | Default state | Enabled, but it runs only when a client launches `py-env-studio mcp` |
 | Logging | Diagnostics go to **stderr**; stdout is reserved for protocol traffic |
@@ -154,7 +154,7 @@ Cursor uses `~/.cursor/mcp.json` (global) or `<workspace>/.cursor/mcp.json`.
    Trust; user-level servers show a separate trust dialog on first start or
    after their configuration changes.
 4. Open Copilot Chat and use **Configure Tools** to confirm the eight
-   `pyenv_*` tools are listed, and toggle off any tool you do not want the
+   `pes_*` tools are listed, and toggle off any tool you do not want the
    agent to use.
 
 VS Code can also start configured servers automatically when you send a chat
@@ -176,7 +176,7 @@ To call a tool directly for debugging:
 
 ```json
 {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
- "params": {"name": "pyenv_get_project_context", "arguments": {}}}
+ "params": {"name": "pes_get_project_context", "arguments": {}}}
 ```
 
 ## Step 5 — (Optional) Tune the MCP settings
@@ -207,21 +207,21 @@ When the server is disabled, startup exits with
 
 | Tool | Input | Source |
 |---|---|---|
-| `pyenv_list_environments` | — | `core.env_manager` environment inventory |
-| `pyenv_get_environment` | `environment_id` | `core.env_manager.get_environment_info` |
-| `pyenv_get_environment_status` | `environment_id` | environment + package count + runtime registry |
-| `pyenv_list_packages` | `environment_id` | `core.package_manager` (pip/uv aware) |
-| `pyenv_get_project_context` | `project_path?` | `core.runtime_toggle` status + metadata |
-| `pyenv_get_dependency_information` | `environment_id`, `package?` | `core.dependency_preview` (`pip show`, offline) |
-| `pyenv_scan_vulnerabilities` | `environment_id` | cached scan via `utils.handlers.DBHelper` |
-| `pyenv_analyze_project` | `project_path?` | `core.project_intelligence.ProjectIntelligenceService` |
-| `pyenv_check_consistency` | `path?` | same `ProjectIntelligenceService` analysis (probe stub: `consistent` is always `"unknown"`) |
+| `pes_list_environments` | — | `core.env_manager` environment inventory |
+| `pes_get_environment` | `environment_id` | `core.env_manager.get_environment_info` |
+| `pes_get_environment_status` | `environment_id` | environment + package count + runtime registry |
+| `pes_list_packages` | `environment_id` | `core.package_manager` (pip/uv aware) |
+| `pes_get_project_context` | `project_path?` | `core.runtime_toggle` status + metadata |
+| `pes_get_dependency_information` | `environment_id`, `package?` | `core.dependency_preview` (`pip show`, offline) |
+| `pes_scan_vulnerabilities` | `environment_id` | cached scan via `utils.handlers.DBHelper` |
+| `pes_analyze_project` | `project_path?` | `core.project_intelligence.ProjectIntelligenceService` |
+| `pes_check_consistency` | `path?` | same `ProjectIntelligenceService` analysis (probe stub: `consistent` is always `"unknown"`) |
 
-`pyenv_analyze_project` is the aggregate tool: one call returns the PES project
+`pes_analyze_project` is the aggregate tool: one call returns the PES project
 configuration, resolved environment, Python runtime, package manager,
 dependencies, outdated packages, cached vulnerabilities, and runtime state.
 
-`pyenv_check_consistency` is an additive, read-only stub that reuses the same
+`pes_check_consistency` is an additive, read-only stub that reuses the same
 analysis and additionally reports `declared`/`resolved`/`installed` blocks plus
 a `consistent` field. It does **not** read manifests or lockfiles, does not
 resolve dependencies, and never computes a verdict — `consistent` is always
@@ -271,7 +271,7 @@ lookup on behalf of MCP.
 | Server missing in **MCP: List Servers** | Re-check `.vscode/mcp.json` (top-level `servers`) or the portable `.mcp.json` (top-level `mcpServers`); run **MCP: Open Workspace Folder MCP Configuration** to edit the right file |
 | `command not found` / server exits immediately | `py-env-studio` is not on the client's `PATH`; use the full executable path or the `python -m py_env_studio mcp` form |
 | Tools list is empty | Start/restart the server, then run **MCP: Reset Cached Tools** and reload the chat |
-| Tools return `INVALID_INPUT` | Call `pyenv_list_environments` first and pass the returned `environment_id` |
+| Tools return `INVALID_INPUT` | Call `pes_list_environments` first and pass the returned `environment_id` |
 | `PROJECT_NOT_FOUND` / `AMBIGUOUS_PROJECT` | Pass an explicit `project_path`, or run `pes init` in the project so PES has `pes.config` metadata |
 | `scan_available: false` | Run a PES vulnerability scan for that environment first; MCP only reads cached results |
 | Output shows nothing but chat cannot reach the server | Read the server log via **MCP: List Servers → Show Output**; PES writes diagnostics to stderr only |

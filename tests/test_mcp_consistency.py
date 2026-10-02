@@ -1,4 +1,4 @@
-"""Focused tests for pyenv_check_consistency (probe stub, read-only, offline).
+"""Focused tests for pes_check_consistency (probe stub, read-only, offline).
 
 The tool must reuse the existing ProjectAnalysis (no new subsystem, no new
 SQL, no network, no mutation) and must never invent a consistency verdict.
@@ -18,7 +18,7 @@ import pytest
 from py_env_studio.core.mcp import READ_ONLY_TOOL_NAMES, create_server
 from py_env_studio.core.project_intelligence import analyze_project
 
-TOOL = "pyenv_check_consistency"
+TOOL = "pes_check_consistency"
 
 DESCRIPTION = (
     "Before modifying any Python project's dependencies or running its tests, "
@@ -182,19 +182,19 @@ def test_existing_tools_are_unchanged():
     """The new tool must not alter any previously exposed tool definition."""
     tools = _tools()
     assert set(tools) - {TOOL} == {
-        "pyenv_list_environments",
-        "pyenv_get_environment",
-        "pyenv_list_packages",
-        "pyenv_get_project_context",
-        "pyenv_get_environment_status",
-        "pyenv_scan_vulnerabilities",
-        "pyenv_get_dependency_information",
-        "pyenv_analyze_project",
+        "pes_list_environments",
+        "pes_get_environment",
+        "pes_list_packages",
+        "pes_get_project_context",
+        "pes_get_environment_status",
+        "pes_scan_vulnerabilities",
+        "pes_get_dependency_information",
+        "pes_analyze_project",
     }
-    assert tools["pyenv_analyze_project"]["description"].startswith(
+    assert tools["pes_analyze_project"]["description"].startswith(
         "Analyze a Python project using Py Env Studio"
     )
-    assert tools["pyenv_analyze_project"]["inputSchema"]["properties"] == {
+    assert tools["pes_analyze_project"]["inputSchema"]["properties"] == {
         "project_path": {"type": "string"}
     }
 
@@ -401,7 +401,7 @@ def test_check_consistency_does_not_touch_network(wired, project_dir, monkeypatc
     import requests
 
     def _boom(*args, **kwargs):
-        raise AssertionError("pyenv_check_consistency performed a network request")
+        raise AssertionError("pes_check_consistency performed a network request")
 
     monkeypatch.setattr(requests, "get", _boom)
     monkeypatch.setattr(requests, "post", _boom)

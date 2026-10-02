@@ -862,21 +862,21 @@ Logs always go to **stderr** — stdout is reserved for MCP protocol traffic.
 
 | Tool | Input | Source service |
 |---|---|---|
-| `pyenv_list_environments` | — | `core.env_manager.get_environment_info` |
-| `pyenv_get_environment` | `environment_id` | `core.env_manager` |
-| `pyenv_list_packages` | `environment_id` | `core.package_manager.list_packages` (pip/uv aware) |
-| `pyenv_get_project_context` | `project_path?` | `core.runtime_toggle` + package count |
-| `pyenv_get_environment_status` | `environment_id` | env + package count + registry |
-| `pyenv_scan_vulnerabilities` | `environment_id` | SQLite cache via `utils.handlers.DBHelper` (never scans/networks from MCP) |
-| `pyenv_get_dependency_information` | `environment_id`, `package?` | `core.dependency_preview` (`pip show` based, offline) |
-| `pyenv_analyze_project` | `project_path?` | `core.project_intelligence.ProjectIntelligenceService` (aggregates registry, environment, package, dependency, outdated, security cache) |
-| `pyenv_check_consistency` | `path?` | same `ProjectIntelligenceService` analysis; additive `declared`/`resolved`/`installed` blocks with `consistent` always `"unknown"` (probe stub, no manifest/lockfile parsing) |
+| `pes_list_environments` | — | `core.env_manager.get_environment_info` |
+| `pes_get_environment` | `environment_id` | `core.env_manager` |
+| `pes_list_packages` | `environment_id` | `core.package_manager.list_packages` (pip/uv aware) |
+| `pes_get_project_context` | `project_path?` | `core.runtime_toggle` + package count |
+| `pes_get_environment_status` | `environment_id` | env + package count + registry |
+| `pes_scan_vulnerabilities` | `environment_id` | SQLite cache via `utils.handlers.DBHelper` (never scans/networks from MCP) |
+| `pes_get_dependency_information` | `environment_id`, `package?` | `core.dependency_preview` (`pip show` based, offline) |
+| `pes_analyze_project` | `project_path?` | `core.project_intelligence.ProjectIntelligenceService` (aggregates registry, environment, package, dependency, outdated, security cache) |
+| `pes_check_consistency` | `path?` | same `ProjectIntelligenceService` analysis; additive `declared`/`resolved`/`installed` blocks with `consistent` always `"unknown"` (probe stub, no manifest/lockfile parsing) |
 
 Example `tools/call`:
 
 ```json
 {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
- "params": {"name": "pyenv_get_project_context", "arguments": {}}}
+ "params": {"name": "pes_get_project_context", "arguments": {}}}
 ```
 
 ### Response envelope
@@ -904,7 +904,7 @@ MCP Tool  →  PES Core Service  →  DB / package manager / runtime / security
 MCP handlers are thin adapters. The only new service API added for MCP is
 `core.env_manager.get_environment_info()` (read-only summary), plus the
 `core.project_intelligence.ProjectIntelligenceService` orchestrator behind
-`pyenv_analyze_project` (aggregation only, no business logic of its own).
+`pes_analyze_project` (aggregation only, no business logic of its own).
 No new SQL was needed — existing `core/schema/*.sql` templates are reused
 through `DBHelper`. A future Streamable HTTP transport can reuse
 `PesMcpServer.handle_message()` without redesigning tools, and a future LSP

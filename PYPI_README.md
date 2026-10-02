@@ -44,7 +44,7 @@ Perfect for:
 - 🔌 Extensible **plugin system** with 18 lifecycle hooks
 - 📟 Full CLI with progress gauge and `-v` / `-q` / `--no-progress` controls
 - 🧪 **Beta:** local, read-only **MCP control plane** for AI coding agents
-  (stdio transport, 8 `pyenv_*` tools, opt-out via `enabled = false`)
+  (stdio transport, 8 `pes_*` tools, opt-out via `enabled = false`)
 
 ## 📥 Installation
 

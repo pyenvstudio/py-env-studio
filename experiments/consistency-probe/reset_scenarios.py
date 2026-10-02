@@ -1,4 +1,4 @@
-"""Deterministic fixtures for the pyenv_check_consistency invocation probe.
+"""Deterministic fixtures for the pes_check_consistency invocation probe.
 
 Each scenario is a plain Python project containing exactly one kind of drift
 between declared dependencies, resolved (lock) state, the installed

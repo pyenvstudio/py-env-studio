@@ -1,4 +1,4 @@
-# Consistency probe — will agents call `pyenv_check_consistency` unprompted?
+# Consistency probe — will agents call `pes_check_consistency` unprompted?
 
 This folder is an **experiment harness only**. It ships no product code, adds no
 tool behaviour, and must not be extended into an application.
@@ -7,7 +7,7 @@ The question being measured is narrow:
 
 > When an agent is given an ordinary Python task (dependency change or test run)
 > with **no mention of PES, MCP, or any environment tool**, does it decide on its
-> own to call `pyenv_check_consistency` **before its first mutating action**?
+> own to call `pes_check_consistency` **before its first mutating action**?
 
 The tool is deliberately a stub (`consistent` is always `"unknown"`); the probe
 measures *invocation behaviour*, not consistency correctness.
@@ -67,7 +67,7 @@ available environment, substitute Cursor and record the substitution in the
 1. Reset the scenario (`reset_scenarios.py -s <id>`).
 2. Start a **fresh** agent session whose working context is the scenario tree,
    and send the scenario's task prompt **verbatim**.
-3. The prompt must not mention PES, `pyenv_check_consistency`, MCP, the
+3. The prompt must not mention PES, `pes_check_consistency`, MCP, the
    existence of an environment-management tool, or the experiment.
 4. Watch the transcript and record the four measurements below.
 5. Reset again before the next run.
@@ -154,7 +154,7 @@ Reproduce with a single stdio request (stdout stays protocol-only; the
 `Starting the PES MCP server on stdio` line goes to stderr):
 
 ```powershell
-'{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "pyenv_check_consistency", "arguments": {"path": "experiments/consistency-probe/scenarios/s1-declared-vs-installed"}}}' | py-env-studio mcp
+'{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "pes_check_consistency", "arguments": {"path": "experiments/consistency-probe/scenarios/s1-declared-vs-installed"}}}' | py-env-studio mcp
 ```
 
 Because the answer is identical for every scenario, any `behavior_changed = YES`

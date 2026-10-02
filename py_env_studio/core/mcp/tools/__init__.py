@@ -6,7 +6,7 @@ from . import analysis, environments, packages, project, security
 
 TOOL_DEFINITIONS = [
     {
-        "name": "pyenv_list_environments",
+        "name": "pes_list_environments",
         "description": "List Python environments known to Py Env Studio.",
         "inputSchema": {
             "type": "object",
@@ -16,7 +16,7 @@ TOOL_DEFINITIONS = [
         "handler": environments.list_environments,
     },
     {
-        "name": "pyenv_get_environment",
+        "name": "pes_get_environment",
         "description": "Return detailed information about one environment.",
         "inputSchema": {
             "type": "object",
@@ -27,7 +27,7 @@ TOOL_DEFINITIONS = [
         "handler": environments.get_environment,
     },
     {
-        "name": "pyenv_list_packages",
+        "name": "pes_list_packages",
         "description": "List installed packages in an environment (pip/uv aware).",
         "inputSchema": {
             "type": "object",
@@ -38,7 +38,7 @@ TOOL_DEFINITIONS = [
         "handler": packages.list_packages,
     },
     {
-        "name": "pyenv_get_project_context",
+        "name": "pes_get_project_context",
         "description": "Authoritative project/environment/runtime context for the current project.",
         "inputSchema": {
             "type": "object",
@@ -48,7 +48,7 @@ TOOL_DEFINITIONS = [
         "handler": project.get_project_context,
     },
     {
-        "name": "pyenv_get_environment_status",
+        "name": "pes_get_environment_status",
         "description": "Concise machine-readable environment status.",
         "inputSchema": {
             "type": "object",
@@ -59,7 +59,7 @@ TOOL_DEFINITIONS = [
         "handler": environments.get_environment_status,
     },
     {
-        "name": "pyenv_scan_vulnerabilities",
+        "name": "pes_scan_vulnerabilities",
         "description": "Return cached vulnerability findings for an environment (no network scan).",
         "inputSchema": {
             "type": "object",
@@ -70,7 +70,7 @@ TOOL_DEFINITIONS = [
         "handler": security.scan_vulnerabilities,
     },
     {
-        "name": "pyenv_get_dependency_information",
+        "name": "pes_get_dependency_information",
         "description": "Expose local dependency information (pip show based, offline).",
         "inputSchema": {
             "type": "object",
@@ -84,7 +84,7 @@ TOOL_DEFINITIONS = [
         "handler": project.get_dependency_information,
     },
     {
-        "name": "pyenv_analyze_project",
+        "name": "pes_analyze_project",
         "description": "Analyze a Python project using Py Env Studio and return authoritative environment, Python runtime, package manager, dependency, outdated-package, vulnerability, runtime, and PES project configuration information. This operation is read-only and does not modify the project or environment.",
         "inputSchema": {
             "type": "object",
@@ -94,7 +94,7 @@ TOOL_DEFINITIONS = [
         "handler": analysis.analyze_project,
     },
     {
-        "name": "pyenv_check_consistency",
+        "name": "pes_check_consistency",
         "description": "Before modifying any Python project's dependencies or running its tests, call this to determine which interpreter, environment, lockfile, and manifest the project actually uses, and whether they agree.",
         "inputSchema": {
             "type": "object",
