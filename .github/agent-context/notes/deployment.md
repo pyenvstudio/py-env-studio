@@ -20,9 +20,9 @@
    builds the distribution, publishes to PyPI, and creates the GitHub release:
 
    ```bash
-   git tag v2.1.3
+   git tag v2.1.4
    git push origin main
-   git push origin v2.1.3
+   git push origin v2.1.4
    ```
 
 5. Read the Docs rebuilds `latest` from `main` automatically

@@ -29,26 +29,23 @@ Perfect for:
 
 ---
 
-## 🆕 What's new in v2.1.3
+## 🆕 What's new in v2.1.4
 
-- 🧪 **MCP control plane (beta)** — a local, read-only MCP server lets AI coding
-  agents (VS Code Copilot and other MCP clients) read authoritative
-  environment, package, dependency, security, and project state.
-  → [Setup steps](docs/reference/mcp.md)
-- 🧩 **Project templates** — built-in Python Script / CLI / Package templates,
-  your own templates from a local folder or GitHub, and GitHub
-  **Community Templates** discovery.
-- ⚙️ **Configuration center** (Tools → Configuration) — default venv path,
-  interpreter/runtime, package manager, project tool, template defaults,
-  appearance, and UI scaling in one validated dialog.
-- 🐍 **Official Python Install Manager integration** — detect, list, install,
-  and select official runtimes, with System/Custom providers alongside.
-- 🛡️ **Remediate from the dashboard** — `Update Now` per vulnerability and
-  `Upgrade all Packages` per environment, with partial-failure reporting.
-- 📊 **Native dashboard charts** (`tkinter-dash`, no matplotlib), 📶 a CLI
-  progress gauge and GUI status gauge, and consistent application icons.
+- 🔗 **Project ↔ Environment association** — creating an environment from a
+  project template now registers it with the project by default, with an
+  explicit opt-out that creates an unregistered environment.
+- 🗂️ **Project environment panel** (Project menu) — view the environment
+  associated with a project, switch the association to another PES
+  environment, or unregister it without deleting the environment.
+- 🛡️ **Runtime mismatch guard** — PES compares the project's registered
+  environment with the runtime it can reliably observe, stays silent on a
+  match, and surfaces mismatches through `pes status`, `pes on`, and `pes run`
+  (warning once per unchanged mismatch).
+- 👁️ **Conservative runtime detection** — PES only reports runtime information
+  it can observe; it does not infer which interpreter VS Code or PyCharm
+  selected, does not switch IDE interpreters, and needs no IDE extension.
 
-→ [Full v2.1.3 release notes](docs/releases/v2.1.3.md)
+→ [Full v2.1.4 release notes](docs/releases/v2.1.4.md)
 
 ---
 
@@ -105,7 +102,7 @@ PyEnvStudio now features a powerful plugin system that allows developers to exte
 - **Easy Development** - Simple plugin API with lifecycle management
 - **Examples Included** - Full working sample plugin with documentation
 
-See the [v2.1.3 release notes](docs/releases/v2.1.3.md) and the [plugin development guide](docs/plugins/development.md).
+See the [v2.1.4 release notes](docs/releases/v2.1.4.md) and the [plugin development guide](docs/plugins/development.md).
 
 ### Additional implemented capabilities
 
