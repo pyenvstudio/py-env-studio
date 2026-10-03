@@ -597,6 +597,12 @@ class PyEnvStudio(ctk.CTk):
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.quit)
 
+        project_menu = tkinter.Menu(menubar, tearoff=0)
+        project_menu.add_command(
+            label="Project Environment...",
+            command=self.open_project_environment_dialog,
+        )
+
         # === Edit Menu ===
         edit_menu = tkinter.Menu(menubar, tearoff=0)
         # edit_menu.add_command(label="Rename Env", command=lambda: self.rename_selected_env())
@@ -636,12 +642,101 @@ class PyEnvStudio(ctk.CTk):
 
         # === set menubar ===
         menubar.add_cascade(label="File", menu=file_menu)
+        menubar.add_cascade(label="Project", menu=project_menu)
         # menubar.add_cascade(label="Edit", menu=edit_menu)
         menubar.add_cascade(label="View", menu=view_menu)
         menubar.add_cascade(label="Tools", menu=tools_menu)
         menubar.add_cascade(label="Templates", menu=templates_menu)
         menubar.add_cascade(label="Help", menu=help_menu)
         self.config(menu=menubar)
+
+    def open_project_environment_dialog(self):
+        """Inspect or change the PES environment associated with a project."""
+        from py_env_studio.core import env_manager, runtime_toggle
+
+        selected = filedialog.askdirectory(title="Select a Python project")
+        if not selected:
+            return
+        project_root = Path(selected).resolve()
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Project Environment")
+        dialog.geometry("560x380")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.grid_columnconfigure(0, weight=1)
+
+        self.lbl(dialog, f"Project: {project_root.name}", font=self.theme.FONT_BOLD).grid(
+            row=0, column=0, padx=16, pady=(16, 8), sticky="w"
+        )
+        details_var = tkinter.StringVar()
+        self.lbl(dialog, "", textvariable=details_var, justify="left", anchor="w").grid(
+            row=1, column=0, padx=16, pady=8, sticky="ew"
+        )
+
+        available_envs = env_manager.list_envs()
+        env_var = tkinter.StringVar(value=available_envs[0] if available_envs else "")
+        self.lbl(dialog, "Change Environment", font=self.theme.FONT_BOLD).grid(
+            row=2, column=0, padx=16, pady=(12, 4), sticky="w"
+        )
+        environment_menu = self.optmenu(
+            dialog,
+            available_envs or ["No environments available"],
+            var=env_var,
+            width=320,
+        )
+        environment_menu.grid(row=3, column=0, padx=16, pady=4, sticky="w")
+        if not available_envs:
+            environment_menu.configure(state="disabled")
+
+        def refresh_details():
+            metadata = runtime_toggle.load_project_metadata(project_root)
+            env_id = metadata.get("environment_id") or ""
+            info = env_manager.get_environment_info(env_id) if env_id else None
+            executable = (info or {}).get("python_executable")
+            available = bool(info and executable and Path(executable).is_file())
+            details_var.set(
+                f"Managed Environment: {env_id or 'None'}\n"
+                f"Python: {(info or {}).get('python_version') or metadata.get('python_version') or 'Unknown'}\n"
+                f"Package Manager: {(info or {}).get('package_manager') or metadata.get('package_manager') or 'Unknown'}\n"
+                f"Status: {'Available' if available else 'Unavailable' if env_id else 'No association'}"
+            )
+            unregister_button.configure(state="normal" if env_id else "disabled")
+            if env_id in available_envs:
+                env_var.set(env_id)
+
+        def change_environment():
+            env_id = env_var.get().strip()
+            if not env_id or env_id not in available_envs:
+                return
+            try:
+                runtime_toggle.associate_environment_with_project(project_root, env_id)
+                refresh_details()
+            except Exception as exc:
+                messagebox.showerror("Project Environment", str(exc), parent=dialog)
+
+        def unregister_environment():
+            if not messagebox.askyesno(
+                "Unregister Environment",
+                "Remove this project's association? The environment will not be deleted.",
+                parent=dialog,
+            ):
+                return
+            try:
+                runtime_toggle.unregister_project_environment(project_root)
+                refresh_details()
+            except Exception as exc:
+                messagebox.showerror("Project Environment", str(exc), parent=dialog)
+
+        actions = ctk.CTkFrame(dialog, fg_color="transparent")
+        actions.grid(row=4, column=0, padx=16, pady=(12, 16), sticky="ew")
+        self.btn(actions, "Change Environment", change_environment, width=160).pack(side="left", padx=(0, 8))
+        unregister_button = self.btn(
+            actions, "Unregister Environment", unregister_environment, width=180
+        )
+        unregister_button.pack(side="left", padx=8)
+        self.btn(actions, "Close", dialog.destroy, width=90).pack(side="right")
+        refresh_details()
 
     def _setup_sidebar(self):
         sb = self.frame(self, width=self.theme.SIDEBAR_WIDTH, corner_radius=0)
@@ -5238,6 +5333,7 @@ class PyEnvStudio(ctk.CTk):
             initial_python_version = spec.supported_python_versions[0]
         python_version_var = tkinter.StringVar(value=initial_python_version)
         create_venv_var = tkinter.IntVar(value=1 if self.preferences.template_create_venv_default else 0)
+        associate_env_var = tkinter.IntVar(value=1)
         init_git_var = tkinter.IntVar(value=1 if self.preferences.template_initialize_git_default else 0)
         package_name_var = tkinter.StringVar(value="")
         cli_command_name_var = tkinter.StringVar(value="")
@@ -5275,15 +5371,21 @@ class PyEnvStudio(ctk.CTk):
         self.entry(body, var=license_var, width=200).grid(row=6, column=1, padx=8, pady=6, sticky="w")
 
         self.chk(body, "Create Virtual Environment", variable=create_venv_var).grid(row=7, column=0, columnspan=2, padx=8, pady=6, sticky="w")
-        self.chk(body, "Initialize Git", variable=init_git_var).grid(row=8, column=0, columnspan=2, padx=8, pady=6, sticky="w")
+        associate_env_check = self.chk(
+            body, "Associate created environment with this project", variable=associate_env_var
+        )
+        associate_env_check.grid(row=8, column=0, columnspan=2, padx=8, pady=6, sticky="w")
+        association_summary = self.lbl(body, "", text_color=self.theme.HIGHLIGHT_COLOR)
+        association_summary.grid(row=9, column=0, columnspan=2, padx=24, pady=(0, 4), sticky="w")
+        self.chk(body, "Initialize Git", variable=init_git_var).grid(row=10, column=0, columnspan=2, padx=8, pady=6, sticky="w")
 
         preview_label = self.lbl(body, "Template Preview", font=("Segoe UI", 13, "bold"))
-        preview_label.grid(row=9, column=0, columnspan=2, padx=8, pady=(12, 4), sticky="w")
+        preview_label.grid(row=11, column=0, columnspan=2, padx=8, pady=(12, 4), sticky="w")
         preview_box = ctk.CTkTextbox(body, height=230)
-        preview_box.grid(row=10, column=0, columnspan=2, padx=8, pady=(0, 8), sticky="nsew")
+        preview_box.grid(row=12, column=0, columnspan=2, padx=8, pady=(0, 8), sticky="nsew")
 
         status_label = self.lbl(body, "", text_color=self.theme.HIGHLIGHT_COLOR)
-        status_label.grid(row=11, column=0, columnspan=2, padx=8, pady=6, sticky="w")
+        status_label.grid(row=13, column=0, columnspan=2, padx=8, pady=6, sticky="w")
         request_state = {"result": None, "error": None, "busy": False}
 
         def build_request() -> TemplateCreationRequest:
@@ -5295,6 +5397,7 @@ class PyEnvStudio(ctk.CTk):
                 project_location=project_location_var.get().strip(),
                 python_version=python_version_var.get().strip(),
                 create_virtual_environment=bool(create_venv_var.get()),
+                associate_environment_with_project=bool(associate_env_var.get()),
                 initialize_git=bool(init_git_var.get()),
                 package_name=package_name,
                 cli_command_name=cli_cmd,
@@ -5340,6 +5443,22 @@ class PyEnvStudio(ctk.CTk):
 
         for var in [project_name_var, project_location_var, python_version_var, package_name_var, cli_command_name_var, author_var, license_var]:
             var.trace_add("write", refresh_preview)
+
+        def update_association_state(*_):
+            associate_env_check.configure(
+                state="normal" if create_venv_var.get() else "disabled"
+            )
+            if create_venv_var.get():
+                env_name = self.template_engine.environment_name_for_project(project_name_var.get())
+                association_summary.configure(
+                    text=f"Project: {project_name_var.get()}    Environment: {env_name}"
+                )
+            else:
+                association_summary.configure(text="No environment will be created or associated.")
+
+        create_venv_var.trace_add("write", update_association_state)
+        project_name_var.trace_add("write", update_association_state)
+        update_association_state()
 
         def create_project_action():
             if request_state["busy"]:

@@ -20,6 +20,12 @@ from py_env_studio.core.runtime_toggle import (
     init_project,
     list_registered_projects,
 )
+from py_env_studio.core.runtime_mismatch import (
+    RuntimeMatchState,
+    clear_mismatch_notification,
+    detect_runtime_mismatch,
+    notify_mismatch_once,
+)
 from py_env_studio.utils.app_logging import configure_logging
 from py_env_studio.utils.progress import TaskProgress
 
@@ -147,6 +153,7 @@ def handle_init(_: argparse.Namespace) -> None:
 
 
 def handle_on(_: argparse.Namespace) -> None:
+    _notify_runtime_mismatch()
     _print_runtime_result(enable_runtime())
 
 
@@ -165,6 +172,34 @@ def handle_status(_: argparse.Namespace) -> None:
         print(f"Environment Exists: {status['environment_exists']}")
         print(f"Environment Path: {status.get('environment_path', 'N/A')}")
         print(f"Python Version: {status['python_version']}")
+
+    root = Path(status["project_root"]) if status.get("project_root") else None
+    runtime = detect_runtime_mismatch(root)
+    if runtime.registered_environment_id:
+        print("Registered environment:")
+        print(f"  {runtime.registered_environment_id}")
+        print(f"  Python {runtime.registered_python_version or 'Unknown'}")
+    else:
+        print("Registered environment: None")
+    if runtime.current_python_executable:
+        print("Current runtime:")
+        print(f"  {runtime.current_python_executable}")
+        print(f"  Python {runtime.current_python_version or 'Unknown'}")
+    state_label = (
+        "ENVIRONMENT_MISMATCH"
+        if runtime.state is RuntimeMatchState.MISMATCH
+        else runtime.state.value
+    )
+    print(f"Status: {state_label}")
+
+
+def _notify_runtime_mismatch() -> None:
+    runtime = detect_runtime_mismatch()
+    if runtime.state is RuntimeMatchState.MISMATCH:
+        if notify_mismatch_once(runtime):
+            print("Environment mismatch detected")
+    elif runtime.state is RuntimeMatchState.MATCH and runtime.project_path:
+        clear_mismatch_notification(runtime.project_path)
 
 
 def handle_list_projects(_: argparse.Namespace) -> None:
@@ -188,6 +223,7 @@ def handle_run(args: argparse.Namespace) -> None:
 
     # No gauge here: the child process owns the terminal and its output must
     # not be interleaved with redrawn status lines.
+    _notify_runtime_mismatch()
     logger.info("Running %s in the managed environment", list(args.args))
     result = execute_in_managed_env(Path.cwd(), list(args.args))
     if result:

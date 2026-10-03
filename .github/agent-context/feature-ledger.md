@@ -2,6 +2,9 @@
 
 This file tracks implemented features/fixes with implementation date.
 
+## 2026-10-02
+- Project environment association and runtime mismatch guard: project-template environment creation now defaults to associating the created environment with the project, with an explicit opt-out; the existing `pes.config` and project registry store the relationship. Added conservative runtime comparison, project environment inspection/change/unregister UI, `pes status` reporting, and deduplicated lifecycle warnings without IDE detection or interpreter switching.
+
 ## 2026-09-09
 - Templates Phase 1: Added template engine, template registry, declarative template specs, and built-in templates (Python Script, Python CLI, Python Package).
 - Templates UI: Added Templates menu, template preview, and project creation wizard integrated with PES environment/package services.

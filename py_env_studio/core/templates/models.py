@@ -55,6 +55,7 @@ class TemplateCreationRequest:
     author: Optional[str] = None
     license_name: Optional[str] = None
     install_dev_dependencies: bool = True
+    associate_environment_with_project: bool = True
 
 
 @dataclass

@@ -7,6 +7,7 @@ import logging
 import pytest
 
 from py_env_studio import commands
+from py_env_studio.core.runtime_mismatch import RuntimeMatchState, RuntimeMismatch
 
 
 def test_parser_accepts_output_flags():
@@ -73,6 +74,45 @@ def test_bar_defaults_to_stream_detection(monkeypatch):
     monkeypatch.delenv("PES_PROGRESS", raising=False)
     progress = commands._bar(argparse.Namespace(no_progress=False), "Task", 2)
     assert progress.enabled is bool(sys.stderr.isatty())
+
+
+def test_status_prints_registered_and_current_runtime(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(
+        commands,
+        "get_project_status",
+        lambda: {
+            "initialized": True,
+            "project_root": str(tmp_path),
+            "project_name": "demo-project",
+            "runtime_enabled": True,
+            "environment_id": "demo-env",
+            "environment_exists": True,
+            "environment_path": str(tmp_path / "venv"),
+            "python_version": "3.12.4",
+        },
+    )
+    monkeypatch.setattr(
+        commands,
+        "detect_runtime_mismatch",
+        lambda _root: RuntimeMismatch(
+            project_path=str(tmp_path),
+            project_name="demo-project",
+            registered_environment_id="demo-env",
+            registered_python_executable=str(tmp_path / "venv" / "python.exe"),
+            registered_python_version="3.12.4",
+            current_python_executable=str(tmp_path / "python.exe"),
+            current_python_version="3.12.4",
+            state=RuntimeMatchState.MISMATCH,
+        ),
+    )
+
+    commands.handle_status(argparse.Namespace())
+
+    output = capsys.readouterr().out
+    assert "Registered environment:" in output
+    assert "demo-env" in output
+    assert "Current runtime:" in output
+    assert "Status: ENVIRONMENT_MISMATCH" in output
 
 
 def _run_main(monkeypatch, caplog, argv, dispatch):

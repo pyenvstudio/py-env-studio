@@ -125,7 +125,20 @@ def test_environment_and_dependency_integration(tmp_path: Path, monkeypatch) -> 
     monkeypatch.setattr("py_env_studio.core.templates.engine.env_manager.is_valid_python_version_detected", fake_detect_version)
     monkeypatch.setattr("py_env_studio.core.templates.engine.env_manager.create_env", fake_create_env)
     monkeypatch.setattr("py_env_studio.core.templates.engine.package_manager.install_package", fake_install_package)
-    monkeypatch.setattr("py_env_studio.core.runtime_toggle.save_project_metadata", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "py_env_studio.core.env_manager.get_environment_info",
+        lambda name: {
+            "environment_id": name,
+            "path": str(tmp_path / "venvs" / name),
+            "python_executable": str(tmp_path / "venvs" / name / "python"),
+            "python_version": "3.11.9",
+            "package_manager": "pip",
+        },
+    )
+    monkeypatch.setattr(
+        "py_env_studio.core.runtime_toggle.get_global_data_dir",
+        lambda: tmp_path / "pes-data",
+    )
 
     result = engine.create_project(request)
 
@@ -133,6 +146,54 @@ def test_environment_and_dependency_integration(tmp_path: Path, monkeypatch) -> 
     assert result.created_environment_name == created_envs[0]
     assert "pytest>=8.0" in installed_deps
     assert "mypy>=1.10" in installed_deps
+    from py_env_studio.core import runtime_toggle
+
+    metadata = runtime_toggle.load_project_metadata(result.project_path)
+    assert metadata["environment_id"] == created_envs[0]
+    assert metadata["python_version"] == "3.11.9"
+    assert runtime_toggle.load_registry()[request.project_name]["environment_id"] == created_envs[0]
+
+
+def test_environment_creation_can_decline_project_association(tmp_path: Path, monkeypatch) -> None:
+    engine = TemplateEngine()
+    request = TemplateCreationRequest(
+        template_id="python-script",
+        project_name="unassociated-project",
+        project_location=str(tmp_path),
+        python_version="3.11",
+        create_virtual_environment=True,
+        initialize_git=False,
+        associate_environment_with_project=False,
+    )
+    created_envs: list[str] = []
+    monkeypatch.setattr(
+        "py_env_studio.core.templates.engine.env_manager.list_pythons",
+        lambda: ["/usr/bin/python3.11"],
+    )
+    monkeypatch.setattr(
+        "py_env_studio.core.templates.engine.env_manager.is_valid_python_version_detected",
+        lambda _path: "Python 3.11.9",
+    )
+    monkeypatch.setattr(
+        "py_env_studio.core.templates.engine.env_manager.create_env",
+        lambda name, **_kwargs: created_envs.append(name),
+    )
+    monkeypatch.setattr(
+        "py_env_studio.core.templates.engine.package_manager.install_package",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "py_env_studio.core.runtime_toggle.get_global_data_dir",
+        lambda: tmp_path / "pes-data",
+    )
+
+    result = engine.create_project(request)
+
+    assert created_envs == [result.created_environment_name]
+    assert not (result.project_path / "pes.config").exists()
+    from py_env_studio.core import runtime_toggle
+
+    assert runtime_toggle.load_registry() == {}
 
 
 def test_user_template_double_brace_rendering(tmp_path: Path) -> None:

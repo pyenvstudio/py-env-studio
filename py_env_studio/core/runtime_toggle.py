@@ -104,12 +104,27 @@ def save_project_metadata(project_root: Path, metadata: dict) -> None:
         parser["runtime"] = {
             "enabled": str(metadata.get("runtime_enabled", False)).lower(),
             "auto_init": str(metadata.get("auto_init", True)).lower(),
+            "last_mismatch_signature": metadata.get("last_mismatch_signature", ""),
         }
         with open(metadata_path, "w", encoding="utf-8") as f:
             parser.write(f)
     except Exception as e:
         logger.error(f"Failed to save project metadata: {e}")
         raise
+
+
+def get_last_mismatch_signature(project_root: Path) -> str:
+    """Read notification suppression state without expanding public metadata."""
+    parser = ConfigParser()
+    parser.read(get_project_metadata_path(project_root), encoding="utf-8")
+    return parser.get("runtime", "last_mismatch_signature", fallback="")
+
+
+def set_last_mismatch_signature(project_root: Path, signature: str) -> None:
+    """Persist a mismatch notification signature in the existing project file."""
+    metadata = load_project_metadata(project_root)
+    metadata["last_mismatch_signature"] = signature
+    save_project_metadata(project_root, metadata)
 
 
 def load_registry() -> dict:
@@ -140,6 +155,70 @@ def save_registry(registry: dict) -> None:
     except Exception as e:
         logger.error(f"Failed to save registry: {e}")
         raise
+
+
+def associate_environment_with_project(
+    project_root: Path,
+    environment_id: str,
+) -> None:
+    """Associate an existing PES environment with a project."""
+    from . import env_manager
+
+    project_root = Path(project_root).resolve()
+    env_info = env_manager.get_environment_info(environment_id)
+    if env_info is None:
+        raise FileNotFoundError(f"Environment '{environment_id}' is unavailable")
+
+    metadata = load_project_metadata(project_root)
+    metadata.update(
+        {
+            "project_name": metadata.get("project_name", project_root.name),
+            "project_root": str(project_root),
+            "environment_id": environment_id,
+            "environment_path": env_info.get("path", ""),
+            "python_version": env_info.get("python_version") or "",
+            "package_manager": env_info.get("package_manager", "pip"),
+            "runtime_enabled": metadata.get("runtime_enabled", True),
+            "auto_init": metadata.get("auto_init", True),
+        }
+    )
+    save_project_metadata(project_root, metadata)
+
+    registry = load_registry()
+    project_name = metadata["project_name"]
+    project_entry = registry.setdefault(project_name, {})
+    project_entry.update(
+        {
+            "project_root": str(project_root),
+            "environment_id": environment_id,
+            "environment_path": metadata["environment_path"],
+            "python_version": metadata["python_version"],
+            "runtime_enabled": metadata["runtime_enabled"],
+        }
+    )
+    save_registry(registry)
+
+
+def unregister_project_environment(project_root: Path) -> None:
+    """Remove a project's environment association without deleting the environment."""
+    project_root = Path(project_root).resolve()
+    metadata = load_project_metadata(project_root)
+    metadata.update(
+        {
+            "project_name": metadata.get("project_name", project_root.name),
+            "project_root": str(project_root),
+            "environment_id": "",
+            "environment_path": "",
+            "last_mismatch_signature": "",
+        }
+    )
+    save_project_metadata(project_root, metadata)
+
+    registry = load_registry()
+    project_entry = registry.get(metadata["project_name"])
+    if project_entry and Path(project_entry.get("project_root", "")).resolve() == project_root:
+        project_entry.update({"environment_id": "", "environment_path": "", "python_version": ""})
+        save_registry(registry)
 
 
 def generate_environment_id(project_name: str) -> str:

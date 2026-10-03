@@ -37,6 +37,11 @@ class TemplateEngine:
     def __init__(self, registry: TemplateRegistry | None = None) -> None:
         self.registry = registry or get_default_registry()
 
+    @staticmethod
+    def environment_name_for_project(project_name: str) -> str:
+        """Return the generated environment name for a project name."""
+        return f"{project_name.strip().lower().replace(' ', '-')}-env".replace("_", "-")[:45]
+
     def list_templates(self):
         return self.registry.list_all()
 
@@ -98,6 +103,7 @@ class TemplateEngine:
                     project_path=project_path,
                     template=template,
                     log_callback=log_callback,
+                    associate_with_project=request.associate_environment_with_project,
                 )
                 deps = list(template.runtime_dependencies)
                 if request.install_dev_dependencies:
@@ -214,9 +220,10 @@ class TemplateEngine:
         self._log(log_callback, "Initializing git repository")
         subprocess.run(["git", "init"], cwd=project_path, check=False, capture_output=True, text=True)
 
-    def _create_and_configure_environment(self, request, project_path, template, log_callback):
-        env_name = f"{request.project_name.strip().lower().replace(' ', '-')}-env"
-        env_name = env_name.replace("_", "-")[:45]
+    def _create_and_configure_environment(
+        self, request, project_path, template, log_callback, associate_with_project=True
+    ):
+        env_name = self.environment_name_for_project(request.project_name)
         self._log(log_callback, f"Creating virtual environment: {env_name}")
 
         python_path = self._resolve_python_interpreter(request.python_version)
@@ -233,22 +240,16 @@ class TemplateEngine:
             log_callback=log_callback,
         )
 
-        from ..runtime_toggle import save_project_metadata
+        if associate_with_project:
+            from ..runtime_toggle import associate_environment_with_project
 
-        env_path = str(Path(env_manager.VENV_DIR) / env_name)
-        save_project_metadata(
-            Path(project_path),
-            {
-                "project_name": request.project_name,
-                "environment_id": env_name,
-                "environment_path": env_path,
-                "python_version": request.python_version,
-                "package_manager": env_manager.get_preferred_package_manager(),
-                "runtime_enabled": True,
-                "auto_init": True,
-            },
-        )
-        self._log(log_callback, "Configured project interpreter metadata")
+            associate_environment_with_project(
+                Path(project_path),
+                env_name,
+            )
+            self._log(log_callback, "Associated environment with project")
+        else:
+            self._log(log_callback, "Created environment without associating it with the project")
         return env_name
 
     def _resolve_python_interpreter(self, requested_version: str) -> str | None:
