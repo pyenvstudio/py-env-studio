@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 import json
 import os
+from packaging.utils import canonicalize_name
 
 from py_env_studio.core.database import DatabaseManager
 from py_env_studio.core.env_manager import DB_FILE, MATRIX_FILE, VENV_DIR
@@ -198,4 +199,110 @@ class DBHelper:
         for trend in history.values():
             trend.sort(key=lambda point: point["timestamp"])
 
+        # External intelligence trends are based only on explicit scan query
+        # outcomes. Legacy/local scan rows remain the source of local history.
+        intelligence = DBHelper.intelligence_history(env_name)
+        by_package = {}
+        by_identity = {}
+        for row in intelligence:
+            (query_id, scan_id, package, normalized, version, source, status,
+             result_count, error, observed_at, observation_id, vuln_id,
+             affected_versions, affected_ranges, fixed_versions, severity,
+             vuln_status_value, details_json, scan_status) = row
+            if source != "OSV":
+                continue
+            entry = by_identity.setdefault((normalized, version), {"attempt": None, "success": None, "observations": {}})
+            attempt = {"query_id": query_id, "status": status, "error": error, "timestamp": observed_at, "result_count": result_count, "scan_status": scan_status}
+            if entry["attempt"] is None or (observed_at or "") >= (entry["attempt"]["timestamp"] or ""):
+                entry["attempt"] = attempt
+            if status == "success":
+                if entry["success"] is None or (observed_at or "") >= (entry["success"]["timestamp"] or ""):
+                    entry["success"] = attempt
+                point = by_package.setdefault(normalized, {}).setdefault(query_id, {
+                    "timestamp": observed_at,
+                    "total_vulnerabilities": int(result_count or 0),
+                    "fixed_vulnerabilities": 0,
+                })
+            if observation_id is not None:
+                try:
+                    details = json.loads(details_json)
+                except (TypeError, json.JSONDecodeError):
+                    details = {}
+                entry["observations"].setdefault(query_id, []).append(details)
+                if status == "success":
+                    point["fixed_vulnerabilities"] += int(vuln_status_value == "fixed")
+
+        for package_data in buckets.values():
+            if not isinstance(package_data, dict):
+                continue
+            metadata = package_data.setdefault("metadata", {})
+            name = str(metadata.get("package") or "").strip()
+            version = str(metadata.get("version") or "")
+            normalized = canonicalize_name(name)
+            entry = by_identity.get((normalized, version))
+            tech_view = package_data.setdefault("tech_leader_view", {})
+            tech_view["trend_data"] = sorted(by_package.get(normalized, {}).values(), key=lambda p: p["timestamp"] or "")
+            if entry:
+                metadata["intelligence_status"] = (entry["attempt"] or {}).get("status", "not_scanned")
+                metadata["intelligence_error"] = (entry["attempt"] or {}).get("error")
+                metadata["intelligence_observed_at"] = (entry["success"] or {}).get("timestamp")
+                metadata["intelligence_result_count"] = (entry["attempt"] or {}).get("result_count")
+                metadata["intelligence_scan_status"] = (entry["attempt"] or {}).get("scan_status")
+                metadata["intelligence_last_success_count"] = (entry["success"] or {}).get("result_count")
+            current_observations = []
+            has_successful_observation_query = False
+            identities = [(normalized, version)]
+            for vuln in package_data.get("developer_view", []) or []:
+                components = vuln.get("affected_components", []) if isinstance(vuln, dict) else []
+                for component in components:
+                    identities.append((canonicalize_name(str(component)), str(vuln.get("current_version") or "")))
+            for insight in metadata.get("index_insights", []) or []:
+                if isinstance(insight, dict) and insight.get("package") and insight.get("version"):
+                    identities.append((canonicalize_name(str(insight["package"])), str(insight["version"])))
+            for identity in identities:
+                package_entry = by_identity.get(identity)
+                if package_entry and package_entry["success"]:
+                    has_successful_observation_query = True
+                    current_observations.extend(package_entry["observations"].get(package_entry["success"]["query_id"], []))
+            if has_successful_observation_query:
+                package_data["developer_view"] = current_observations
+            elif entry is None:
+                metadata["intelligence_status"] = "not_scanned"
+                metadata["intelligence_scan_status"] = "not_scanned"
+
         return {"vulnerability_insights": [buckets]}
+
+    @staticmethod
+    def begin_intelligence_scan(env_name, started_at, package_count):
+        with DBHelper._dbm.connect() as conn:
+            cur = conn.execute(sql.get("vulnerability_intelligence", "begin_vulnerability_intelligence_scan"), (env_name, started_at))
+            scan_id = cur.lastrowid
+            conn.execute(sql.get("vulnerability_intelligence", "set_vulnerability_intelligence_scan_counts"), (package_count, 0, 0, scan_id))
+            return scan_id
+
+    @staticmethod
+    def record_intelligence_query(scan_id, package, normalized_package, version, source, status, result_count, error, observed_at, observations=()):
+        with DBHelper._dbm.connect() as conn:
+            conn.execute(sql.get("vulnerability_intelligence", "insert_vulnerability_intelligence_query"), (scan_id, package, normalized_package, version, source, status, result_count, error, observed_at))
+            row = conn.execute(sql.get("vulnerability_intelligence", "get_vulnerability_intelligence_query_id"), (scan_id, normalized_package, version, source)).fetchone()
+            query_id = row[0]
+            for item in observations:
+                severity = item.get("severity", "Unknown")
+                if isinstance(severity, dict):
+                    severity = severity.get("level", "Unknown")
+                conn.execute(sql.get("vulnerability_intelligence", "insert_vulnerability_intelligence_observation"), (
+                    query_id, scan_id, package, normalized_package, version, item["vulnerability_id"], source,
+                    json.dumps(item.get("affected_versions", [])), json.dumps(item.get("affected_ranges", [])),
+                    json.dumps(item.get("fixed_versions", [])), severity, item.get("status", "not fixed"),
+                    observed_at, json.dumps(item.get("details", item), sort_keys=True),
+                ))
+
+    @staticmethod
+    def finish_intelligence_scan(scan_id, completed_at, status, package_count, completed_packages, failed_packages):
+        with DBHelper._dbm.connect() as conn:
+            conn.execute(sql.get("vulnerability_intelligence", "finish_vulnerability_intelligence_scan"), (completed_at, status, package_count, completed_packages, failed_packages, scan_id))
+
+    @staticmethod
+    def intelligence_history(env_name):
+        with DBHelper._dbm.connect() as conn:
+            return conn.execute(sql.get("vulnerability_intelligence", "vulnerability_intelligence_history"), (env_name,)).fetchall()

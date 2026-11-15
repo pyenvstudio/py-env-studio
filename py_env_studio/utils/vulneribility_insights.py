@@ -730,9 +730,20 @@ class VulnerabilityInsightsApp:
     def format_index_details(self, pkg_data):
         meta = pkg_data.get("metadata", {})
         insights = meta.get("index_insights", [])
+        status = meta.get("intelligence_status", "not_scanned")
+        scan_status = meta.get("intelligence_scan_status", "not_scanned")
+        summary = [f"Vulnerability API query: {status} (scan: {scan_status})"]
+        if status == "success":
+            summary.append(f"Vulnerabilities reported: {meta.get('intelligence_result_count', 0)}")
+        elif status == "failed":
+            summary.append(f"Latest API error: {meta.get('intelligence_error') or 'Unknown error'}")
+            if meta.get("intelligence_observed_at"):
+                summary.append(f"Showing last successful data from: {meta['intelligence_observed_at']}")
         if not insights:
+            return "\n".join(summary + ["", "No package index insights available."]) + "\n"
             return "ℹ️ No index insights available.\n"
         lines = ["########## 📦 Package Index Insights ##########"]
+        lines = summary + [""] + lines
         for idx, entry in enumerate(insights, 1):
             lines.append(f"\n🔹 {entry.get('package','—')} ({entry.get('version','?')})")
             if entry.get("deprecated", True):

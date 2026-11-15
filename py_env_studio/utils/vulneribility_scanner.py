@@ -1,244 +1,192 @@
-import os
-import requests
+"""Explicitly triggered vulnerability scans and external API clients."""
+
 from datetime import datetime
+import requests
 from cvss import CVSS3
+from packaging.utils import canonicalize_name
+
 from .handlers import DBHelper
 from .version_utils import vuln_status
-from py_env_studio.core.env_manager import VENV_DIR, DB_FILE
 from py_env_studio.core.pip_tools import list_packages
 
-# ===================== Helpers =====================
-class Helpers:
-    pass
-# ===================== API Clients =====================
+
 class PyPIAPI:
     BASE_URL = "https://pypi.org/pypi/"
 
     def get_deprecation_eol(self, package, version=None):
-        """
-        Fetch deprecation and EOL insights for a package (and optionally a version) from PyPI.
-        Returns a dict with 'deprecated', 'yanked', 'eol', and 'classifiers' info.
-        """
-        url = f"{self.BASE_URL}{package}/json"
-        response = requests.get(url)
-        if response.status_code != 200:
-            return {"deprecated": False, "yanked": False, "eol": False, "classifiers": []}
+        response = requests.get(f"{self.BASE_URL}{package}/json", timeout=15)
+        response.raise_for_status()
         data = response.json()
-        info = data.get("info", {})
-        releases = data.get("releases", {})
-        deprecated = False
-        yanked = False
-        eol = False
+        if not isinstance(data, dict) or not isinstance(data.get("info"), dict):
+            raise ValueError("Invalid PyPI response")
+        info, releases = data["info"], data.get("releases", {})
         classifiers = info.get("classifiers", [])
-        # Check for deprecation/EOL in classifiers
-        for c in classifiers:
-            if "Deprecated" in c or "Obsolete" in c or "Unmaintained" in c:
-                deprecated = True
-            if "End-of-life" in c or "EOL" in c:
-                eol = True
-        # Check if the version is yanked
-        if version and version in releases:
-            for file in releases[version]:
-                if file.get("yanked", False):
-                    yanked = True
         return {
-            "deprecated": deprecated,
-            "yanked": yanked,
-            "eol": eol,
-            "classifiers": classifiers
+            "deprecated": any(any(term in value for term in ("Deprecated", "Obsolete", "Unmaintained")) for value in classifiers),
+            "yanked": bool(version and any(item.get("yanked", False) for item in releases.get(version, []))),
+            "eol": any("End-of-life" in value or "EOL" in value for value in classifiers),
+            "classifiers": classifiers,
         }
+
 
 class DepsDevAPI:
     BASE_URL = "https://api.deps.dev/v3alpha/systems/"
 
     def get_dependencies(self, package, version):
-        """
-        Fetch direct dependencies for a specific package and version from deps.dev.
-        Returns a list of (dep_name, dep_version) tuples.
-        """
-
-        url = f"{self.BASE_URL}pypi/packages/{package}/versions/{version}:dependencies"
-        response = requests.get(url)
-        
-        if response.status_code != 200:
-            return []
-        
+        response = requests.get(f"{self.BASE_URL}pypi/packages/{package}/versions/{version}:dependencies", timeout=15)
+        response.raise_for_status()
         data = response.json()
-
-        deps = []
+        if not isinstance(data, dict):
+            raise ValueError("Invalid deps.dev response")
+        dependencies = []
         for node in data.get("nodes", []):
-            if node.get("relation") == "DIRECT":
-                dep_key = node["versionKey"].get("name")
-                dep_version = node["versionKey"].get("version")
-                if dep_key and dep_version:
-                    deps.append((dep_key, dep_version))
-        return deps
+            key = node.get("versionKey", {})
+            if node.get("relation") == "DIRECT" and key.get("name") and key.get("version"):
+                dependencies.append((key["name"], key["version"]))
+        return dependencies
+
 
 class OSVAPI:
     BASE_URL = "https://api.osv.dev/v1/query"
+
     def get_vulnerabilities(self, package, version):
-        payload = {"package": {"name": package, "ecosystem": "PyPI"}, "version": version}
-        r = requests.post(self.BASE_URL, json=payload)
-        if r.status_code != 200:
-            return []
-        vulns = r.json().get("vulns", [])
+        response = requests.post(self.BASE_URL, json={"package": {"name": package, "ecosystem": "PyPI"}, "version": version}, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict) or ("vulns" in data and not isinstance(data["vulns"], list)):
+            raise ValueError("Invalid OSV response")
         results = []
-        for v in vulns:
-            refs = [r["url"] for r in v.get("references", []) if r.get("url")]
-            fixed_version = (
-                v.get("affected", [{}])[0]
-                .get("ranges", [{}])[0]
-                .get("events", [{}])[-1]
-                .get("fixed")
-            )
-            fixed_versions = [fixed_version] if fixed_version else []
-            severity = v.get("severity", [])
-            severity_level = "Unknown"
-            for s in severity:
-                if s.get("type") == "CVSS_V3":
+        for vuln in data.get("vulns", []):
+            refs = [ref["url"] for ref in vuln.get("references", []) if ref.get("url")]
+            fixed_versions, affected_versions, affected_ranges = set(), set(), []
+            for affected in vuln.get("affected", []):
+                for item in affected.get("versions", []):
+                    affected_versions.add(str(item))
+                for range_item in affected.get("ranges", []):
+                    affected_ranges.append(range_item)
+                    for event in range_item.get("events", []):
+                        if event.get("fixed"):
+                            fixed_versions.add(str(event["fixed"]))
+            severity = vuln.get("severity", [])
+            level, score = "Unknown", None
+            for value in severity:
+                if value.get("type") == "CVSS_V3":
+                    score = value.get("score")
                     try:
-                        cvss = CVSS3(s.get("score"))
-                        score = cvss.base_score
-                        if score >= 9.0:
-                            severity_level = "Critical"
-                        elif score >= 7.0:
-                            severity_level = "High"
-                        elif score >= 4.0:
-                            severity_level = "Medium"
-                        else:
-                            severity_level = "Low"
-                    except:
+                        base_score = CVSS3(score).base_score
+                        level = "Critical" if base_score >= 9 else "High" if base_score >= 7 else "Medium" if base_score >= 4 else "Low"
+                    except Exception:
                         pass
+                    break
+            fixed_versions = sorted(fixed_versions)
             results.append({
-                "vulnerability_id": v["id"],
-                "summary": v.get("summary", ""),
-                "affected_components": [package],
-                "severity": {
-                    "type": "CVSS_V3" if severity else "Unknown",
-                    "score": severity[0].get("score") if severity else None,
-                    "level": severity_level
-                },
-                "fixed_versions": fixed_versions,
-                "impact": v.get("details", "").split(".")[0],
+                "vulnerability_id": str(vuln["id"]), "summary": vuln.get("summary", ""),
+                "affected_components": [package], "affected_versions": sorted(affected_versions),
+                "affected_ranges": affected_ranges, "severity": {"type": "CVSS_V3" if score else "Unknown", "score": score, "level": level},
+                "fixed_versions": fixed_versions, "status": vuln_status(version, fixed_versions),
+                "impact": vuln.get("details", "").split(".")[0],
                 "remediation_steps": f"Upgrade to {fixed_versions[0]}" if fixed_versions else "No fix available",
-                "references": [{"type": "advisory", "url": url} for url in refs]
+                "references": [{"type": "advisory", "url": url} for url in refs],
             })
         return results
-# ===================== Security Scanner =====================
+
+
 class SecurityMatrix:
     def __init__(self):
-        self.deps_api = DepsDevAPI()
-        self.osv_api = OSVAPI()
-        self.pypi_api = PyPIAPI()  # Added PyPI insights
-        # log callback from parent
+        self.deps_api, self.osv_api, self.pypi_api = DepsDevAPI(), OSVAPI(), PyPIAPI()
         self.log_callback = None
+        self._scan_id = None
+        self._query_cache = {}
+        self._scan_errors = 0
+        self._scan_successes = 0
+        self._observation_time = None
+
+    def _query(self, source, package, version, function):
+        identity = (source, canonicalize_name(str(package)), str(version))
+        if identity in self._query_cache:
+            return self._query_cache[identity]
+        timestamp = datetime.now().astimezone().isoformat()
+        try:
+            result = function()
+            if source == "OSV":
+                unique = {}
+                for item in result:
+                    unique.setdefault(str(item.get("vulnerability_id", "")), item)
+                result = list(unique.values())
+            observations = result if source == "OSV" else []
+            if self._scan_id is not None:
+                DBHelper.record_intelligence_query(self._scan_id, package, identity[1], str(version), source, "success", len(result) if isinstance(result, list) else len(observations), None, timestamp, observations)
+                self._scan_successes += 1
+            self._query_cache[identity] = result
+            return result
+        except Exception as exc:
+            if self._scan_id is not None:
+                DBHelper.record_intelligence_query(self._scan_id, package, identity[1], str(version), source, "failed", None, str(exc)[:500], timestamp)
+                self._scan_errors += 1
+            self._query_cache[identity] = None
+            return None
 
     def build_matrix(self, package, version="latest"):
         timestamp = datetime.now().astimezone().isoformat()
-        matrix = {
-            "vulnerability_insights": {
-                "metadata": {"timestamp": timestamp, "package": package, "version": version, "ecosystem": "PyPI",
-                            "index_insights": []  # will hold PyPI insights
-                            },
-                "developer_view": [],
-                "tech_leader_view": {"total_vulnerabilities": 0, "severity_breakdown": {"critical": 0, "high": 0, "medium": 0, "low": 0}}
-            }
-        }
-
-        # 🔹 PyPI insights for main package
-        pypi_insights = self.pypi_api.get_deprecation_eol(package, version)
-        matrix["vulnerability_insights"]["metadata"]["index_insights"].append({
-            "source": "PyPI",
-            "package": package,
-            "version": version,
-            "deprecated": pypi_insights["deprecated"],
-            "yanked": pypi_insights["yanked"],
-            "eol": pypi_insights["eol"],
-            # "classifiers": pypi_insights["classifiers"]
-        })
-
-        # Main package
-        vulns = self.osv_api.get_vulnerabilities(package, version)
-        matrix["vulnerability_insights"]["developer_view"].extend(vulns)
-        # Dependencies
-        deps = self.deps_api.get_dependencies(package, version)
+        matrix = {"vulnerability_insights": {"metadata": {"timestamp": timestamp, "package": package, "version": version, "ecosystem": "PyPI", "index_insights": []}, "developer_view": [], "tech_leader_view": {"total_vulnerabilities": 0, "severity_breakdown": {"critical": 0, "high": 0, "medium": 0, "low": 0}}}}
+        insights = matrix["vulnerability_insights"]
+        pypi = self._query("PyPI", package, version, lambda: self.pypi_api.get_deprecation_eol(package, version))
+        if pypi is not None:
+            insights["metadata"]["index_insights"].append({"source": "PyPI", "package": package, "version": version, **{key: pypi[key] for key in ("deprecated", "yanked", "eol")}})
+        vulns = self._query("OSV", package, version, lambda: self.osv_api.get_vulnerabilities(package, version))
+        if vulns:
+            insights["developer_view"].extend(vulns)
+        deps = self._query("deps.dev", package, version, lambda: self.deps_api.get_dependencies(package, version)) or []
         for dep_name, dep_version in deps:
-            # PyPI insights for dependency
-            dep_pypi_insights = self.pypi_api.get_deprecation_eol(dep_name, dep_version)
-            matrix["vulnerability_insights"]["metadata"]["index_insights"].append({
-                "source": "PyPI",
-                "package": dep_name,
-                "version": dep_version,
-                "deprecated": dep_pypi_insights["deprecated"],
-                "yanked": dep_pypi_insights["yanked"],
-                "eol": dep_pypi_insights["eol"],
-                # "classifiers": dep_pypi_insights["classifiers"]
-            })
-
-            dep_vulns = self.osv_api.get_vulnerabilities(dep_name, dep_version)
-            for dv in dep_vulns:
-                dv["affected_components"] = [dep_name]
-                matrix["vulnerability_insights"]["developer_view"].append(dv)
-
-        # Stamp remediation status (fixed / not fixed) from installed vs fixed versions,
-        # and persist it with the scan so the UI can lock resolved vulnerabilities.
-        current_versions = {str(package): str(version)}
-        for dep_name, dep_version in deps:
-            current_versions[str(dep_name)] = str(dep_version)
-        for v in matrix["vulnerability_insights"]["developer_view"]:
-            affected = v.get("affected_components") or []
-            pkg = str(affected[0]).split("[")[0].strip() if affected else str(package)
-            v["status"] = vuln_status(
-                current_versions.get(pkg),
-                v.get("fixed_versions", []) or [],
-            )
-        # Summary counts
-        severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
-        for v in matrix["vulnerability_insights"]["developer_view"]:
-            lvl = v["severity"]["level"].lower()
-            if lvl in severity_counts:
-                severity_counts[lvl] += 1
-        matrix["vulnerability_insights"]["tech_leader_view"]["total_vulnerabilities"] = len(matrix["vulnerability_insights"]["developer_view"])
-        matrix["vulnerability_insights"]["tech_leader_view"]["severity_breakdown"] = severity_counts
+            dep_pypi = self._query("PyPI", dep_name, dep_version, lambda n=dep_name, v=dep_version: self.pypi_api.get_deprecation_eol(n, v))
+            if dep_pypi is not None:
+                insights["metadata"]["index_insights"].append({"source": "PyPI", "package": dep_name, "version": dep_version, **{key: dep_pypi[key] for key in ("deprecated", "yanked", "eol")}})
+            dep_vulns = self._query("OSV", dep_name, dep_version, lambda n=dep_name, v=dep_version: self.osv_api.get_vulnerabilities(n, v))
+            for vuln in dep_vulns or []:
+                vuln["affected_components"] = [dep_name]
+                vuln["current_version"] = dep_version
+                insights["developer_view"].append(vuln)
+        for vuln in insights["developer_view"]:
+            vuln.setdefault("current_version", version)
+        counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+        for vuln in insights["developer_view"]:
+            level = str(vuln.get("severity", {}).get("level", "Unknown")).lower()
+            if level in counts:
+                counts[level] += 1
+        insights["tech_leader_view"].update(total_vulnerabilities=len(insights["developer_view"]), severity_breakdown=counts)
         return matrix
 
-    def scan_pkg(self,pkg, version="latest", env_id=None):
-        """Scan a single package and save to DB."""
+    def scan_pkg(self, pkg, version="latest", env_id=None):
         result = self.build_matrix(pkg, version)
         if env_id:
             DBHelper.save_vulnerability_info(env_id, result)
         return True
 
     def scan_env(self, env_name, log_callback):
-
-        """Scan all packages in an environment and save results."""
-        env_id = DBHelper.get_or_create_env(env_name)
+        """Run an explicitly requested scan and retain every API outcome."""
         packages = list_packages(env_name)
-        pkg_scan_flag = {pkg: False for pkg in packages}
-        for i, (pkg, version) in enumerate(packages):
-            log_callback(f"Scanning package {pkg} (version: {version}) in environment {env_name}")
-            is_scanned = self.scan_pkg(pkg, version, env_id)
-            if is_scanned:
-                pkg_scan_flag[pkg] = True
-            else:
-                log_callback(f"Failed to scan package {pkg} in environment {env_name}")
-                continue
-        # Check if all packages were scanned
-        if all(pkg_scan_flag.values()):
-            log_callback(f"All packages in environment '{env_name}' scanned successfully.")
-        else:
-            log_callback(f"Some packages in environment '{env_name}' failed to scan.")
-        return True
+        started = datetime.now().astimezone().isoformat()
+        env_id = DBHelper.get_or_create_env(env_name)
+        self._scan_id = DBHelper.begin_intelligence_scan(env_name, started, len(packages))
+        self._query_cache, self._scan_errors, self._scan_successes = {}, 0, 0
+        completed, failed = 0, 0
+        for package, version in packages:
+            log_callback(f"Scanning package {package} (version: {version}) in environment {env_name}")
+            prior_errors = self._scan_errors
+            try:
+                self.scan_pkg(package, version, env_id)
+                if self._scan_errors == prior_errors:
+                    completed += 1
+                else:
+                    failed += 1
+            except Exception as exc:
+                failed += 1
+                log_callback(f"Failed to scan package {package}: {exc}")
+        status = "success" if self._scan_errors == 0 and failed == 0 else "partial" if self._scan_successes else "failed"
+        DBHelper.finish_intelligence_scan(self._scan_id, datetime.now().astimezone().isoformat(), status, len(packages), completed, failed)
+        log_callback(f"Vulnerability scan {status}: {completed}/{len(packages)} packages queried successfully; {self._scan_errors} API failures.")
+        return status != "failed"
 
-# # ===================== Main =====================
+
 if __name__ == "__main__":
     DBHelper.init_db()
-    sm = SecurityMatrix()
-
-    # # Example: Scan single package
-    # sm.scan_pkg("django", "2.1.3", env_id=DBHelper.get_or_create_env("test_env"))
-
-    # Example: Scan entire environment
-    # sm.scan_env("env_update2")
-
-

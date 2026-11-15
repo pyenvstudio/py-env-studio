@@ -54,6 +54,20 @@ EXPECTED_KEYS = {
         "upsert_environment_lock_metadata",
         "delete_environment_lock_metadata",
     },
+    "vulnerability_intelligence": {
+        "create_vulnerability_intelligence_scans",
+        "create_vulnerability_intelligence_queries",
+        "create_vulnerability_intelligence_observations",
+        "create_vulnerability_intelligence_scan_env_index",
+        "create_vulnerability_intelligence_package_index",
+        "begin_vulnerability_intelligence_scan",
+        "set_vulnerability_intelligence_scan_counts",
+        "finish_vulnerability_intelligence_scan",
+        "insert_vulnerability_intelligence_query",
+        "get_vulnerability_intelligence_query_id",
+        "insert_vulnerability_intelligence_observation",
+        "vulnerability_intelligence_history",
+    },
 }
 
 
@@ -84,6 +98,13 @@ def test_runtime_values_use_placeholders_not_interpolation():
         ("runtime_cache", "insert_metadata_row"),
         ("runtime_cache", "upsert_cache_state"),
         ("runtime_cache", "record_cache_error"),
+        ("vulnerability_intelligence", "begin_vulnerability_intelligence_scan"),
+        ("vulnerability_intelligence", "set_vulnerability_intelligence_scan_counts"),
+        ("vulnerability_intelligence", "finish_vulnerability_intelligence_scan"),
+        ("vulnerability_intelligence", "insert_vulnerability_intelligence_query"),
+        ("vulnerability_intelligence", "get_vulnerability_intelligence_query_id"),
+        ("vulnerability_intelligence", "insert_vulnerability_intelligence_observation"),
+        ("vulnerability_intelligence", "vulnerability_intelligence_history"),
     ]
     for purpose, name in value_statements:
         body = sql.get(purpose, name)
@@ -111,6 +132,9 @@ def test_initialize_database_creates_all_tables(tmp_path: Path):
         "python_runtime_metadata",
         "python_runtime_cache_state",
         "environment_lock_metadata",
+        "vulnerability_intelligence_scans",
+        "vulnerability_intelligence_queries",
+        "vulnerability_intelligence_observations",
     } <= tables
 
 

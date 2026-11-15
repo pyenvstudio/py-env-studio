@@ -225,6 +225,11 @@ Displays detailed vulnerability and dependency information for packages:
 
 The Vulnerability Report can apply available fixes without leaving the dashboard.
 
+Vulnerability intelligence is fetched only when you explicitly run **Scan Now**.
+The dashboard retains timestamped OSV observations across scans. A successful
+scan with no findings is recorded separately from API failures; partial scans
+do not treat packages that could not be queried as vulnerability-free.
+
 1. Run **Tools -> Scan Now**, then open **Tools -> Vulnerability Report** for the environment.
 2. Select a package and the vulnerability you want to address.
 3. In the vulnerability details, select **Update Now** beside the remediation recommendation.

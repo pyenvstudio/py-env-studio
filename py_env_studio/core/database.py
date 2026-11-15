@@ -48,6 +48,9 @@ class DatabaseManager:
                 for name in sql.available("environment_locks"):
                     if name.startswith("create_"):
                         cur.execute(sql.get("environment_locks", name))
+                for name in sql.available("vulnerability_intelligence"):
+                    if name.startswith("create_"):
+                        cur.execute(sql.get("vulnerability_intelligence", name))
                 package_update_columns = {
                     row[1]
                     for row in cur.execute("PRAGMA table_info(package_update_cache)").fetchall()

@@ -223,6 +223,13 @@ widgets (`BarChart` / `LineChart`) directly in the CustomTkinter dashboard,
 follow the active appearance mode, and show a placeholder label when a
 package has no scan history. `matplotlib` is no longer a dependency.
 
+External vulnerability intelligence is collected only during a user initiated
+scan. SQLite retains per-source query outcomes and append-only OSV observations;
+successful empty responses are distinct from failed or partial API scans.
+Trend charts use successful OSV query history, while local environment scan
+records remain separate. No background polling or scheduled API requests are
+performed.
+
 Conceptual flow:
 
 ``` text
