@@ -13,7 +13,7 @@ DOCS_DIR = Path(__file__).resolve().parent
 ROOT_DIR = DOCS_DIR.parent
 
 
-def _project_version(default: str = "2.1.5") -> str:
+def _project_version(default: str = "2.1.6") -> str:
     try:
         import tomllib
     except ImportError:

@@ -51,6 +51,22 @@ class DatabaseManager:
                 for name in sql.available("vulnerability_intelligence"):
                     if name.startswith("create_"):
                         cur.execute(sql.get("vulnerability_intelligence", name))
+                observation_columns = {
+                    row[1]
+                    for row in cur.execute(
+                        "PRAGMA table_info(vulnerability_intelligence_observations)"
+                    ).fetchall()
+                }
+                for column in (
+                    "aliases_json", "published_at", "modified_at", "withdrawn_at",
+                    "cvss_json", "cwe_ids_json", "advisory_status",
+                    "affected_release_count",
+                ):
+                    if column not in observation_columns:
+                        cur.execute(sql.get(
+                            "vulnerability_intelligence",
+                            f"migrate_vulnerability_intelligence_add_{column}",
+                        ))
                 package_update_columns = {
                     row[1]
                     for row in cur.execute("PRAGMA table_info(package_update_cache)").fetchall()

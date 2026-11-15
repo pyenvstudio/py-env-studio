@@ -60,12 +60,25 @@ EXPECTED_KEYS = {
         "create_vulnerability_intelligence_observations",
         "create_vulnerability_intelligence_scan_env_index",
         "create_vulnerability_intelligence_package_index",
+        "create_vulnerability_intelligence_dependency_links",
+        "create_vulnerability_intelligence_dependency_index",
+        "migrate_vulnerability_intelligence_add_aliases_json",
+        "migrate_vulnerability_intelligence_add_published_at",
+        "migrate_vulnerability_intelligence_add_modified_at",
+        "migrate_vulnerability_intelligence_add_withdrawn_at",
+        "migrate_vulnerability_intelligence_add_cvss_json",
+        "migrate_vulnerability_intelligence_add_cwe_ids_json",
+        "migrate_vulnerability_intelligence_add_advisory_status",
+        "migrate_vulnerability_intelligence_add_affected_release_count",
         "begin_vulnerability_intelligence_scan",
         "set_vulnerability_intelligence_scan_counts",
         "finish_vulnerability_intelligence_scan",
         "insert_vulnerability_intelligence_query",
         "get_vulnerability_intelligence_query_id",
         "insert_vulnerability_intelligence_observation",
+        "insert_vulnerability_intelligence_dependency_link",
+        "vulnerability_intelligence_dependencies",
+        "successful_vulnerability_intelligence_dependency_history",
         "vulnerability_intelligence_history",
     },
 }
@@ -105,6 +118,9 @@ def test_runtime_values_use_placeholders_not_interpolation():
         ("vulnerability_intelligence", "get_vulnerability_intelligence_query_id"),
         ("vulnerability_intelligence", "insert_vulnerability_intelligence_observation"),
         ("vulnerability_intelligence", "vulnerability_intelligence_history"),
+        ("vulnerability_intelligence", "insert_vulnerability_intelligence_dependency_link"),
+        ("vulnerability_intelligence", "vulnerability_intelligence_dependencies"),
+        ("vulnerability_intelligence", "successful_vulnerability_intelligence_dependency_history"),
     ]
     for purpose, name in value_statements:
         body = sql.get(purpose, name)
@@ -135,7 +151,32 @@ def test_initialize_database_creates_all_tables(tmp_path: Path):
         "vulnerability_intelligence_scans",
         "vulnerability_intelligence_queries",
         "vulnerability_intelligence_observations",
+        "vulnerability_intelligence_dependency_links",
     } <= tables
+
+
+def test_initialize_database_additively_migrates_earlier_intelligence_table(tmp_path: Path):
+    import sqlite3
+
+    db_path = tmp_path / "previous-2.1.5.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""CREATE TABLE vulnerability_intelligence_observations (
+            observation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            query_id INTEGER NOT NULL, scan_id INTEGER NOT NULL,
+            package_name TEXT NOT NULL, normalized_package TEXT NOT NULL,
+            package_version TEXT NOT NULL, vulnerability_id TEXT NOT NULL,
+            source TEXT NOT NULL, affected_versions TEXT NOT NULL DEFAULT '[]',
+            affected_ranges TEXT NOT NULL DEFAULT '[]', fixed_versions TEXT NOT NULL DEFAULT '[]',
+            severity TEXT NOT NULL DEFAULT 'Unknown', vulnerability_status TEXT NOT NULL DEFAULT 'not fixed',
+            observed_at TEXT NOT NULL, details_json TEXT NOT NULL,
+            UNIQUE (query_id, vulnerability_id, source))""")
+    DatabaseManager(db_path=db_path).initialize_database()
+    with sqlite3.connect(db_path) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(vulnerability_intelligence_observations)")}
+    assert {
+        "aliases_json", "published_at", "modified_at", "withdrawn_at", "cvss_json",
+        "cwe_ids_json", "advisory_status", "affected_release_count",
+    } <= columns
 
 
 def test_legacy_migration_copies_misspelled_table(tmp_path: Path):

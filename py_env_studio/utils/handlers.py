@@ -8,7 +8,7 @@ from packaging.utils import canonicalize_name
 from py_env_studio.core.database import DatabaseManager
 from py_env_studio.core.env_manager import DB_FILE, MATRIX_FILE, VENV_DIR
 from py_env_studio.core import schema as sql
-from .version_utils import vuln_status
+from .vulnerability_intelligence import build_package_profile
 
 
 class DataHelper:
@@ -109,7 +109,7 @@ class DBHelper:
         with DBHelper._dbm.connect() as conn:
             cur = conn.cursor()
             cur.execute(
-                sql.get("vulnerability", "scan_history_rows"),
+                sql.get("vulnerability", "latest_scan_rows"),
                 (env_name,),
             )
             rows = cur.fetchall()
@@ -117,102 +117,44 @@ class DBHelper:
         if not rows:
             return {"vulnerability_insights": []}
 
-        latest_scan_date = max((row[3] for row in rows if row[3]), default=None)
         buckets = {}
-        history = {}
-        for vid, payload, created_at, scan_date in rows:
+        for vid, payload in rows:
             try:
                 decoded = json.loads(payload) if isinstance(payload, str) else payload
             except Exception:
                 continue
 
             raw_matrix = decoded.get("vulnerability_insights", decoded)
-            if latest_scan_date is not None and scan_date == latest_scan_date:
-                buckets[str(vid)] = raw_matrix
-
-            if not isinstance(raw_matrix, dict) or "metadata" not in raw_matrix:
-                continue
-            metadata = raw_matrix.get("metadata") or {}
-            if not isinstance(metadata, dict):
-                continue
-            package_name = str(metadata.get("package") or "").strip()
-            if not package_name or not scan_date:
-                continue
-
-            developer_view = raw_matrix.get("developer_view") or []
-            tech_view = raw_matrix.get("tech_leader_view") or {}
-            if not isinstance(developer_view, list):
-                developer_view = []
-            if not isinstance(tech_view, dict):
-                tech_view = {}
-            try:
-                total = max(0, int(tech_view.get("total_vulnerabilities")))
-            except (TypeError, ValueError):
-                total = len(developer_view)
-            versions = {package_name.split("[")[0].strip(): str(metadata.get("version") or "?")}
-            for insight in metadata.get("index_insights", []) or []:
-                if not isinstance(insight, dict):
-                    continue
-                dependency = str(insight.get("package") or "").split("[")[0].strip()
-                if dependency and insight.get("version"):
-                    versions[dependency] = str(insight["version"])
-
-            def is_fixed(vulnerability):
-                if not isinstance(vulnerability, dict):
-                    return False
-                status = str(vulnerability.get("status", "")).lower()
-                if status in {"fixed", "not fixed"}:
-                    return status == "fixed"
-                affected = vulnerability.get("affected_components") or []
-                affected_package = str(affected[0]).split("[")[0].strip() if affected else package_name
-                return vuln_status(
-                    versions.get(affected_package),
-                    vulnerability.get("fixed_versions", []) or [],
-                ) == "fixed"
-
-            fixed = sum(
-                1 for vulnerability in developer_view if is_fixed(vulnerability)
-            )
-            history.setdefault(package_name.casefold(), []).append(
-                {
-                    "timestamp": str(created_at or scan_date),
-                    "total_vulnerabilities": total,
-                    "fixed_vulnerabilities": fixed,
-                }
-            )
-
-        for package_data in buckets.values():
-            if not isinstance(package_data, dict) or "metadata" not in package_data:
-                continue
-            metadata = package_data.get("metadata") or {}
-            if not isinstance(metadata, dict):
-                continue
-            package_name = str(metadata.get("package") or "").strip()
-            if not package_name:
-                continue
-            tech_view = package_data.setdefault("tech_leader_view", {})
-            if not isinstance(tech_view, dict):
-                tech_view = {}
-                package_data["tech_leader_view"] = tech_view
-            tech_view["trend_data"] = history.get(package_name.casefold(), [])
-
-        for trend in history.values():
-            trend.sort(key=lambda point: point["timestamp"])
+            package_meta = raw_matrix.get("metadata", {}) if isinstance(raw_matrix, dict) else {}
+            package_key = canonicalize_name(str(package_meta.get("package") or "")) if isinstance(package_meta, dict) else ""
+            buckets[package_key or str(vid)] = raw_matrix
 
         # External intelligence trends are based only on explicit scan query
         # outcomes. Legacy/local scan rows remain the source of local history.
         intelligence = DBHelper.intelligence_history(env_name)
+        dependency_history = DBHelper.successful_intelligence_dependency_history(env_name)
         by_package = {}
         by_identity = {}
+        records_by_package = {}
+        successful_scans_by_package = {}
+        source_attempts = {}
         for row in intelligence:
             (query_id, scan_id, package, normalized, version, source, status,
              result_count, error, observed_at, observation_id, vuln_id,
              affected_versions, affected_ranges, fixed_versions, severity,
-             vuln_status_value, details_json, scan_status) = row
+             vuln_status_value, details_json, scan_status, aliases_json,
+             published_at, modified_at, withdrawn_at, cvss_json, cwe_ids_json,
+             advisory_status, affected_release_count) = row
+            source_key = (normalized, version, source)
+            source_attempt = {"status": status, "error": error, "timestamp": observed_at, "scan_id": scan_id}
+            if source_key not in source_attempts or (observed_at or "") >= (source_attempts[source_key]["timestamp"] or ""):
+                source_attempts[source_key] = source_attempt
             if source != "OSV":
                 continue
             entry = by_identity.setdefault((normalized, version), {"attempt": None, "success": None, "observations": {}})
-            attempt = {"query_id": query_id, "status": status, "error": error, "timestamp": observed_at, "result_count": result_count, "scan_status": scan_status}
+            attempt = {"query_id": query_id, "scan_id": scan_id, "status": status, "error": error, "timestamp": observed_at, "result_count": result_count, "scan_status": scan_status}
+            if status == "success":
+                successful_scans_by_package.setdefault(normalized, {})[scan_id] = observed_at
             if entry["attempt"] is None or (observed_at or "") >= (entry["attempt"]["timestamp"] or ""):
                 entry["attempt"] = attempt
             if status == "success":
@@ -228,9 +170,60 @@ class DBHelper:
                     details = json.loads(details_json)
                 except (TypeError, json.JSONDecodeError):
                     details = {}
+                def decode_list(value):
+                    try:
+                        return json.loads(value) if isinstance(value, str) else value or []
+                    except (TypeError, json.JSONDecodeError):
+                        return []
+                severity_details = details.get("severity")
+                if not isinstance(severity_details, dict):
+                    severity_details = {}
+                severity_details.setdefault("level", severity)
+                details.update({
+                    "vulnerability_id": vuln_id,
+                    "package_name": package,
+                    "normalized_package": normalized,
+                    "scan_id": scan_id,
+                    "source": source,
+                    "aliases": decode_list(aliases_json),
+                    "published": published_at,
+                    "modified": modified_at,
+                    "withdrawn": withdrawn_at,
+                    "cvss_records": decode_list(cvss_json),
+                    "cwe_ids": decode_list(cwe_ids_json),
+                    "advisory_status": advisory_status,
+                    "affected_versions": decode_list(affected_versions),
+                    "affected_ranges": decode_list(affected_ranges),
+                    "fixed_versions": decode_list(fixed_versions),
+                    "status": vuln_status_value,
+                    "severity": severity_details,
+                    "package_version": version,
+                    "observed_at": observed_at,
+                    "affected_release_count": affected_release_count,
+                })
                 entry["observations"].setdefault(query_id, []).append(details)
+                records_by_package.setdefault(normalized, []).append(details)
                 if status == "success":
                     point["fixed_vulnerabilities"] += int(vuln_status_value == "fixed")
+
+        dependencies_by_root = {}
+        for row in dependency_history:
+            (scan_id, root_package, root_normalized, root_version, package_name,
+             normalized_package, package_version, relation, parent_package,
+             dependency_path, observed_at, scan_status) = row
+            root_key = (root_normalized, root_version)
+            context = dependencies_by_root.setdefault(root_key, {"scan_id": 0, "observed_at": None, "scan_status": None, "dependencies": []})
+            if scan_id > context["scan_id"]:
+                context.update(scan_id=scan_id, observed_at=observed_at, scan_status=scan_status, dependencies=[])
+            if scan_id == context["scan_id"]:
+                try:
+                    path = json.loads(dependency_path)
+                except (TypeError, json.JSONDecodeError):
+                    path = []
+                context["dependencies"].append({
+                    "name": package_name, "version": package_version, "relation": relation,
+                    "parent_package": parent_package, "path": path,
+                })
 
         for package_data in buckets.values():
             if not isinstance(package_data, dict):
@@ -249,6 +242,23 @@ class DBHelper:
                 metadata["intelligence_result_count"] = (entry["attempt"] or {}).get("result_count")
                 metadata["intelligence_scan_status"] = (entry["attempt"] or {}).get("scan_status")
                 metadata["intelligence_last_success_count"] = (entry["success"] or {}).get("result_count")
+            else:
+                metadata["intelligence_status"] = "not_scanned"
+                metadata["intelligence_scan_status"] = "not_scanned"
+            dependency_analysis = metadata.setdefault("dependency_analysis", {})
+            dependency_attempt = source_attempts.get((normalized, version, "deps.dev"))
+            if dependency_attempt:
+                dependency_analysis["latest_api_status"] = dependency_attempt["status"]
+                dependency_analysis["latest_api_error"] = dependency_attempt["error"]
+            previous_graph = dependencies_by_root.get((normalized, version))
+            if dependency_analysis.get("status", "unavailable") == "unavailable" and previous_graph:
+                dependency_analysis.update({
+                    "source": "deps.dev", "status": "stale",
+                    "dependencies": previous_graph["dependencies"],
+                    "last_successful_scan_id": previous_graph["scan_id"],
+                    "last_successful_collected_at": previous_graph["observed_at"],
+                    "limitation": "Showing the last successfully resolved deps.dev graph; its generic-platform graph may differ from the installed environment.",
+                })
             current_observations = []
             has_successful_observation_query = False
             identities = [(normalized, version)]
@@ -259,16 +269,56 @@ class DBHelper:
             for insight in metadata.get("index_insights", []) or []:
                 if isinstance(insight, dict) and insight.get("package") and insight.get("version"):
                     identities.append((canonicalize_name(str(insight["package"])), str(insight["version"])))
+            dependency_metadata = metadata.get("dependency_analysis", {}) or {}
+            for dependency in dependency_metadata.get("dependencies", []) or []:
+                if dependency.get("name") and dependency.get("version"):
+                    identities.append((canonicalize_name(str(dependency["name"])), str(dependency["version"])))
             for identity in identities:
                 package_entry = by_identity.get(identity)
                 if package_entry and package_entry["success"]:
                     has_successful_observation_query = True
-                    current_observations.extend(package_entry["observations"].get(package_entry["success"]["query_id"], []))
+                    for item in package_entry["observations"].get(package_entry["success"]["query_id"], []):
+                        current_item = dict(item)
+                        dependency = next((dep for dep in dependency_metadata.get("dependencies", []) or []
+                                           if canonicalize_name(str(dep.get("name", ""))) == identity[0]
+                                           and str(dep.get("version", "")) == identity[1]), None)
+                        if dependency:
+                            current_item["affected_components"] = [dependency["name"]]
+                            current_item["dependency_relation"] = dependency.get("relation", "unknown")
+                            current_item["parent_package"] = dependency.get("parent_package")
+                            current_item["dependency_path"] = dependency.get("path", [])
+                        current_observations.append(current_item)
             if has_successful_observation_query:
+                local_status_by_id = {}
+                for local_item in package_data.get("developer_view", []) or []:
+                    if not isinstance(local_item, dict) or local_item.get("status") not in {"fixed", "not fixed"}:
+                        continue
+                    for identifier in [local_item.get("vulnerability_id"), *(local_item.get("aliases") or [])]:
+                        if identifier:
+                            local_status_by_id[str(identifier)] = local_item["status"]
+                for current_item in current_observations:
+                    identifiers = [current_item.get("vulnerability_id"), *(current_item.get("aliases") or [])]
+                    stored_status = next((local_status_by_id.get(str(identifier)) for identifier in identifiers if identifier and str(identifier) in local_status_by_id), None)
+                    if stored_status:
+                        current_item["status"] = stored_status
                 package_data["developer_view"] = current_observations
-            elif entry is None:
-                metadata["intelligence_status"] = "not_scanned"
-                metadata["intelligence_scan_status"] = "not_scanned"
+            current_root_observations = (
+                entry["observations"].get(entry["success"]["query_id"], [])
+                if entry and entry["success"] else []
+            )
+            current_scan_id = entry["success"]["scan_id"] if entry and entry["success"] else None
+            previous_scan_id = max(
+                (scan_id for scan_id in successful_scans_by_package.get(normalized, {})
+                 if current_scan_id is not None and scan_id < current_scan_id),
+                default=None,
+            )
+            package_data["intelligence_profile"] = build_package_profile(
+                records_by_package.get(normalized, []),
+                current_root_observations,
+                successful_scans_by_package.get(normalized, {}).get(previous_scan_id),
+                entry["success"]["timestamp"] if entry and entry["success"] else None,
+                current_version=version,
+            )
 
         return {"vulnerability_insights": [buckets]}
 
@@ -290,10 +340,16 @@ class DBHelper:
                 severity = item.get("severity", "Unknown")
                 if isinstance(severity, dict):
                     severity = severity.get("level", "Unknown")
+                affected_versions = item.get("affected_versions", []) or []
+                aliases = item.get("aliases", []) or []
+                advisory_status = "withdrawn" if item.get("withdrawn") else "active"
                 conn.execute(sql.get("vulnerability_intelligence", "insert_vulnerability_intelligence_observation"), (
                     query_id, scan_id, package, normalized_package, version, item["vulnerability_id"], source,
-                    json.dumps(item.get("affected_versions", [])), json.dumps(item.get("affected_ranges", [])),
+                    json.dumps(affected_versions), json.dumps(item.get("affected_ranges", [])),
                     json.dumps(item.get("fixed_versions", [])), severity, item.get("status", "not fixed"),
+                    json.dumps(aliases), item.get("published"), item.get("modified"), item.get("withdrawn"),
+                    json.dumps(item.get("cvss_records", []), sort_keys=True), json.dumps(item.get("cwe_ids", [])),
+                    advisory_status, len(set(affected_versions)) if affected_versions else None,
                     observed_at, json.dumps(item.get("details", item), sort_keys=True),
                 ))
 
@@ -306,3 +362,18 @@ class DBHelper:
     def intelligence_history(env_name):
         with DBHelper._dbm.connect() as conn:
             return conn.execute(sql.get("vulnerability_intelligence", "vulnerability_intelligence_history"), (env_name,)).fetchall()
+
+    @staticmethod
+    def successful_intelligence_dependency_history(env_name):
+        with DBHelper._dbm.connect() as conn:
+            return conn.execute(sql.get("vulnerability_intelligence", "successful_vulnerability_intelligence_dependency_history"), (env_name,)).fetchall()
+
+    @staticmethod
+    def record_intelligence_dependency(scan_id, root_package, root_version, dependency, observed_at):
+        with DBHelper._dbm.connect() as conn:
+            conn.execute(sql.get("vulnerability_intelligence", "insert_vulnerability_intelligence_dependency_link"), (
+                scan_id, root_package, canonicalize_name(str(root_package)), str(root_version),
+                dependency["name"], canonicalize_name(str(dependency["name"])), str(dependency["version"]),
+                dependency["relation"], dependency.get("parent_package"),
+                json.dumps(dependency.get("path", [])), observed_at,
+            ))

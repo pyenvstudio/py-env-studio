@@ -7,9 +7,10 @@
 > Py Env Studio provides a desktop GUI and command-line interface for managing
 > Python environments, packages, projects, and related developer workflows.
 >
-> **Current release: v2.1.5.** This release fixes UI state synchronization
-> when selecting environments and loading package lists. See the
-> [v2.1.5 release notes](../releases/v2.1.5.md). For the project environment
+> **Current implementation version: v2.1.6.** This version adds package-level
+> vulnerability intelligence history to the explicit scan workflow. See the
+> [v2.1.6 release notes](../releases/v2.1.6.md). For UI synchronization in the
+> PyPI 2.1.5 distribution, see [its release notes](../releases/v2.1.5.md). For the project environment
 > association and runtime mismatch guard introduced in v2.1.4, see the
 > [v2.1.4 release notes](../releases/v2.1.4.md).
 
@@ -224,11 +225,25 @@ follow the active appearance mode, and show a placeholder label when a
 package has no scan history. `matplotlib` is no longer a dependency.
 
 External vulnerability intelligence is collected only during a user initiated
-scan. SQLite retains per-source query outcomes and append-only OSV observations;
-successful empty responses are distinct from failed or partial API scans.
-Trend charts use successful OSV query history, while local environment scan
-records remain separate. No background polling or scheduled API requests are
-performed.
+scan. SQLite retains per-source query outcomes and append-only OSV observations,
+including aliases, published/modified/withdrawn dates, CVSS vectors, CWE IDs,
+affected/fixed versions, and raw source records. Alias groups are used for
+profile counts while the source advisory rows remain traceable. Successful
+empty responses are distinct from failed or partial API scans. The existing
+scan trend chart remains based on collection snapshots; the package's
+Vulnerability Intelligence History tab presents disclosure-year counts,
+severity/profile summaries, advisory details and links, and supported CWE
+patterns. Package disclosure history is distinct from local environment scan
+history.
+
+deps.dev's resolved graph is used to label direct and transitive package
+findings and provide parent paths from graph edges. The API graph models a
+generic platform and may differ from the environment's exact installed
+dependency graph; graph errors are retained and shown. OSV returns advisories
+matching the queried package version rather than a catalog of every advisory
+for every package release. An absent record is not interpreted as proof of
+safety or as a fix. No background polling or scheduled API requests are
+performed; repeated same-package requests are coalesced within one scan.
 
 Conceptual flow:
 

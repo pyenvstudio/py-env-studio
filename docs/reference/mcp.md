@@ -53,7 +53,7 @@ way (see the [CLI reference](../getting-started/cli.md#command-aliases)).
 
 The installed version is reported by the `initialize` handshake shown below, by
 **Help → About** in the GUI, and by `pip show py-env-studio` (which reads the
-same `2.1.5` value as `pyproject.toml` and `py_env_studio/config.ini`).
+same `2.1.6` value as `pyproject.toml` and `py_env_studio/config.ini`).
 
 If `py-env-studio` is not found, either use the full path to the executable
 (for example
@@ -75,7 +75,7 @@ Expected response (single line):
 ```json
 {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05",
  "capabilities": {"tools": {}},
- "serverInfo": {"name": "py-env-studio", "version": "2.1.5"}}}
+ "serverInfo": {"name": "py-env-studio", "version": "2.1.6"}}}
 ```
 
 Press `Ctrl+C` to stop a manually started server.

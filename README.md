@@ -29,7 +29,7 @@ Perfect for:
 
 ---
 
-## 🆕 What's new in v2.1.5
+## 🆕 What's new in v2.1.6
 
 - **Environment selection stays synchronized** — mouse and keyboard selection,
   refresh restoration, recent locations, activation controls, and package
@@ -37,8 +37,13 @@ Perfect for:
 - **Package lists reject stale results** — a load for a previously selected
   environment cannot replace the current view, and an open package pane
   refreshes when selection changes.
+- **Vulnerability Intelligence History** — explicit scans retain source-linked
+  OSV advisory history with disclosure dates, aliases, CVSS/CWE data, and
+  direct/transitive dependency paths where supplied by deps.dev.
 
-→ [Full v2.1.5 release notes](docs/releases/v2.1.5.md)
+→ [Full v2.1.6 release notes](docs/releases/v2.1.6.md)
+
+The PyPI 2.1.5 distribution was published by automation, but its GitHub release and tag were withdrawn while the expanded vulnerability history feature was completed for v2.1.6. PyPI does not allow replacing an already-published version.
 
 ## Previous release: v2.1.4
 
@@ -113,7 +118,7 @@ PyEnvStudio now features a powerful plugin system that allows developers to exte
 - **Easy Development** - Simple plugin API with lifecycle management
 - **Examples Included** - Full working sample plugin with documentation
 
-See the [v2.1.5 release notes](docs/releases/v2.1.5.md) and the [plugin development guide](docs/plugins/development.md).
+See the [v2.1.6 release notes](docs/releases/v2.1.6.md) and the [plugin development guide](docs/plugins/development.md).
 
 ### Additional implemented capabilities
 

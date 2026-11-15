@@ -6,7 +6,7 @@ Reviewed against the current `py_env_studio` source tree on 2026-11-15. This is 
 
 The original audit identifies real state boundaries, but several proposed races are overstated for a local desktop application. UI environment-list refreshes, runtime UI refreshes, and ordinary package-update checks have meaningful stale-result protection. Tk callbacks are explicitly marshalled to the UI thread, SQLite writes use transactions, and shutdown intentionally lets started package/environment operations finish rather than interrupting filesystem changes.
 
-Three P2 findings were confirmed against the pre-fix implementation: two UI consistency defects and the vulnerability trend-history gap. The package-list identity and environment-selection defects were fixed in commit `a4fe05b`; the trend-history gap is now fixed in the current implementation by building chronological per-package trend data from persisted scan rows while preserving the latest-scan detail view.
+Three P2 findings were confirmed against the pre-fix implementation: two UI consistency defects and the vulnerability trend-history gap. The package-list identity and environment-selection defects were fixed in commit `a4fe05b`. The old local-scan-derived trend implementation was superseded by v2.1.6 scan-triggered OSV observation history; external disclosure history remains separate from local environment scan records.
 
 The remaining notable items are conditional architectural risks: environment-lock operations are not serialized per environment; project association/config and registry files are separate non-atomic stores; a package-update check can race an environment being removed/recreated by another actor; and runtime metadata has last-writer-wins semantics across concurrent refreshes. These require a particular overlap or multi-process workflow and are not evidence of routine corruption. No P0/P1 issue was established from the audited paths.
 
@@ -33,7 +33,10 @@ The remaining notable items are conditional architectural risks: environment-loc
 - **Regression test required:** Select a row by keyboard and restore selection after a refresh; assert selected name, location field, and enabled controls all match that row.
 
 ### P2 - Vulnerability trend history is not produced or loaded end to end
-- **Resolution:** Fixed in the current implementation. `DBHelper.get_vulnerability_info` now loads timestamped scan rows, selects latest-day records for current details, and attaches per-package chronological `trend_data` to those records.
+
+**Resolution:** Superseded by v2.1.6. Explicit scans persist per-source query outcomes and append-only OSV advisory observations. Disclosure trends use source publication dates; PES collection history uses observation timestamps. See docs/releases/v2.1.6.md for supported fields and coverage limits.
+
+The code and execution sequence below document the pre-fix implementation audited on 2026-11-15.
 
 - **Code:** `py_env_studio/utils/vulneribility_scanner.py`, `SecurityMatrix.build_matrix` (136-203), `scan_pkg` (205-210), and `scan_env` (212 onward); `py_env_studio/utils/handlers.py`, `DBHelper.save_vulnerability_info` (96-104) and `get_vulnerability_info` (106-126); `py_env_studio/core/schema/vulnerability.sql`, `insert_scan` and `latest_scan_rows` (5-16); `py_env_studio/utils/vulneribility_insights.py`, `update_charts` (764-798) and `_render_trend_chart` (803-812).
 - **Execution sequence:** A normal environment scan calls `scan_env`, which scans each installed package through `scan_pkg`. `build_matrix` creates `tech_leader_view` with only `total_vulnerabilities` and `severity_breakdown`, then `scan_pkg` persists that payload with a timestamp. Nothing in the scanner computes or assigns `trend_data`. When the dashboard opens, `DBHelper.get_vulnerability_info` executes `latest_scan_rows`; that query filters rows to `MAX(DATE(created_at))`, then the helper returns decoded payloads without adding history. `update_charts` reads only `current_pkg_data.tech_leader_view.trend_data`; when absent or empty it calls `_render_trend_chart(None)`, which shows the "No trend history" placeholder.
@@ -128,7 +131,7 @@ The remaining notable items are conditional architectural risks: environment-loc
 5. **P3, conditional — Project metadata/registry recovery:** add atomic single-file writes and light reconciliation if failures or multi-process use are supported and observed.
 6. **Informational/P3 — Preserve runtime UI generations and documented callback thread contract.** No immediate cache abstraction or executor redesign is warranted by this evidence.
 
-Trend-history remediation completed: the dashboard read derives per-package chronological trend points from saved scan snapshots without changing the latest-scan detail/status read path.
+Vulnerability-intelligence remediation completed in v2.1.6: the dashboard derives alias-aware disclosure summaries from saved OSV observations, retains original advisory records, and preserves latest-successful current details.
 
 ## Required regression tests
 
@@ -147,6 +150,6 @@ The package identity and selection regression tests were added and passed in the
 
 For a local-first desktop application, the current architecture is proportionate: blocking subprocess/network/database work is generally delegated to a bounded worker pool; Tk mutations are marshalled with `after`; list/runtime views use generations; environment package-update checks are serialized per name within the monitor; SQLite cache/metadata writes are transactional; lock-file replacement is atomic; and setup markers are atomically replaced. These controls address the common single-window execution model without requiring distributed-system machinery.
 
-The package-request identity and environment-selection consistency gaps have been fixed in the current implementation. The remaining confirmed data-flow gap is vulnerability trend history between persisted scans and the chart. At the persistence edges, a lock file plus DB row and `pes.config` plus `registry.json` are multiple stores and cannot form one transaction; recovery/reconciliation is the proportionate pattern. The main areas to validate before adding abstractions are same-name environment recreation during in-flight work and concurrent lock operations through supported UI/CLI paths.
+The package-request identity and environment-selection consistency gaps have been fixed. Vulnerability history now uses timestamped source observations rather than treating local scan snapshots as disclosure history. At the persistence edges, a lock file plus DB row and `pes.config` plus `registry.json` are multiple stores and cannot form one transaction; recovery/reconciliation is the proportionate pattern. The main areas to validate before adding abstractions are same-name environment recreation during in-flight work and concurrent lock operations through supported UI/CLI paths.
 
-Trend history is now assembled from chronological SQLite scan snapshots in `DBHelper.get_vulnerability_info`; older rows supply chart series while latest-day rows remain the dashboard package-detail source.
+Vulnerability Intelligence History is assembled by `DBHelper.get_vulnerability_info` from successful OSV query observations. It uses advisory publication dates for disclosure trends, collection timestamps for PES scan history, and source aliases for display grouping. A missing API record is not interpreted as a fix.

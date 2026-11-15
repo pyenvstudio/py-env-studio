@@ -183,6 +183,14 @@ class VulnerabilityInsightsApp:
             "Basic Details", "Select a vulnerability for details", with_action=True
         )
         self.enterprise_details_text = self._create_details_tab("Scan Details", "Select a package to see scan details")
+        intelligence_tab = self.details_notebook.add("Vulnerability Intelligence History")
+        self.intelligence_history_text = ctk.CTkTextbox(intelligence_tab, width=380, height=350)
+        self.intelligence_history_text.pack(fill="both", expand=True, padx=5, pady=(5, 2))
+        self.disclosure_chart = BarChart(
+            intelligence_tab, title="Disclosures by Year", theme=_chart_theme(),
+            height=170, tooltip=True,
+        )
+        self.disclosure_chart.pack(fill="x", padx=5, pady=5)
 
     def _create_details_tab(self, name, default="", with_action=False):
         tab = self.details_notebook.add(name)
@@ -292,6 +300,8 @@ class VulnerabilityInsightsApp:
         self.populate_treeview()
         self._set_text(self.enterprise_details_text, self.format_enterprise_details(pkg_data))
         self._set_text(self.index_details_text, self.format_index_details(pkg_data))
+        self._set_text(self.intelligence_history_text, self.format_intelligence_history(pkg_data))
+        self.update_disclosure_chart(pkg_data)
         self.update_charts()
 
         meta = pkg_data.get("metadata", {})
@@ -303,9 +313,11 @@ class VulnerabilityInsightsApp:
     def _clear_ui(self):
         for item in self.tree.get_children():
             self.tree.delete(item)
-        for txt in (self.developer_details_text, self.enterprise_details_text, self.index_details_text):
+        for txt in (self.developer_details_text, self.enterprise_details_text, self.index_details_text, self.intelligence_history_text):
             self._set_text(txt, "")
         self._reset_charts()
+        if hasattr(self, "disclosure_chart"):
+            self.disclosure_chart.update({"No dates": 0}, animate=False)
         self.vulnerabilities.clear()
         self.current_pkg_data = None
         self.current_vuln = None
@@ -746,6 +758,12 @@ class VulnerabilityInsightsApp:
         lines = summary + [""] + lines
         for idx, entry in enumerate(insights, 1):
             lines.append(f"\n🔹 {entry.get('package','—')} ({entry.get('version','?')})")
+            if entry.get("relation"):
+                lines.append(f"   • Dependency type: {entry['relation']}")
+            if entry.get("parent_package"):
+                lines.append(f"   • Parent dependency: {entry['parent_package']}")
+            if entry.get("dependency_path"):
+                lines.append(f"   • Dependency path: {' → '.join(entry['dependency_path'])}")
             if entry.get("deprecated", True):
                 lines.append("   • Deprecated: ⚠️ Yes")
             if entry.get("yanked", True):
@@ -760,6 +778,97 @@ class VulnerabilityInsightsApp:
             if idx < len(insights):
                 lines.append("────────────────────")
         return "\n".join(lines) + "\n"
+
+    def format_intelligence_history(self, pkg_data):
+        profile = pkg_data.get("intelligence_profile") or {}
+        summary = profile.get("summary", {})
+        lines = [
+            "Vulnerability Intelligence History",
+            "Disclosure dates come from source advisories; collection dates are PES scan times.",
+            "",
+            f"Unique advisories (alias grouped): {summary.get('total_unique_vulnerabilities', 0)}",
+            f"Current version affected: {summary.get('currently_affected_vulnerabilities', 0)}",
+            f"Current version fixed: {summary.get('fixed_vulnerabilities', 0)}",
+            f"Exact affected releases recorded: {summary.get('affected_release_count', 'Unknown')}",
+            f"First known disclosure: {summary.get('first_disclosure_date') or 'Unknown'}",
+            f"Latest known disclosure: {summary.get('latest_disclosure_date') or 'Unknown'}",
+            f"Sources: {', '.join(summary.get('sources', [])) or 'None'}",
+            f"Last collected: {summary.get('last_collected_at') or 'Never'}",
+            f"Severity: {summary.get('severity_counts', {})}",
+            f"Patterns (structured CWE only): {profile.get('pattern_counts', {})}",
+            "",
+            "Disclosures by year:",
+        ]
+        changes = profile.get("scan_changes", {}) or {}
+        if changes.get("previous_successful_scan_at"):
+            lines.append(f"Changes since previous successful scan: {changes.get('newly_disclosed', 0)} newly disclosed, {changes.get('updated', 0)} updated, {changes.get('withdrawn', 0)} withdrawn")
+        else:
+            lines.append("Advisory changes: not comparable (no earlier successful package scan).")
+        timeline = profile.get("disclosure_timeline", []) or []
+        if timeline:
+            for item in timeline:
+                lines.append(f"  {item['year']}: {item['total']} advisories — {item.get('severity_breakdown', {})}")
+        else:
+            lines.append("  No source publication dates are available.")
+
+        analysis = (pkg_data.get("metadata", {}).get("dependency_analysis") or {})
+        lines += ["", "Dependency analysis:"]
+        lines.append(f"  Source: {analysis.get('source', 'Unavailable')}; status: {analysis.get('status', 'unavailable')}")
+        dependencies = analysis.get("dependencies", []) or []
+        if dependencies:
+            relation_counts = {relation: sum(dep.get("relation") == relation for dep in dependencies)
+                               for relation in ("direct", "transitive", "unknown")}
+            lines.append(f"  Dependency breakdown: {relation_counts}")
+            for dependency in dependencies:
+                path = " → ".join(dependency.get("path", []))
+                lines.append(f"    {dependency.get('name')}=={dependency.get('version')} ({dependency.get('relation')}); parent: {dependency.get('parent_package') or 'Unknown'}; path: {path or 'unavailable'}")
+        if analysis.get("graph_error"):
+            lines.append(f"  Graph error: {analysis['graph_error']}")
+        for error in analysis.get("node_errors", []) or []:
+            lines.append(f"  Dependency resolution warning: {error}")
+        if analysis.get("limitation"):
+            lines.append(f"  Note: {analysis['limitation']}")
+
+        dependency_vulns = [v for v in pkg_data.get("developer_view", []) or [] if v.get("dependency_relation")]
+        if dependency_vulns:
+            lines.append("  Current dependency findings:")
+            for vuln in dependency_vulns:
+                path = " → ".join(vuln.get("dependency_path", []))
+                lines.append(f"    {vuln.get('vulnerability_id', 'Unknown')}: {vuln.get('affected_components', ['Unknown'])[0]} ({vuln.get('dependency_relation')}); path: {path or 'unavailable'}")
+        elif not dependencies:
+            lines.append("  No dependency graph was available; dependency analysis is limited to the package records returned by the API.")
+
+        lines += ["", "Vulnerability advisory history:"]
+        advisories = profile.get("vulnerabilities", []) or []
+        if not advisories:
+            lines.append("  No historical advisory observations have been collected for this package.")
+        for advisory in advisories:
+            lines += [
+                f"\n  {advisory.get('vulnerability_id', 'Unknown')}  [{advisory.get('severity', 'Unknown')}]",
+                f"    Aliases: {', '.join(advisory.get('aliases', [])) or 'None provided'}",
+                f"    Disclosure: {advisory.get('published') or advisory.get('disclosure_date_status', 'Unknown')}; modified: {advisory.get('modified') or 'Unknown'}; advisory status: {advisory.get('current_advisory_status', 'Unknown')}",
+                f"    Source publication dates: {advisory.get('published_dates', [])}; source modification dates: {advisory.get('modified_dates', [])}",
+                f"    Current package version status: {advisory.get('current_version_status', 'unknown')}; withdrawn at: {advisory.get('withdrawn') or 'Unknown'}",
+                f"    CVSS provenance: {advisory.get('cvss_records') or 'Not supplied by source'}",
+                f"    Affected versions: {', '.join(advisory.get('affected_versions', [])) or 'Ranges only / not enumerated'}",
+                f"    Fixed versions: {', '.join(advisory.get('fixed_versions', [])) or 'Not supplied'}",
+                f"    Fixed-version source records: {advisory.get('fixed_version_sources', [])}",
+                f"    Pattern: {', '.join(advisory.get('patterns', ['Unknown / unclassified']))}; CWE: {', '.join(advisory.get('cwe_ids', [])) or 'Unknown'}",
+                f"    Collected: first {advisory.get('first_observed_at') or 'Unknown'}; latest {advisory.get('last_observed_at') or 'Unknown'}",
+                f"    Summary: {advisory.get('summary') or 'Not supplied'}",
+            ]
+            for reference in advisory.get("references", []) or []:
+                if isinstance(reference, dict) and reference.get("url"):
+                    lines.append(f"    Source link: {reference['url']}")
+
+        lines += ["", profile.get("collection_note", "Historical records reflect only successful observations PES has collected."),
+                  "An advisory missing from a later response is not treated as fixed."]
+        return "\n".join(lines) + "\n"
+
+    def update_disclosure_chart(self, pkg_data):
+        timeline = (pkg_data.get("intelligence_profile") or {}).get("disclosure_timeline", []) or []
+        values = {str(item["year"]): max(0, int(item.get("total", 0))) for item in timeline}
+        self.disclosure_chart.update(values or {"No dates": 0}, animate=False)
 
     # ---------------------- Sorting ----------------------
 

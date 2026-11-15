@@ -5,6 +5,9 @@ This file tracks implemented features/fixes with implementation date.
 ## 2026-11-15
 - Release 2.1.5: fixed environment selection synchronization across mouse/keyboard selection and list refresh restoration; package list callbacks now validate both generation and selected environment, refresh when selection changes, and reject stale package actions.
 
+## 2026-11-16
+- v2.1.6 vulnerability intelligence implementation: explicit scans persist OSV advisory observations with disclosure metadata, aliases, CVSS/CWE provenance and append-only collection times; package profiles group aliases without merging source rows, and the dashboard displays disclosure history plus deps.dev direct/transitive graph paths. GitHub v2.1.5 release/tag were withdrawn after its PyPI publication; the version cannot be overwritten.
+
 ## 2026-10-03
 - Release 2.1.4: bumped the version in `pyproject.toml`, `py_env_studio/config.ini`, and `docs/conf.py`, added `docs/releases/v2.1.4.md` (major updates: project ↔ environment association with an opt-out, a project environment panel to view/change/unregister the association, and a conservative runtime mismatch guard surfaced through `pes status`, `pes on`, and `pes run`), and marked v2.1.3 as superseded in the docs.
 

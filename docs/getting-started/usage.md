@@ -226,9 +226,15 @@ Displays detailed vulnerability and dependency information for packages:
 The Vulnerability Report can apply available fixes without leaving the dashboard.
 
 Vulnerability intelligence is fetched only when you explicitly run **Scan Now**.
-The dashboard retains timestamped OSV observations across scans. A successful
-scan with no findings is recorded separately from API failures; partial scans
-do not treat packages that could not be queried as vulnerability-free.
+The **Vulnerability Intelligence History** dashboard tab retains timestamped
+OSV advisory observations across scans. It distinguishes source publication and
+modification dates from PES collection time, groups CVE/GHSA aliases in summary
+counts, and links to source advisories. The tab also shows structured CWE
+patterns and direct/transitive dependency paths when deps.dev supplies them.
+A successful scan with no findings is recorded separately from API failures;
+partial scans do not treat packages that could not be queried as vulnerability-
+free. OSV history reflects advisories matched to scanned versions and does not
+prove that unlisted versions or years had no vulnerabilities.
 
 1. Run **Tools -> Scan Now**, then open **Tools -> Vulnerability Report** for the environment.
 2. Select a package and the vulnerability you want to address.
