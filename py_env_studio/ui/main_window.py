@@ -1611,39 +1611,27 @@ class PyEnvStudio(ctk.CTk):
             self._env_row_ids[env] = row_id
 
         selected_env = self.selected_env_var.get()
-        if selected_env in self._env_row_ids:
-            self.env_tree.selection_set(self._env_row_ids[selected_env])
+        self._restore_environment_selection(selected_env)
 
         def on_tree_click(event):
             col = self.env_tree.identify_column(event.x)
             row = self.env_tree.identify_row(event.y)
-            recent_location = self.env_tree.item(row)['values'][3]
             if not row:
                 return
-            env = self.env_tree.item(row)['values'][0]
+            values = self.env_tree.item(row)['values']
+            recent_location = values[3]
+            env = values[0]
 
             # 1.Environment| 2.Version | 3.VM Tool | 4.Recent Location | 5.Size | 8.Last Scanned 
             if col in ("#1","#2", "#3", "#5", "#8"):
-                if recent_location and recent_location != "-":
-                    try:
-                        self.env_tree.selection_set(row)
-                    except Exception:
-                        pass
-                    self.selected_env_var.set(env)
-                    self.activate_button.configure(state="normal")
-                    self.dir_var.set(recent_location)
+                self.env_tree.selection_set(row)
+                self._select_environment(env, recent_location)
                 return
             
             if col == "#4":  # Recent Location
+                self.env_tree.selection_set(row)
+                self._select_environment(env, recent_location)
                 if recent_location and recent_location != "-":
-                    try:
-                        self.env_tree.selection_set(row)
-                    except Exception:
-                        pass
-                    self.selected_env_var.set(env)
-                    self.activate_button.configure(state="normal")
-                    self.dir_var.set(recent_location)
-
                      # Copy location to clipboard
                     self.clipboard_clear()
                     self.clipboard_append(recent_location)
@@ -1712,18 +1700,70 @@ class PyEnvStudio(ctk.CTk):
         self.env_tree.bind("<Button-1>", on_tree_click)
         self.env_tree.bind("<Double-1>", on_tree_double_click)
 
-        def on_tree_select(event):
-            sel = self.env_tree.selection()
-            if sel:
-                env = self.env_tree.item(sel[0])['values'][0]
-                self.selected_env_var.set(env)
-                self.activate_button.configure(state="normal")
-
-
-        self.env_tree.bind("<<TreeviewSelect>>", on_tree_select)
+        self.env_tree.bind("<<TreeviewSelect>>", self._on_environment_tree_select)
 
         for env in checks:
             self._start_package_update_check(env)
+
+    def _restore_environment_selection(self, env_name: str) -> None:
+        """Restore the selected row and synchronize its current row context."""
+        row_id = getattr(self, "_env_row_ids", {}).get(env_name)
+        if not row_id or not self.env_tree.exists(row_id):
+            self._select_environment("")
+            return
+        values = self.env_tree.item(row_id, "values")
+        self.env_tree.selection_set(row_id)
+        self._select_environment(env_name, values[3])
+
+    def _select_environment(self, env_name: str, recent_location: str | None = None) -> None:
+        """Synchronize the selected environment and the UI that depends on it."""
+        env_name = (env_name or "").strip()
+        valid = bool(env_name and is_valid_env_selected(env_name))
+        previous_env = self.selected_env_var.get().strip()
+        if not valid:
+            env_name = ""
+            recent_location = ""
+        elif recent_location == "-":
+            recent_location = ""
+
+        self.selected_env_var.set(env_name)
+        self.dir_var.set((recent_location or "") if valid else "")
+        self.activate_button.configure(state="normal" if valid else "disabled")
+
+        if valid:
+            self.selected_env_label.configure(
+                text=f"Selected Environment: {env_name}",
+                text_color=self.theme.HIGHLIGHT_COLOR,
+            )
+        else:
+            self.selected_env_label.configure(
+                text="No valid environment selected.",
+                text_color=self.theme.ERROR_COLOR,
+            )
+            self._package_list_generation = getattr(self, "_package_list_generation", 0) + 1
+            for widget in self.packages_list_frame.winfo_children():
+                widget.destroy()
+            self.packages_list_frame.grid_remove()
+            self._package_list_env_name = None
+            return
+
+        if previous_env != env_name and self._package_pane_is_visible():
+            self.refresh_package_list()
+
+    def _on_environment_tree_select(self, _event=None) -> None:
+        """Apply a mouse or keyboard Treeview selection to the app context."""
+        selection = self.env_tree.selection()
+        if not selection:
+            self._select_environment("")
+            return
+        values = self.env_tree.item(selection[0], "values")
+        self._select_environment(values[0], values[3])
+
+    def _package_pane_is_visible(self) -> bool:
+        try:
+            return bool(self.packages_list_frame.winfo_ismapped())
+        except Exception:
+            return False
 
     def _set_env_update_label(self, env_name: str, label: str) -> None:
         row_id = getattr(self, "_env_row_ids", {}).get(env_name)
@@ -2325,12 +2365,10 @@ class PyEnvStudio(ctk.CTk):
 
         env_name = self.selected_env_var.get().strip()
         if not env_name or not is_valid_env_selected(env_name):
-            self.selected_env_label.configure(
-                text="No valid environment selected.",
-                text_color=self.theme.ERROR_COLOR
-            )
-            self.packages_list_frame.grid_remove()
+            self._select_environment("")
             return
+
+        self._package_list_env_name = env_name
 
         self.progress.set_status(f"Loading packages of '{env_name}'…")
         self.lbl(
@@ -2343,11 +2381,23 @@ class PyEnvStudio(ctk.CTk):
             lambda: list_packages(env_name),
             ui=self,
             on_done=lambda packages: self._on_packages_loaded(env_name, packages, generation),
-            on_error=lambda exc: self._on_packages_load_failed(exc, generation),
+            on_error=lambda exc: self._on_packages_load_failed(env_name, exc, generation),
         )
 
-    def _on_packages_load_failed(self, exc: BaseException, generation: int) -> None:
+    def _package_request_is_current(self, env_name: str, generation: int) -> bool:
         if generation != getattr(self, "_package_list_generation", generation):
+            return False
+        if env_name != self.selected_env_var.get().strip():
+            return False
+        if env_name != getattr(self, "_package_list_env_name", env_name):
+            return False
+        if not is_valid_env_selected(env_name):
+            self._select_environment("")
+            return False
+        return True
+
+    def _on_packages_load_failed(self, env_name: str, exc: BaseException, generation: int) -> None:
+        if not self._package_request_is_current(env_name, generation):
             return
         try:
             if not self.winfo_exists():
@@ -2360,7 +2410,7 @@ class PyEnvStudio(ctk.CTk):
 
     def _on_packages_loaded(self, env_name, packages, generation: int) -> None:
         """Draw the package rows (main thread only)."""
-        if generation != getattr(self, "_package_list_generation", generation):
+        if not self._package_request_is_current(env_name, generation):
             return  # a newer refresh already loaded (or is loading) newer data
         try:
             if not self.winfo_exists():
@@ -2392,6 +2442,11 @@ class PyEnvStudio(ctk.CTk):
                 self.pkg_tree.insert("", "end", values=(pkg_name, pkg_version, "🗑️", "⟳"))
 
             def on_pkg_click(event):
+                if (
+                    self.selected_env_var.get().strip() != env_name
+                    or getattr(self, "_package_list_env_name", None) != env_name
+                ):
+                    return
                 col = self.pkg_tree.identify_column(event.x)
                 row = self.pkg_tree.identify_row(event.y)
                 if not row:
