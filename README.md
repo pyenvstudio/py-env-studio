@@ -29,7 +29,18 @@ Perfect for:
 
 ---
 
-## 🆕 What's new in v2.1.4
+## 🆕 What's new in v2.1.5
+
+- **Environment selection stays synchronized** — mouse and keyboard selection,
+  refresh restoration, recent locations, activation controls, and package
+  context now follow the same selected environment.
+- **Package lists reject stale results** — a load for a previously selected
+  environment cannot replace the current view, and an open package pane
+  refreshes when selection changes.
+
+→ [Full v2.1.5 release notes](docs/releases/v2.1.5.md)
+
+## Previous release: v2.1.4
 
 - 🔗 **Project ↔ Environment association** — creating an environment from a
   project template now registers it with the project by default, with an
@@ -102,7 +113,7 @@ PyEnvStudio now features a powerful plugin system that allows developers to exte
 - **Easy Development** - Simple plugin API with lifecycle management
 - **Examples Included** - Full working sample plugin with documentation
 
-See the [v2.1.4 release notes](docs/releases/v2.1.4.md) and the [plugin development guide](docs/plugins/development.md).
+See the [v2.1.5 release notes](docs/releases/v2.1.5.md) and the [plugin development guide](docs/plugins/development.md).
 
 ### Additional implemented capabilities
 

@@ -124,7 +124,7 @@ Notes for writing docs:
    generated notes:
 
    ```bash
-   git tag v2.1.4
-   git push origin v2.1.4
+   git tag v2.1.5
+   git push origin v2.1.5
    ```
 

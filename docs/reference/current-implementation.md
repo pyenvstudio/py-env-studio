@@ -7,11 +7,11 @@
 > Py Env Studio provides a desktop GUI and command-line interface for managing
 > Python environments, packages, projects, and related developer workflows.
 >
-> **Current release: v2.1.4.** New in this release: project ↔ environment
-> association with an opt-out, a project environment panel to view/change/
-> unregister the association, and a conservative runtime mismatch guard that
-> reports drift through `pes status`, `pes on`, and `pes run` without IDE
-> detection or interpreter switching. See the [v2.1.4 release notes](../releases/v2.1.4.md).
+> **Current release: v2.1.5.** This release fixes UI state synchronization
+> when selecting environments and loading package lists. See the
+> [v2.1.5 release notes](../releases/v2.1.5.md). For the project environment
+> association and runtime mismatch guard introduced in v2.1.4, see the
+> [v2.1.4 release notes](../releases/v2.1.4.md).
 
 ## 1. Virtual Environment Management
 

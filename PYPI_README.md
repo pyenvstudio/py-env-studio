@@ -42,6 +42,8 @@ Perfect for:
 - 🐍 Official **Python Install Manager** integration to detect, list, install,
   and select official runtimes
 - 🔌 Extensible **plugin system** with 18 lifecycle hooks
+- Environment selection and package views stay synchronized; stale
+  package results are discarded when selection changes
 - 📟 Full CLI with progress gauge and `-v` / `-q` / `--no-progress` controls
 - 🧪 **Beta:** local, read-only **MCP control plane** for AI coding agents
   (stdio transport, 8 `pes_*` tools, opt-out via `enabled = false`)
@@ -96,7 +98,7 @@ Setup steps for VS Code and other clients:
 
 - Documentation home: [https://py-env-studio.readthedocs.io/](https://py-env-studio.readthedocs.io/)
 - Usage manual: [https://py-env-studio.readthedocs.io/en/latest/getting-started/usage.html](https://py-env-studio.readthedocs.io/en/latest/getting-started/usage.html)
-- Release notes: [https://py-env-studio.readthedocs.io/en/latest/releases/v2.1.4.html](https://py-env-studio.readthedocs.io/en/latest/releases/v2.1.4.html)
+- Release notes: [https://py-env-studio.readthedocs.io/en/latest/releases/v2.1.5.html](https://py-env-studio.readthedocs.io/en/latest/releases/v2.1.5.html)
 - Source code: [https://github.com/pyenvstudio/py-env-studio](https://github.com/pyenvstudio/py-env-studio)
 - Issue tracker: [https://github.com/pyenvstudio/py-env-studio/issues](https://github.com/pyenvstudio/py-env-studio/issues)
 
