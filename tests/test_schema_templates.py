@@ -34,7 +34,12 @@ EXPECTED_KEYS = {
         "upsert_project_contract",
         "select_project_contract_by_path",
     },
-    "vulnerability": {"insert_scan", "latest_scan_rows", "update_payload_by_vid"},
+    "vulnerability": {
+        "insert_scan",
+        "latest_scan_rows",
+        "scan_history_rows",
+        "update_payload_by_vid",
+    },
     "runtime_cache": {
         "select_metadata_by_provider",
         "select_cache_state",
@@ -71,6 +76,7 @@ def test_runtime_values_use_placeholders_not_interpolation():
         ("project_contract", "select_project_contract_by_path"),
         ("vulnerability", "insert_scan"),
         ("vulnerability", "latest_scan_rows"),
+        ("vulnerability", "scan_history_rows"),
         ("vulnerability", "update_payload_by_vid"),
         ("runtime_cache", "select_metadata_by_provider"),
         ("runtime_cache", "select_cache_state"),

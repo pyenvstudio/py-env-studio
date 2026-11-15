@@ -7,6 +7,7 @@ import os
 from py_env_studio.core.database import DatabaseManager
 from py_env_studio.core.env_manager import DB_FILE, MATRIX_FILE, VENV_DIR
 from py_env_studio.core import schema as sql
+from .version_utils import vuln_status
 
 
 class DataHelper:
@@ -107,7 +108,7 @@ class DBHelper:
         with DBHelper._dbm.connect() as conn:
             cur = conn.cursor()
             cur.execute(
-                sql.get("vulnerability", "latest_scan_rows"),
+                sql.get("vulnerability", "scan_history_rows"),
                 (env_name,),
             )
             rows = cur.fetchall()
@@ -115,12 +116,86 @@ class DBHelper:
         if not rows:
             return {"vulnerability_insights": []}
 
+        latest_scan_date = max((row[3] for row in rows if row[3]), default=None)
         buckets = {}
-        for vid, payload in rows:
+        history = {}
+        for vid, payload, created_at, scan_date in rows:
             try:
                 decoded = json.loads(payload) if isinstance(payload, str) else payload
             except Exception:
                 continue
-            buckets[str(vid)] = decoded.get("vulnerability_insights", decoded)
+
+            raw_matrix = decoded.get("vulnerability_insights", decoded)
+            if latest_scan_date is not None and scan_date == latest_scan_date:
+                buckets[str(vid)] = raw_matrix
+
+            if not isinstance(raw_matrix, dict) or "metadata" not in raw_matrix:
+                continue
+            metadata = raw_matrix.get("metadata") or {}
+            if not isinstance(metadata, dict):
+                continue
+            package_name = str(metadata.get("package") or "").strip()
+            if not package_name or not scan_date:
+                continue
+
+            developer_view = raw_matrix.get("developer_view") or []
+            tech_view = raw_matrix.get("tech_leader_view") or {}
+            if not isinstance(developer_view, list):
+                developer_view = []
+            if not isinstance(tech_view, dict):
+                tech_view = {}
+            try:
+                total = max(0, int(tech_view.get("total_vulnerabilities")))
+            except (TypeError, ValueError):
+                total = len(developer_view)
+            versions = {package_name.split("[")[0].strip(): str(metadata.get("version") or "?")}
+            for insight in metadata.get("index_insights", []) or []:
+                if not isinstance(insight, dict):
+                    continue
+                dependency = str(insight.get("package") or "").split("[")[0].strip()
+                if dependency and insight.get("version"):
+                    versions[dependency] = str(insight["version"])
+
+            def is_fixed(vulnerability):
+                if not isinstance(vulnerability, dict):
+                    return False
+                status = str(vulnerability.get("status", "")).lower()
+                if status in {"fixed", "not fixed"}:
+                    return status == "fixed"
+                affected = vulnerability.get("affected_components") or []
+                affected_package = str(affected[0]).split("[")[0].strip() if affected else package_name
+                return vuln_status(
+                    versions.get(affected_package),
+                    vulnerability.get("fixed_versions", []) or [],
+                ) == "fixed"
+
+            fixed = sum(
+                1 for vulnerability in developer_view if is_fixed(vulnerability)
+            )
+            history.setdefault(package_name.casefold(), []).append(
+                {
+                    "timestamp": str(created_at or scan_date),
+                    "total_vulnerabilities": total,
+                    "fixed_vulnerabilities": fixed,
+                }
+            )
+
+        for package_data in buckets.values():
+            if not isinstance(package_data, dict) or "metadata" not in package_data:
+                continue
+            metadata = package_data.get("metadata") or {}
+            if not isinstance(metadata, dict):
+                continue
+            package_name = str(metadata.get("package") or "").strip()
+            if not package_name:
+                continue
+            tech_view = package_data.setdefault("tech_leader_view", {})
+            if not isinstance(tech_view, dict):
+                tech_view = {}
+                package_data["tech_leader_view"] = tech_view
+            tech_view["trend_data"] = history.get(package_name.casefold(), [])
+
+        for trend in history.values():
+            trend.sort(key=lambda point: point["timestamp"])
 
         return {"vulnerability_insights": [buckets]}
